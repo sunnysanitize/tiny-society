@@ -38,8 +38,12 @@ def apply_action(
         _update_relationship(actor, target.name, eff.type, eff.strength_delta)
         _update_relationship(target, actor.name, eff.type, eff.strength_delta)
 
+    # Use the narrative memory sentence as the log entry — it's the richest description.
+    # Fall back to structured summary if memory is missing.
+    if action.new_memory:
+        return f"[{actor.name}] {action.new_memory} ({action.explanation})"
     target_str = ", ".join(action.target_agents) if action.target_agents else "alone"
-    return f"{actor.name} {action.action} {target_str} — {action.explanation}"
+    return f"[{actor.name}] chose to {action.action} {target_str}. {action.explanation}"
 
 
 def _update_relationship(agent: Agent, target_name: str, rtype: str, delta: float) -> bool:

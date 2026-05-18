@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Optional
 
 from models import Agent, AgentAction, RelationshipEffect
@@ -44,10 +45,16 @@ def reason_for_agent(
     event: Optional[str],
     recent_log: list[str],
 ) -> Optional[AgentAction]:
+    import logging
     user = _build_prompt(agent, roster, event, recent_log)
-    raw = call_llm(REASONER_SYSTEM, user, json_mode=True, max_tokens=600)
+    try:
+        raw = call_llm(REASONER_SYSTEM, user, json_mode=True, max_tokens=600)
+    except Exception as e:
+        logging.warning(f"LLM call failed for agent {agent.name}: {e}")
+        return None
     data = _safe_json(raw)
     if not data:
+        logging.warning(f"Empty/invalid JSON from LLM for agent {agent.name}: {raw[:100]!r}")
         return None
     try:
         rel_effects: dict[str, RelationshipEffect] = {}
@@ -124,20 +131,26 @@ def _build_prompt(
 
 
 def _safe_json(raw: str) -> dict:
-    raw = raw.strip()
-    if raw.startswith("```"):
-        raw = raw.strip("`")
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
+    if not raw:
+        return {}
+    # Strip markdown code fences
+    raw = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.IGNORECASE)
+    raw = re.sub(r"\s*```\s*$", "", raw).strip()
+    # Try full parse first
+    try:
+        result = json.loads(raw)
+        return result if isinstance(result, dict) else {}
+    except json.JSONDecodeError:
+        pass
+    # Find outermost { ... } (handles preamble/postamble)
     start = raw.find("{")
     end = raw.rfind("}")
     if start != -1 and end != -1:
-        raw = raw[start:end + 1]
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
+        try:
+            return json.loads(raw[start:end + 1])
+        except json.JSONDecodeError:
+            pass
+    return {}
 
 
 def _clamp(x: float, lo: float, hi: float) -> float:

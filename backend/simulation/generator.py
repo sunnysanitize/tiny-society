@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import re
 import uuid
 
 from models import Agent, World
@@ -40,8 +42,18 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
         f"Generate {count} fictional agents that fit this world. "
         f"Avoid these existing names: {sorted(existing_names) or 'none'}."
     )
-    raw = call_llm(FILLER_SYSTEM, user, json_mode=True, max_tokens=4096)
-    data = _safe_json(raw)
+    try:
+        raw = call_llm(FILLER_SYSTEM, user, json_mode=True, max_tokens=4096)
+        logging.info(f"Filler LLM raw ({len(raw)} chars): {raw[:200]!r}")
+        data = _safe_json(raw)
+        if not data.get("agents"):
+            logging.warning(f"Parsed agents list is empty. Parsed data keys: {list(data.keys())}")
+            raise ValueError("empty agents list")
+    except Exception as e:
+        logging.warning(f"LLM filler generation failed ({e}), using mock fallback")
+        from llm import _mock
+        raw = _mock(FILLER_SYSTEM, user, json_mode=True)
+        data = _safe_json(raw)
     out: list[Agent] = []
     for entry in (data.get("agents") or [])[:count]:
         name = (entry.get("name") or "").strip() or f"Agent-{uuid.uuid4().hex[:4]}"
@@ -62,18 +74,42 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
 
 
 def _safe_json(raw: str) -> dict:
+    if not raw:
+        return {}
+    # Strip markdown code fences (```json ... ``` or ``` ... ```)
+    raw = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.IGNORECASE)
+    raw = re.sub(r"\s*```\s*$", "", raw)
     raw = raw.strip()
-    if raw.startswith("```"):
-        raw = raw.strip("`")
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
-    # Find the first { ... last }
+
+    # Try parsing the whole thing first
+    try:
+        result = json.loads(raw)
+        if isinstance(result, dict):
+            return result
+        if isinstance(result, list):
+            return {"agents": result}
+    except json.JSONDecodeError:
+        pass
+
+    # Find outermost { ... } (handles preamble text before the JSON)
     start = raw.find("{")
     end = raw.rfind("}")
     if start != -1 and end != -1:
-        raw = raw[start:end + 1]
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
+        try:
+            result = json.loads(raw[start:end + 1])
+            if isinstance(result, dict):
+                return result
+        except json.JSONDecodeError:
+            pass
+
+    # Fallback: bare array
+    start = raw.find("[")
+    end = raw.rfind("]")
+    if start != -1 and end != -1:
+        try:
+            return {"agents": json.loads(raw[start:end + 1])}
+        except json.JSONDecodeError:
+            pass
+
+    logging.warning(f"_safe_json could not parse: {raw[:200]!r}")
+    return {}

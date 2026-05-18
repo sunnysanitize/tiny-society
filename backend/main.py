@@ -144,6 +144,70 @@ def get_result(wid: str):
     return r
 
 
+class ChatRequest(BaseModel):
+    message: str
+    day: int = 1
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    agent_name: str
+
+
+CHAT_SYSTEM = """You are roleplaying as a fictional character inside an AI social simulation.
+You will be given your character's full profile: name, role, traits, goals, mood, memories, and relationships.
+Respond to the user's message as this character would — authentically, in first person, in their voice.
+Keep your reply to 2–4 sentences. Stay true to your traits and current emotional state.
+Never break character. Never mention that you are an AI or a simulation."""
+
+
+@app.post("/world/{wid}/agent/{agent_id}/chat", response_model=ChatResponse)
+def agent_chat(wid: str, agent_id: str, body: ChatRequest):
+    from llm import call_llm
+
+    result = store.get_result(wid)
+    world = _require(wid)
+
+    # Find agent in simulation snapshot or world
+    agent = None
+    if result:
+        snap = next((s for s in result.snapshots if s.day == body.day), result.snapshots[-1])
+        agent = next((a for a in snap.agents if a.id == agent_id), None)
+    if agent is None:
+        agent = next((a for a in world.agents if a.id == agent_id), None)
+    if agent is None:
+        raise HTTPException(404, "agent not found")
+
+    rel_lines = "\n".join(
+        f"  - {name}: {r.type} (strength {r.strength:+.2f})"
+        for name, r in agent.relationships.items()
+    ) or "  (none yet)"
+
+    memories = "\n".join(f"  - {m}" for m in (agent.long_term_memory[-6:] + agent.short_term_memory[-4:])) or "  (none)"
+
+    user_prompt = (
+        f"CHARACTER PROFILE\n"
+        f"Name: {agent.name}\n"
+        f"Role: {agent.role}\n"
+        f"Traits: {', '.join(agent.traits) or 'none'}\n"
+        f"Goals: {', '.join(agent.goals) or 'none'}\n"
+        f"Current mood: {agent.mood}\n"
+        f"Influence score: {agent.influence_score:.1f}\n"
+        f"Groups: {', '.join(agent.groups) or 'none'}\n\n"
+        f"RELATIONSHIPS\n{rel_lines}\n\n"
+        f"MEMORIES\n{memories}\n\n"
+        f"WORLD EVENT\n{world.starting_event or '(none)'}\n\n"
+        f"USER MESSAGE\n{body.message}"
+    )
+
+    try:
+        reply = call_llm(CHAT_SYSTEM, user_prompt, max_tokens=300)
+    except Exception as e:
+        reply = f"(Chat unavailable — check LLM_PROVIDER setting. Error: {e})"
+
+    return ChatResponse(reply=reply, agent_name=agent.name)
+
+
 def _require(wid: str) -> World:
     w = store.get(wid)
     if not w:

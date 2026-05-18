@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import copy
+import logging
+import os
 import random
+import time
 from typing import Optional
 
 from models import (
@@ -60,7 +63,13 @@ def run_simulation(
 
         active_event = world.starting_event if day <= 3 else None
 
-        for actor in selected:
+        # Delay between LLM calls to stay within free-tier rate limits
+        _llm_delay = float(os.getenv("LLM_CALL_DELAY_SECS", "2.0"))
+
+        for i, actor in enumerate(selected):
+            if i > 0 and _llm_delay > 0:
+                time.sleep(_llm_delay)
+            logging.info(f"Day {day}: reasoning for {actor.name} ({i+1}/{len(selected)})")
             action = reason_for_agent(
                 actor,
                 agents,
@@ -73,7 +82,7 @@ def run_simulation(
             day_log.append(log_line)
             day_highlights.append(DayHighlight(
                 agent=actor.name,
-                summary=f"{action.action} {', '.join(action.target_agents) or '(no one)'} — {action.explanation}",
+                summary=action.new_memory or f"{action.action} {', '.join(action.target_agents) or '(no one)'} — {action.explanation}",
             ))
             # Count type changes for volatility
             type_changes += sum(
