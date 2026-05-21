@@ -1,5 +1,5 @@
 import type {
-  World, Agent, CharacterInput, SimulationResult,
+  World, Agent, CharacterInput, SimulationResult, StreamEvent,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -14,6 +14,39 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(`${res.status}: ${text}`);
   }
   return res.json();
+}
+
+async function* streamReq(path: string, body: unknown): AsyncGenerator<StreamEvent> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`${res.status}: ${text}`);
+  }
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop()!;
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          try {
+            yield JSON.parse(line.slice(6)) as StreamEvent;
+          } catch { /* skip malformed */ }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 export const api = {
@@ -50,11 +83,20 @@ export const api = {
       body: JSON.stringify({ starting_event }),
     }),
 
-  simulate: (wid: string, days: 7 | 30, reasoning_agents_per_day = 8, seed = 42) =>
+  simulate: (wid: string, days: number, reasoning_agents_per_day = 8, seed = 42) =>
     req<SimulationResult>(`/world/${wid}/simulate`, {
       method: "POST",
       body: JSON.stringify({ days, reasoning_agents_per_day, seed }),
     }),
+
+  simulateStream: (wid: string, days: number, perDay = 8, seed = 42) =>
+    streamReq(`/world/${wid}/simulate/stream`, { days, reasoning_agents_per_day: perDay, seed }),
+
+  continueStream: (wid: string, days: number, perDay = 8, seed = 42) =>
+    streamReq(`/world/${wid}/simulate/continue/stream`, { days, reasoning_agents_per_day: perDay, seed }),
+
+  getResult: (wid: string) =>
+    req<SimulationResult>(`/world/${wid}/result`),
 
   agentChat: (wid: string, agentId: string, message: string, day = 1) =>
     req<{ reply: string; agent_name: string }>(`/world/${wid}/agent/${agentId}/chat`, {

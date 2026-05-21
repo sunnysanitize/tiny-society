@@ -60,6 +60,7 @@ export interface DaySnapshot {
   event_log: string[];
   highlights: DayHighlight[];
   metrics: MacroMetrics;
+  active_event?: string | null;
 }
 
 export interface SimulationResult {
@@ -68,6 +69,7 @@ export interface SimulationResult {
   initial_metrics: MacroMetrics;
   final_metrics: MacroMetrics;
   final_report: string;
+  dynamic_events?: Record<string, string>;
 }
 
 export interface CharacterInput {
@@ -80,3 +82,8 @@ export interface CharacterInput {
   starting_memories: string[];
   starting_relationships: Record<string, Relationship>;
 }
+
+export type StreamEvent =
+  | { type: "day"; snapshot: DaySnapshot }
+  | { type: "done"; result: SimulationResult }
+  | { type: "error"; message: string };

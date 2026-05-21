@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal, Optional, Dict
 from pydantic import BaseModel, Field
 
 RelationshipType = Literal[
@@ -64,7 +64,7 @@ class World(BaseModel):
 
 
 class SimulationConfig(BaseModel):
-    days: Literal[7, 30] = 30
+    days: int = Field(default=30, ge=1, le=365)
     reasoning_agents_per_day: int = Field(default=8, ge=1, le=30)
 
 
@@ -95,6 +95,7 @@ class DaySnapshot(BaseModel):
     event_log: list[str]
     highlights: list[DayHighlight]
     metrics: MacroMetrics
+    active_event: Optional[str] = None
 
 
 class MacroMetrics(BaseModel):
@@ -119,6 +120,7 @@ class SimulationResult(BaseModel):
     initial_metrics: MacroMetrics
     final_metrics: MacroMetrics
     final_report: str
+    dynamic_events: Dict[str, str] = Field(default_factory=dict)
 
 
 DaySnapshot.model_rebuild()

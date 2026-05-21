@@ -56,3 +56,10 @@ button.btn-ghost:hover { background: #13171c; }
   margin-right: 4px;
   margin-bottom: 4px;
 }
+
+.text-muted { color: #4b5563; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px currentColor; }
+  50% { opacity: 0.5; box-shadow: 0 0 2px currentColor; }
+}

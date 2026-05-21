@@ -1,19 +1,24 @@
 from __future__ import annotations
 
+import asyncio
+import json as _json
 import os
+import queue as _queue
+import threading
 import uuid
 from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 load_dotenv()
 
 from models import (
     Agent, CharacterInput, World, WorldInput,
-    SimulationConfig, SimulationResult,
+    SimulationConfig, SimulationResult, DaySnapshot,
 )
 from state import store
 from simulation.engine import run_simulation
@@ -23,7 +28,7 @@ app = FastAPI(title="Tiny Society AI")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("FRONTEND_ORIGIN", "http://localhost:3000"), "*"],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -115,8 +120,8 @@ def set_event(wid: str, body: EventInput):
 
 
 class SimulateRequest(BaseModel):
-    days: int = 30
-    reasoning_agents_per_day: int = 8
+    days: int = Field(default=30, ge=1, le=365)
+    reasoning_agents_per_day: int = Field(default=8, ge=1, le=30)
     seed: int = 42
 
 
@@ -125,8 +130,6 @@ def simulate(wid: str, body: SimulateRequest):
     w = _require(wid)
     if not w.agents:
         raise HTTPException(400, "world has no agents")
-    if body.days not in (7, 30):
-        raise HTTPException(400, "days must be 7 or 30 for MVP")
     config = SimulationConfig(
         days=body.days,
         reasoning_agents_per_day=body.reasoning_agents_per_day,
@@ -134,6 +137,65 @@ def simulate(wid: str, body: SimulateRequest):
     result = run_simulation(w, config, seed=body.seed)
     store.save_result(wid, result)
     return result
+
+
+@app.post("/world/{wid}/simulate/stream")
+async def simulate_stream(wid: str, body: SimulateRequest):
+    w = _require(wid)
+    if not w.agents:
+        raise HTTPException(400, "world has no agents")
+    config = SimulationConfig(
+        days=body.days,
+        reasoning_agents_per_day=body.reasoning_agents_per_day,
+    )
+    return _make_stream_response(wid, w, config, body.seed, day_offset=0, initial_agents=None)
+
+
+class ContinueRequest(BaseModel):
+    days: int = Field(default=7, ge=1, le=365)
+    reasoning_agents_per_day: int = Field(default=8, ge=1, le=30)
+    seed: int = 42
+
+
+@app.post("/world/{wid}/simulate/continue", response_model=SimulationResult)
+def simulate_continue(wid: str, body: ContinueRequest):
+    w = _require(wid)
+    prev = store.get_result(wid)
+    if not prev:
+        raise HTTPException(400, "no previous simulation to continue from")
+    last_snap = prev.snapshots[-1]
+    config = SimulationConfig(
+        days=body.days,
+        reasoning_agents_per_day=body.reasoning_agents_per_day,
+    )
+    new_result = run_simulation(
+        w, config,
+        seed=body.seed,
+        initial_agents=last_snap.agents,
+        day_offset=last_snap.day,
+    )
+    merged = _merge_results(prev, new_result)
+    store.save_result(wid, merged)
+    return merged
+
+
+@app.post("/world/{wid}/simulate/continue/stream")
+async def simulate_continue_stream(wid: str, body: ContinueRequest):
+    w = _require(wid)
+    prev = store.get_result(wid)
+    if not prev:
+        raise HTTPException(400, "no previous simulation to continue from")
+    last_snap = prev.snapshots[-1]
+    config = SimulationConfig(
+        days=body.days,
+        reasoning_agents_per_day=body.reasoning_agents_per_day,
+    )
+    return _make_stream_response(
+        wid, w, config, body.seed,
+        day_offset=last_snap.day,
+        initial_agents=last_snap.agents,
+        prev_result=prev,
+    )
 
 
 @app.get("/world/{wid}/result", response_model=SimulationResult)
@@ -168,7 +230,6 @@ def agent_chat(wid: str, agent_id: str, body: ChatRequest):
     result = store.get_result(wid)
     world = _require(wid)
 
-    # Find agent in simulation snapshot or world
     agent = None
     if result:
         snap = next((s for s in result.snapshots if s.day == body.day), result.snapshots[-1])
@@ -183,7 +244,9 @@ def agent_chat(wid: str, agent_id: str, body: ChatRequest):
         for name, r in agent.relationships.items()
     ) or "  (none yet)"
 
-    memories = "\n".join(f"  - {m}" for m in (agent.long_term_memory[-6:] + agent.short_term_memory[-4:])) or "  (none)"
+    memories = "\n".join(
+        f"  - {m}" for m in (agent.long_term_memory[-6:] + agent.short_term_memory[-4:])
+    ) or "  (none)"
 
     user_prompt = (
         f"CHARACTER PROFILE\n"
@@ -208,8 +271,83 @@ def agent_chat(wid: str, agent_id: str, body: ChatRequest):
     return ChatResponse(reply=reply, agent_name=agent.name)
 
 
+# ─── helpers ──────────────────────────────────────────────────────────────────
+
 def _require(wid: str) -> World:
     w = store.get(wid)
     if not w:
         raise HTTPException(404, "world not found")
     return w
+
+
+def _merge_results(prev: SimulationResult, new: SimulationResult) -> SimulationResult:
+    last_day = new.snapshots[-1].day if new.snapshots else prev.snapshots[-1].day
+    return SimulationResult(
+        days=last_day,
+        snapshots=prev.snapshots + new.snapshots,
+        initial_metrics=prev.initial_metrics,
+        final_metrics=new.final_metrics,
+        final_report=new.final_report,
+        dynamic_events={**prev.dynamic_events, **new.dynamic_events},
+    )
+
+
+def _make_stream_response(
+    wid: str,
+    world: World,
+    config: SimulationConfig,
+    seed: int,
+    *,
+    day_offset: int,
+    initial_agents,
+    prev_result: Optional[SimulationResult] = None,
+) -> StreamingResponse:
+    q: _queue.Queue = _queue.Queue()
+    DONE = object()
+
+    def _run():
+        try:
+            def on_day(snap: DaySnapshot):
+                q.put(("day", snap))
+
+            result = run_simulation(
+                world, config,
+                seed=seed,
+                on_day=on_day,
+                initial_agents=initial_agents,
+                day_offset=day_offset,
+            )
+            if prev_result is not None:
+                result = _merge_results(prev_result, result)
+            store.save_result(wid, result)
+            q.put(("done", result))
+        except Exception as exc:
+            q.put(("error", str(exc)))
+
+    threading.Thread(target=_run, daemon=True).start()
+
+    async def event_gen():
+        loop = asyncio.get_running_loop()
+        while True:
+            kind, payload = await loop.run_in_executor(None, q.get)
+            if kind == "day":
+                data = _json.dumps({"type": "day", "snapshot": payload.model_dump()})
+                yield f"data: {data}\n\n"
+            elif kind == "done":
+                data = _json.dumps({"type": "done", "result": payload.model_dump()})
+                yield f"data: {data}\n\n"
+                break
+            elif kind == "error":
+                data = _json.dumps({"type": "error", "message": payload})
+                yield f"data: {data}\n\n"
+                break
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
