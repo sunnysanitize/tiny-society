@@ -9,6 +9,13 @@ import { SimulationView } from "@/components/SimulationView";
 
 type Phase = "setup" | "running" | "result";
 
+const SCANLINE_BG: React.CSSProperties = {
+  position: "fixed", inset: 0, pointerEvents: "none", zIndex: -1,
+  background:
+    "radial-gradient(ellipse at 20% 30%, rgba(0,255,136,0.04) 0%, transparent 55%)," +
+    "radial-gradient(ellipse at 80% 70%, rgba(0,212,255,0.03) 0%, transparent 55%)",
+};
+
 export default function Page() {
   const [worldId, setWorldId] = useState<string | null>(null);
   const [world, setWorld] = useState<World | null>(null);
@@ -20,44 +27,24 @@ export default function Page() {
   const abortRef = useRef(false);
 
   function reset() {
-    setWorldId(null);
-    setWorld(null);
-    setResult(null);
-    setPhase("setup");
-    setLiveSnaps([]);
-    setRunError(null);
+    setWorldId(null); setWorld(null); setResult(null);
+    setPhase("setup"); setLiveSnaps([]); setRunError(null);
   }
 
-  async function runStream(
-    wid: string,
-    w: World,
-    days: number,
-    perDay: number,
-    isContin = false,
-  ) {
+  async function runStream(wid: string, w: World, days: number, perDay: number, isContin = false) {
     abortRef.current = false;
-    setPhase("running");
-    setRunError(null);
+    setPhase("running"); setRunError(null);
     if (!isContin) setLiveSnaps([]);
     setTotalDays((isContin ? (result?.days ?? 0) : 0) + days);
     setWorld(w);
-
-    const stream = isContin
-      ? api.continueStream(wid, days, perDay)
-      : api.simulateStream(wid, days, perDay);
-
+    const stream = isContin ? api.continueStream(wid, days, perDay) : api.simulateStream(wid, days, perDay);
     try {
       for await (const event of stream) {
         if (abortRef.current) break;
         if (event.type === "day") {
-          setLiveSnaps((prev) => {
-            const next = isContin ? prev : [];
-            return [...next, event.snapshot];
-          });
+          setLiveSnaps((prev) => [...(isContin ? prev : []), event.snapshot]);
         } else if (event.type === "done") {
-          setResult(event.result);
-          setPhase("result");
-          return;
+          setResult(event.result); setPhase("result"); return;
         } else if (event.type === "error") {
           throw new Error(event.message);
         }
@@ -72,165 +59,200 @@ export default function Page() {
     if (!worldId || !world) return;
     runStream(worldId, world, days, perDay, false);
   }
-
   function handleContinue(days: number, perDay: number) {
     if (!worldId || !world) return;
     runStream(worldId, world, days, perDay, true);
   }
 
-  // Build a partial "live result" during streaming so SimulationView renders
   const liveResult: SimulationResult | null = (() => {
     if (liveSnaps.length === 0) return null;
-    const firstMetrics = liveSnaps[0].metrics;
-    const lastMetrics = liveSnaps[liveSnaps.length - 1].metrics;
-    return {
-      days: totalDays,
-      snapshots: liveSnaps,
-      initial_metrics: result?.initial_metrics ?? firstMetrics,
-      final_metrics: lastMetrics,
-      final_report: "",
-      dynamic_events: {},
-    };
+    const first = liveSnaps[0].metrics;
+    const last = liveSnaps[liveSnaps.length - 1].metrics;
+    return { days: totalDays, snapshots: liveSnaps, initial_metrics: result?.initial_metrics ?? first, final_metrics: last, final_report: "", dynamic_events: {} };
   })();
-
   const viewResult = phase === "result" ? result : liveResult ?? result;
 
   return (
-    <main style={{ maxWidth: 1400, margin: "0 auto", padding: "20px 24px" }}>
-      <header style={{
-        display: "flex", alignItems: "flex-end", justifyContent: "space-between",
-        marginBottom: 24,
-      }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9", margin: 0 }}>
-            Tiny Society AI
-          </h1>
-          <p style={{ fontSize: 12, color: "#374151", margin: "4px 0 0" }}>
-            Multi-agent social simulation · agents reason via LLM · watch society evolve
-          </p>
-        </div>
-        {worldId && (
-          <button
-            onClick={reset}
-            style={{
-              fontSize: 11, padding: "5px 14px", borderRadius: 6, cursor: "pointer",
-              background: "transparent", color: "#374151",
-              border: "1px solid #1a2030",
-            }}
-          >
-            New world
-          </button>
+    <>
+      {/* ambient background glow */}
+      <div style={SCANLINE_BG} />
+
+      <main className="page-enter" style={{ maxWidth: 1400, margin: "0 auto", padding: "20px 24px" }}>
+
+        {/* ── Title Bar ───────────────────────────────────────────────────── */}
+        <header style={{ marginBottom: 28 }}>
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "14px 20px",
+            background: "var(--surface)",
+            border: "1px solid var(--accent-dim)",
+            boxShadow: "0 0 20px rgba(0,255,136,0.12)",
+            position: "relative",
+          }}>
+            {/* corner brackets */}
+            <div style={{ position: "absolute", top: -2, left: -2, width: 14, height: 14, borderTop: "2px solid var(--accent)", borderLeft: "2px solid var(--accent)" }} />
+            <div style={{ position: "absolute", bottom: -2, right: -2, width: 14, height: 14, borderBottom: "2px solid var(--accent)", borderRight: "2px solid var(--accent)" }} />
+
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+                <div style={{
+                  width: 8, height: 8, borderRadius: "50%", background: "var(--accent)",
+                  boxShadow: "0 0 10px var(--accent)",
+                  animation: "neon-pulse 2s ease-in-out infinite",
+                }} />
+                <h1 className="font-pixel" style={{
+                  fontSize: 14, color: "var(--accent)", margin: 0,
+                  textShadow: "0 0 20px rgba(0,255,136,0.6)",
+                  animation: "title-flicker 10s infinite",
+                  letterSpacing: "0.05em",
+                }}>
+                  TINY SOCIETY AI
+                </h1>
+                <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", padding: "2px 6px", border: "1px solid #1a1a3a" }}>
+                  v1.0
+                </span>
+              </div>
+              <div style={{ fontSize: 10, color: "var(--text-dim)", letterSpacing: "0.08em", paddingLeft: 20 }}>
+                multi-agent social simulation · llm-powered agent reasoning
+              </div>
+            </div>
+
+            {worldId && (
+              <button
+                onClick={reset}
+                className="font-pixel"
+                style={{
+                  fontSize: 8, padding: "7px 14px", cursor: "pointer",
+                  background: "transparent", color: "var(--text-dim)",
+                  border: "1px solid #1a1a3a", letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  transition: "border-color 0.1s, color 0.1s",
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--red)"; (e.currentTarget as HTMLElement).style.color = "var(--red)"; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#1a1a3a"; (e.currentTarget as HTMLElement).style.color = "var(--text-dim)"; }}
+              >
+                ← QUIT
+              </button>
+            )}
+          </div>
+
+          {/* separator line */}
+          <div style={{ height: 1, background: "linear-gradient(90deg, transparent, var(--accent-dim), transparent)" }} />
+        </header>
+
+        {/* ── Setup: world creation ─────────────────────────────────────── */}
+        {phase === "setup" && !worldId && (
+          <div className="stagger-in" style={{ maxWidth: 680, margin: "0 auto" }}>
+            <WorldSetup onCreated={(wid, w) => { setWorldId(wid); setWorld(w); }} />
+          </div>
         )}
-      </header>
 
-      {/* Setup flow */}
-      {phase === "setup" && !worldId && (
-        <WorldSetup onCreated={(wid, w) => { setWorldId(wid); setWorld(w); }} />
-      )}
+        {/* ── Setup: characters + event ─────────────────────────────────── */}
+        {phase === "setup" && worldId && world && (
+          <div className="stagger-in" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <CharacterEditor worldId={worldId} world={world} onWorldChange={setWorld} />
+            <EventAndRun worldId={worldId} world={world} onWorldChange={setWorld} onRun={handleRun} />
+            {runError && <GameError message={runError} />}
+          </div>
+        )}
 
-      {phase === "setup" && worldId && world && (
-        <>
-          <CharacterEditor worldId={worldId} world={world} onWorldChange={setWorld} />
-          <div style={{ marginTop: 16 }}>
-            <EventAndRun
-              worldId={worldId}
-              world={world}
-              onWorldChange={setWorld}
-              onRun={handleRun}
+        {/* ── Live progress ─────────────────────────────────────────────── */}
+        {phase === "running" && (
+          <div style={{ marginBottom: 16 }}>
+            <LiveProgress
+              currentDay={liveSnaps.length > 0 ? liveSnaps[liveSnaps.length - 1].day : 0}
+              totalDays={totalDays}
+              latestLog={liveSnaps.length > 0 ? liveSnaps[liveSnaps.length - 1].event_log : []}
             />
           </div>
-          {runError && (
-            <div style={{
-              marginTop: 12, padding: "10px 14px", background: "#1a0a0a",
-              border: "1px solid #7f1d1d", borderRadius: 8,
-              fontSize: 12, color: "#f87171",
-            }}>
-              {runError}
-            </div>
-          )}
-        </>
-      )}
+        )}
 
-      {/* Live simulation view during streaming */}
-      {phase === "running" && (
-        <div style={{ marginBottom: 16 }}>
-          <LiveProgress
-            currentDay={liveSnaps.length > 0 ? liveSnaps[liveSnaps.length - 1].day : 0}
-            totalDays={totalDays}
-            latestLog={liveSnaps.length > 0 ? liveSnaps[liveSnaps.length - 1].event_log : []}
+        {/* ── Simulation view ───────────────────────────────────────────── */}
+        {viewResult && worldId && world && (
+          <SimulationView
+            result={viewResult}
+            world={world}
+            worldId={worldId}
+            isLive={phase === "running"}
+            onContinue={phase === "result" ? handleContinue : undefined}
           />
-        </div>
-      )}
+        )}
 
-      {/* Graph + inspector during streaming or after */}
-      {viewResult && worldId && world && (
-        <SimulationView
-          result={viewResult}
-          world={world}
-          worldId={worldId}
-          isLive={phase === "running"}
-          onContinue={phase === "result" ? handleContinue : undefined}
-        />
-      )}
-
-      {/* Error overlay on result page */}
-      {phase === "result" && runError && (
-        <div style={{
-          marginTop: 12, padding: "10px 14px", background: "#1a0a0a",
-          border: "1px solid #7f1d1d", borderRadius: 8,
-          fontSize: 12, color: "#f87171",
-        }}>
-          Continue failed: {runError}
-        </div>
-      )}
-    </main>
+        {phase === "result" && runError && <GameError message={`CONTINUE FAILED: ${runError}`} />}
+      </main>
+    </>
   );
 }
 
-function LiveProgress({
-  currentDay, totalDays, latestLog,
-}: {
+function GameError({ message }: { message: string }) {
+  return (
+    <div style={{
+      marginTop: 12, padding: "10px 16px",
+      background: "rgba(255,68,68,0.06)", border: "1px solid var(--red)",
+      boxShadow: "0 0 12px rgba(255,68,68,0.2)",
+      fontSize: 11, color: "var(--red)", fontFamily: "ui-monospace, monospace",
+      letterSpacing: "0.05em",
+    }}>
+      ✖ {message}
+    </div>
+  );
+}
+
+function LiveProgress({ currentDay, totalDays, latestLog }: {
   currentDay: number; totalDays: number; latestLog: string[];
 }) {
   const pct = totalDays > 0 ? Math.round((currentDay / totalDays) * 100) : 0;
+  const barFilled = Math.floor(pct / 2);
+  const barEmpty = 50 - barFilled;
+
   return (
     <div style={{
-      background: "#0d1117", border: "1px solid #1a2030", borderRadius: 10,
-      padding: "14px 18px",
+      background: "var(--surface)", border: "1px solid var(--accent-dim)",
+      boxShadow: "0 0 20px rgba(0,255,136,0.15)",
+      padding: "16px 20px", position: "relative",
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+      <div style={{ position: "absolute", top: -2, left: -2, width: 12, height: 12, borderTop: "2px solid var(--accent)", borderLeft: "2px solid var(--accent)" }} />
+      <div style={{ position: "absolute", bottom: -2, right: -2, width: 12, height: 12, borderBottom: "2px solid var(--accent)", borderRight: "2px solid var(--accent)" }} />
+
+      {/* header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
         <div style={{
-          width: 8, height: 8, borderRadius: "50%", background: "#22c55e",
-          boxShadow: "0 0 8px #22c55e", flexShrink: 0,
-          animation: "pulse 1.5s ease-in-out infinite",
+          width: 8, height: 8, borderRadius: "50%", background: "var(--accent)",
+          boxShadow: "0 0 8px var(--accent)", animation: "pulse 1.2s ease-in-out infinite",
         }} />
-        <span style={{ fontSize: 13, color: "#f1f5f9", fontWeight: 600 }}>
-          {currentDay === 0 ? "Starting simulation…" : `Day ${currentDay} of ${totalDays}`}
+        <span className="font-pixel" style={{ fontSize: 9, color: "var(--accent)", letterSpacing: "0.1em" }}>
+          {currentDay === 0 ? "INITIALIZING SIMULATION..." : `SIMULATING — DAY ${currentDay} / ${totalDays}`}
         </span>
-        <span style={{ fontSize: 11, color: "#374151", marginLeft: "auto" }}>
+        <span className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", marginLeft: "auto" }}>
           {pct}%
         </span>
       </div>
-      <div style={{
-        height: 3, background: "#111827", borderRadius: 2, overflow: "hidden", marginBottom: 12,
+
+      {/* pixel progress bar */}
+      <div className="font-pixel" style={{
+        fontSize: 8, letterSpacing: "0px",
+        color: "var(--accent)", marginBottom: 12,
+        fontFamily: "ui-monospace, monospace",
+        textShadow: "0 0 8px rgba(0,255,136,0.4)",
+        overflowX: "hidden", whiteSpace: "nowrap",
       }}>
-        <div style={{
-          height: "100%", width: `${pct}%`,
-          background: "linear-gradient(90deg, #1e3a5f, #2563eb)",
-          borderRadius: 2, transition: "width 0.6s ease",
-        }} />
+        {"▓".repeat(barFilled)}
+        <span style={{ color: "var(--text-muted)" }}>{"░".repeat(barEmpty)}</span>
       </div>
+
+      {/* log */}
       {latestLog.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          {latestLog.slice(-4).map((line, i) => (
+        <div style={{ display: "flex", flexDirection: "column", gap: 3, borderTop: "1px solid #0a1a0a", paddingTop: 10 }}>
+          {latestLog.slice(-4).map((line, i, arr) => (
             <div key={i} style={{
-              fontSize: 11, color: i === latestLog.slice(-4).length - 1 ? "#94a3b8" : "#374151",
-              lineHeight: 1.5,
-              opacity: 0.4 + (i / latestLog.slice(-4).length) * 0.6,
+              fontSize: 10, color: i === arr.length - 1 ? "var(--text)" : "var(--text-dim)",
+              lineHeight: 1.5, fontFamily: "ui-monospace, monospace",
+              opacity: 0.3 + (i / arr.length) * 0.7,
             }}>
-              {line}
+              <span style={{ color: "var(--accent-dim)", marginRight: 6 }}>›</span>{line}
             </div>
           ))}
+          <span className="blink" style={{ fontSize: 10, color: "var(--accent)", marginTop: 2 }}>█</span>
         </div>
       )}
     </div>

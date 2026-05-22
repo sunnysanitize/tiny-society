@@ -5,10 +5,10 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#0b0d10",
-        panel: "#13171c",
-        line: "#1f262e",
-        muted: "#6b7785",
+        ink:     "#05050f",
+        surface: "#0d0d1a",
+        line:    "#00994d",
+        muted:   "#4a5a8a",
       },
     },
   },

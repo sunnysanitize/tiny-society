@@ -36,6 +36,20 @@ const MOOD_COLOR: Record<Mood, string> = {
   confident:   "#2563eb",
 };
 
+const MOOD_SYMBOL: Record<Mood, string> = {
+  calm:        "≈",
+  excited:     "★",
+  frustrated:  "✖",
+  heartbroken: "♡",
+  ambitious:   "△",
+  anxious:     "?",
+  content:     "✓",
+  angry:       "!",
+  hopeful:     "✦",
+  lonely:      "○",
+  confident:   "◆",
+};
+
 const GROUP_PALETTE = [
   "#818cf8", "#34d399", "#fb923c", "#f472b6", "#38bdf8",
   "#a3e635", "#fbbf24", "#c084fc", "#2dd4bf", "#f87171",
@@ -152,7 +166,7 @@ function Defs() {
         <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
       </filter>
       <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-        <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1f262e" strokeWidth="0.5" />
+        <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(0,255,136,0.07)" strokeWidth="0.5" />
       </pattern>
       <marker id="arrow-influence" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
         <path d="M 0 0 L 6 3 L 0 6 Z" fill="#a855f7" opacity="0.8" />
@@ -222,8 +236,8 @@ export function RelationshipGraph({
     simNodes.current = nodes;
     simLinks.current = links;
 
-    // collision radius = node visual radius + name label height (14px) + buffer
-    const collisionR = (d: GraphNode) => nodeR(d.influence) + 28;
+    // collision radius = node visual radius + nameplate + influence bar + buffer
+    const collisionR = (d: GraphNode) => nodeR(d.influence) + 55;
 
     const sim = forceSimulation<GraphNode, GraphLink>(nodes)
       .force("charge", forceManyBody<GraphNode>().strength(-600).distanceMin(30).distanceMax(600))
@@ -350,47 +364,51 @@ export function RelationshipGraph({
   const selEdgeKey = selection?.kind === "edge" ? selection.key : null;
 
   return (
-    <div className="relative flex flex-col" style={{ height: "100%", background: "#080a0e", borderRadius: 12, overflow: "hidden" }}>
+    <div className="relative flex flex-col" style={{ height: "100%", background: "#03030a", overflow: "hidden" }}>
       {/* top controls */}
       <div style={{
-        display: "flex", alignItems: "center", gap: 10, padding: "8px 14px",
-        borderBottom: "1px solid #1a2030", background: "rgba(13,17,23,0.9)",
-        backdropFilter: "blur(8px)", zIndex: 10, flexShrink: 0,
+        display: "flex", alignItems: "center", gap: 10, padding: "7px 14px",
+        borderBottom: "1px solid rgba(0,255,136,0.1)", background: "rgba(5,5,15,0.95)",
+        zIndex: 10, flexShrink: 0,
       }}>
-        <span style={{ fontSize: 11, color: "#6b7785" }}>
-          {agents.length} agents · {graphLinks.length} connections
+        <span className="font-pixel" style={{ fontSize: 7, color: "rgba(0,255,136,0.5)", letterSpacing: "0.08em" }}>
+          {agents.length} AGENTS · {graphLinks.length} LINKS
         </span>
         <div style={{ flex: 1 }} />
         <button
           onClick={() => setShowLabels((v) => !v)}
+          className="font-pixel"
           style={{
-            fontSize: 11, padding: "3px 10px", borderRadius: 6, cursor: "pointer",
-            background: showLabels ? "#1e3a5f" : "transparent",
-            color: showLabels ? "#60a5fa" : "#6b7785",
-            border: `1px solid ${showLabels ? "#2563eb" : "#1f262e"}`,
+            fontSize: 6, padding: "4px 9px", cursor: "pointer", letterSpacing: "0.08em",
+            background: showLabels ? "rgba(0,212,255,0.1)" : "transparent",
+            color: showLabels ? "var(--cyan)" : "rgba(0,255,136,0.4)",
+            border: `1px solid ${showLabels ? "var(--cyan)" : "rgba(0,255,136,0.15)"}`,
+            textTransform: "uppercase",
           }}
         >
-          Edge labels
+          LABELS
         </button>
         <button
-          onClick={() => {
-            simRef.current?.alpha(0.5).restart();
-          }}
+          onClick={() => simRef.current?.alpha(0.5).restart()}
+          className="font-pixel"
           style={{
-            fontSize: 11, padding: "3px 10px", borderRadius: 6, cursor: "pointer",
-            background: "transparent", color: "#6b7785", border: "1px solid #1f262e",
+            fontSize: 6, padding: "4px 9px", cursor: "pointer", letterSpacing: "0.08em",
+            background: "transparent", color: "rgba(0,255,136,0.4)",
+            border: "1px solid rgba(0,255,136,0.15)", textTransform: "uppercase",
           }}
         >
-          Re-layout
+          LAYOUT
         </button>
         <button
           onClick={() => setTf({ x: 0, y: 0, k: 1 })}
+          className="font-pixel"
           style={{
-            fontSize: 11, padding: "3px 10px", borderRadius: 6, cursor: "pointer",
-            background: "transparent", color: "#6b7785", border: "1px solid #1f262e",
+            fontSize: 6, padding: "4px 9px", cursor: "pointer", letterSpacing: "0.08em",
+            background: "transparent", color: "rgba(0,255,136,0.4)",
+            border: "1px solid rgba(0,255,136,0.15)", textTransform: "uppercase",
           }}
         >
-          Reset view
+          RESET
         </button>
       </div>
 
@@ -460,6 +478,14 @@ export function RelationshipGraph({
             const moodColor = MOOD_COLOR[n.mood] || "#6b7785";
             const groupColor = n.groups.length ? (groupColors.get(n.groups[0]) ?? "#6b7785") : "#6b7785";
             const r = nodeR(n.influence);
+            const relCount = graphLinks.filter(l => {
+              const sid = typeof l.source === "object" ? (l.source as GraphNode).id : String(l.source);
+              const tid = typeof l.target === "object" ? (l.target as GraphNode).id : String(l.target);
+              return sid === n.id || tid === n.id;
+            }).length;
+            const infPct = Math.max(0, Math.min(1, n.influence / 25));
+            const barW = Math.max(r * 1.8, 48);
+            const nameplateW = Math.max(r * 2 + 10, n.name.length * 6.2 + 16);
             return (
               <g
                 key={n.id}
@@ -469,7 +495,7 @@ export function RelationshipGraph({
                 }}
                 transform="translate(0,0)"
                 style={{
-                  opacity: dimmed ? 0.15 : 1,
+                  opacity: dimmed ? 0.12 : 1,
                   cursor: "pointer",
                   transition: "opacity 0.2s",
                 }}
@@ -483,68 +509,110 @@ export function RelationshipGraph({
                 onMouseEnter={() => setHoveredNode(n.id)}
                 onMouseLeave={() => setHoveredNode(null)}
               >
-                {/* selection / hover glow */}
+                {/* rotating dashed selection ring */}
+                {selected && (
+                  <circle r={r + 13} fill="none" stroke="#60a5fa" strokeWidth={1.5}
+                    strokeDasharray="7 4" opacity={0.75}>
+                    <animateTransform attributeName="transform" type="rotate"
+                      from="0" to="360" dur="10s" repeatCount="indefinite" />
+                  </circle>
+                )}
+
+                {/* hover / selection glow */}
                 {(selected || hovered) && (
-                  <circle
-                    r={r + 9}
-                    fill="none"
+                  <circle r={r + 8} fill="none"
                     stroke={selected ? "#60a5fa" : groupColor}
-                    strokeWidth={selected ? 2.5 : 1.5}
-                    opacity={selected ? 0.8 : 0.4}
-                    style={{ filter: `blur(${selected ? 6 : 4}px)` }}
+                    strokeWidth={selected ? 3 : 2}
+                    opacity={0.65}
+                    style={{ filter: `blur(${selected ? 9 : 5}px)` }}
                   />
                 )}
+
                 {/* group color ring (outer) */}
-                <circle
-                  r={r + 5}
-                  fill="none"
-                  stroke={groupColor}
-                  strokeWidth={2.5}
-                  opacity={selected ? 1 : 0.55}
-                />
-                {/* mood ring (inner, thin) */}
-                <circle
-                  r={r + 1}
-                  fill="none"
-                  stroke={moodColor}
-                  strokeWidth={1}
-                  opacity={0.4}
-                />
+                <circle r={r + 5} fill="none" stroke={groupColor}
+                  strokeWidth={2.5} opacity={selected ? 1 : 0.55} />
+
+                {/* mood ring (inner) */}
+                <circle r={r + 1} fill="none" stroke={moodColor}
+                  strokeWidth={selected ? 2 : 1} opacity={selected ? 0.8 : 0.4} />
+
                 {/* node fill */}
-                <circle
-                  r={r}
-                  fill={selected ? "#162032" : "#0e1420"}
-                  stroke={selected ? "#2563eb" : groupColor}
-                  strokeWidth={selected ? 2 : 1.5}
-                />
-                {/* group color tint inside */}
+                <circle r={r} fill={selected ? "#060f18" : "#030309"}
+                  stroke={selected ? "#00ff88" : groupColor}
+                  strokeWidth={selected ? 2 : 1.5} />
+
+                {/* group color tint */}
                 <circle r={r} fill={groupColor} opacity={0.07} />
-                {/* inner highlight */}
-                <circle r={r * 0.55} cx={-r * 0.22} cy={-r * 0.22} fill="white" opacity={0.04} />
+
+                {/* inner specular highlight */}
+                <circle r={r * 0.55} cx={-r * 0.22} cy={-r * 0.22} fill="white" opacity={0.05} />
+
                 {/* initials */}
                 <text
+                  y={-1}
                   textAnchor="middle"
                   dominantBaseline="central"
                   fontSize={r * 0.58}
-                  fontWeight="600"
-                  fontFamily="ui-sans-serif, system-ui, sans-serif"
+                  fontWeight="700"
+                  fontFamily="ui-monospace, 'Courier New', monospace"
                   fill={selected ? "#93c5fd" : "rgba(230,232,235,0.9)"}
-                  style={{ pointerEvents: "none", letterSpacing: "0.03em" }}
+                  style={{ pointerEvents: "none", letterSpacing: "0.06em" }}
                 >
                   {initials(n.name)}
                 </text>
-                {/* name label below */}
-                <text
-                  y={r + 16}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fontSize={10}
-                  fontFamily="ui-sans-serif, system-ui, sans-serif"
-                  fill={selected ? "#e2e8f0" : "#94a3b8"}
-                  style={{ pointerEvents: "none" }}
-                >
-                  {n.name}
+
+                {/* mood badge — top right */}
+                <g transform={`translate(${r * 0.72}, ${-r * 0.72})`} style={{ pointerEvents: "none" }}>
+                  <circle r={9} fill={moodColor} opacity={0.92} />
+                  <circle r={9} fill="none" stroke="#000" strokeWidth={1} opacity={0.4} />
+                  <text textAnchor="middle" dominantBaseline="central"
+                    fontSize={8} fill="white" fontWeight="700"
+                    style={{ pointerEvents: "none" }}>
+                    {MOOD_SYMBOL[n.mood] ?? "?"}
+                  </text>
+                </g>
+
+                {/* relationship count badge — bottom right */}
+                {relCount > 0 && (
+                  <g transform={`translate(${r * 0.72}, ${r * 0.72})`} style={{ pointerEvents: "none" }}>
+                    <circle r={8} fill="#0b0f17" stroke={groupColor} strokeWidth={1.5} />
+                    <text textAnchor="middle" dominantBaseline="central"
+                      fontSize={8} fill={groupColor} fontWeight="700"
+                      style={{ pointerEvents: "none" }}>
+                      {relCount}
+                    </text>
+                  </g>
+                )}
+
+                {/* nameplate */}
+                <g transform={`translate(0, ${r + 10})`} style={{ pointerEvents: "none" }}>
+                  <rect x={-nameplateW / 2} y={-9} width={nameplateW} height={17} rx={3}
+                    fill="#0b0f17"
+                    stroke={selected ? "#2563eb" : groupColor}
+                    strokeWidth={selected ? 1.5 : 0.8}
+                    opacity={0.96} />
+                  <text textAnchor="middle" dominantBaseline="central"
+                    fontSize={10} fontWeight="600"
+                    fontFamily="ui-sans-serif, system-ui, sans-serif"
+                    fill={selected ? "#e2e8f0" : "#94a3b8"}
+                    style={{ pointerEvents: "none" }}>
+                    {n.name}
+                  </text>
+                </g>
+
+                {/* role label */}
+                <text y={r + 27} textAnchor="middle" dominantBaseline="central"
+                  fontSize={8.5} fontFamily="ui-sans-serif, system-ui, sans-serif"
+                  fill="#374151" style={{ pointerEvents: "none" }}>
+                  {n.role.length > 20 ? n.role.slice(0, 19) + "…" : n.role}
                 </text>
+
+                {/* influence bar */}
+                <g transform={`translate(0, ${r + 38})`} style={{ pointerEvents: "none" }}>
+                  <rect x={-barW / 2} y={0} width={barW} height={3} rx={1.5} fill="#111827" />
+                  <rect x={-barW / 2} y={0} width={barW * infPct} height={3} rx={1.5}
+                    fill={moodColor} opacity={0.85} />
+                </g>
               </g>
             );
           })}
@@ -553,11 +621,10 @@ export function RelationshipGraph({
 
       {/* legend */}
       <div style={{
-        borderTop: "1px solid #1a2030",
-        background: "rgba(13,17,23,0.9)", backdropFilter: "blur(8px)", flexShrink: 0,
+        borderTop: "1px solid rgba(0,255,136,0.1)",
+        background: "rgba(3,3,10,0.97)", flexShrink: 0,
       }}>
-        {/* edge types */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "5px 12px", padding: "5px 14px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", padding: "5px 14px" }}>
           {(Object.entries(EDGE) as [RelationshipType, typeof EDGE[RelationshipType]][]).map(([t, cfg]) => (
             <span key={t} style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <svg width={16} height={4}>
@@ -566,27 +633,20 @@ export function RelationshipGraph({
                   strokeDasharray={cfg.dash === "none" ? undefined : cfg.dash}
                 />
               </svg>
-              <span style={{ fontSize: 9, color: "#6b7785" }}>{cfg.label}</span>
+              <span className="font-pixel" style={{ fontSize: 6, color: cfg.color, letterSpacing: "0.06em" }}>{cfg.label.toUpperCase()}</span>
             </span>
           ))}
-          <span style={{ fontSize: 9, color: "#374151", marginLeft: "auto", fontStyle: "italic" }}>
-            inner ring = mood · size = influence
-          </span>
         </div>
-        {/* group colors */}
         {groupColors.size > 0 && (
           <div style={{
             display: "flex", flexWrap: "wrap", gap: "4px 10px",
-            padding: "4px 14px 6px", borderTop: "1px solid #0f1520",
+            padding: "3px 14px 6px", borderTop: "1px solid rgba(0,255,136,0.05)",
           }}>
-            <span style={{ fontSize: 9, color: "#374151", marginRight: 4, alignSelf: "center" }}>Groups:</span>
+            <span className="font-pixel" style={{ fontSize: 6, color: "rgba(0,255,136,0.3)", marginRight: 4, alignSelf: "center", letterSpacing: "0.08em" }}>FACTIONS</span>
             {Array.from(groupColors.entries()).map(([group, color]) => (
               <span key={group} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <span style={{
-                  width: 8, height: 8, borderRadius: "50%", background: color,
-                  flexShrink: 0, opacity: 0.85,
-                }} />
-                <span style={{ fontSize: 9, color: "#6b7785" }}>{group}</span>
+                <span style={{ width: 6, height: 6, background: color, flexShrink: 0, boxShadow: `0 0 4px ${color}` }} />
+                <span className="font-pixel" style={{ fontSize: 6, color: "rgba(200,216,240,0.5)", letterSpacing: "0.04em" }}>{group}</span>
               </span>
             ))}
           </div>

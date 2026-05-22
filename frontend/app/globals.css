@@ -2,64 +2,213 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body {
-  background: #0b0d10;
-  color: #e6e8eb;
+/* ── Tomodachi Life-inspired palette ──────────────────────────────────────── */
+:root {
+  --accent:      #ff6eb4;   /* hot pink — primary action */
+  --accent-dim:  #d94f94;   /* pressed pink */
+  --cyan:        #4ec5f0;   /* sky blue */
+  --gold:        #ffd43b;   /* warm yellow */
+  --green:       #51cf66;   /* fresh green */
+  --red:         #ff6b6b;   /* coral red */
+  --purple:      #cc5de8;   /* bright purple */
+  --pink:        #ff6eb4;
+  --orange:      #ff922b;
+  --bg:          #eef0ff;   /* soft lavender background */
+  --surface:     #ffffff;
+  --surface-2:   #f8f6ff;
+  --text:        #2d3a50;
+  --text-dim:    #7a8a9e;
+  --text-muted:  #bcc5d0;
+  --border:      #ddd6f8;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────────── */
+html {
+  background: var(--bg);
+}
+
+body {
+  background: linear-gradient(160deg, #dff0ff 0%, #eef0ff 45%, #fce8ff 100%);
+  background-attachment: fixed;
+  color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
 }
 
+/* ── Panel / card ─────────────────────────────────────────────────────────── */
 .panel {
-  background: #13171c;
-  border: 1px solid #1f262e;
-  border-radius: 10px;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 6px 24px rgba(100, 80, 200, 0.09);
+  position: relative;
 }
+/* remove dark-mode corner brackets */
+.panel::before, .panel::after { display: none; }
 
+/* ── Form elements ────────────────────────────────────────────────────────── */
 input, textarea, select, button {
   font: inherit;
   color: inherit;
 }
 
 input, textarea, select {
-  background: #0b0d10;
-  border: 1px solid #1f262e;
-  border-radius: 6px;
-  padding: 6px 8px;
+  background: var(--surface-2);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
   width: 100%;
+  color: var(--text);
+  caret-color: var(--accent);
+  font-size: 13px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+input::placeholder, textarea::placeholder {
+  color: var(--text-muted);
+}
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 110, 180, 0.14);
+  background: var(--surface);
 }
 
+/* ── Primary button (Tomodachi push-down style) ───────────────────────────── */
 button.btn {
-  background: #2563eb;
-  border: 1px solid #2563eb;
-  border-radius: 6px;
-  padding: 6px 12px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 20px;
   cursor: pointer;
+  font-family: var(--font-pixel, ui-sans-serif, sans-serif);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  box-shadow: 0 4px 0 var(--accent-dim);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  white-space: nowrap;
 }
-button.btn:hover { background: #1d4ed8; }
-button.btn:disabled { background: #283042; border-color: #283042; cursor: not-allowed; }
+button.btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 0 var(--accent-dim);
+}
+button.btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 var(--accent-dim);
+}
+button.btn:disabled {
+  background: #ddd;
+  color: #aaa;
+  box-shadow: 0 4px 0 #bbb;
+  cursor: not-allowed;
+}
 
+/* ── Ghost button ─────────────────────────────────────────────────────────── */
 button.btn-ghost {
-  background: transparent;
-  border: 1px solid #1f262e;
-  border-radius: 6px;
-  padding: 6px 12px;
+  background: var(--surface);
+  color: var(--cyan);
+  border: 2px solid var(--cyan);
+  border-radius: 10px;
+  padding: 8px 14px;
   cursor: pointer;
+  font-family: var(--font-pixel, ui-sans-serif, sans-serif);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  box-shadow: 0 4px 0 #2aa8d4;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.1s;
+  white-space: nowrap;
 }
-button.btn-ghost:hover { background: #13171c; }
+button.btn-ghost:hover:not(:disabled) {
+  background: #e8f8ff;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 0 #2aa8d4;
+}
+button.btn-ghost:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #2aa8d4;
+}
+button.btn-ghost:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  box-shadow: none;
+}
 
+/* ── Tag pill ─────────────────────────────────────────────────────────────── */
 .tag {
   display: inline-block;
-  font-size: 11px;
-  padding: 2px 7px;
+  font-size: 9px;
+  padding: 3px 10px;
   border-radius: 999px;
-  background: #1f262e;
-  color: #c2cad4;
+  background: #eef1ff;
+  color: #6a7ee0;
+  border: 1.5px solid #d0d8f8;
   margin-right: 4px;
   margin-bottom: 4px;
+  font-family: var(--font-pixel, sans-serif);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-.text-muted { color: #4b5563; }
+.text-muted { color: var(--text-dim); }
+
+/* ── Pixel font ───────────────────────────────────────────────────────────── */
+.font-pixel { font-family: var(--font-pixel, "Courier New", monospace); }
+
+/* ── Game divider ─────────────────────────────────────────────────────────── */
+.game-divider {
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+  margin: 12px 0;
+  border-radius: 999px;
+}
+
+/* ── Animations ───────────────────────────────────────────────────────────── */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter { animation: page-in 0.45s ease-out both; }
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.stagger-in > * {
+  opacity: 0;
+  animation: fade-up 0.4s ease-out forwards;
+}
+.stagger-in > *:nth-child(1) { animation-delay: 0.05s; }
+.stagger-in > *:nth-child(2) { animation-delay: 0.16s; }
+.stagger-in > *:nth-child(3) { animation-delay: 0.27s; }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.blink { animation: blink 1s step-end infinite; }
+
+@keyframes neon-pulse {
+  0%, 100% { opacity: 0.7; }
+  50%       { opacity: 1; }
+}
+
+@keyframes bounce-in {
+  0%   { opacity: 0; transform: scale(0.85) translateY(8px); }
+  60%  { transform: scale(1.04) translateY(-3px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 6px currentColor; }
-  50% { opacity: 0.5; box-shadow: 0 0 2px currentColor; }
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
 }
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #f0eeff; border-radius: 999px; }
+::-webkit-scrollbar-thumb { background: #d0c8f0; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }

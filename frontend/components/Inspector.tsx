@@ -1,10 +1,7 @@
 "use client";
-
 import { useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { Agent, MacroMetrics, RelationshipType, Mood } from "@/lib/types";
-
-// ─── palette ─────────────────────────────────────────────────────────────────
 
 const REL_COLOR: Record<RelationshipType, string> = {
   friendship: "#22c55e", romance: "#f472b6", rivalry: "#ef4444",
@@ -21,75 +18,47 @@ const MOOD_COLOR: Record<Mood, string> = {
 
 const MOOD_DESC: Record<Mood, string> = {
   calm: "settled and composed", excited: "buzzing with energy",
-  frustrated: "wound tight and irritable", heartbroken: "quietly devastated",
-  ambitious: "hungry and driven", anxious: "on edge, overthinking",
-  content: "at ease with where things stand", angry: "simmering and reactive",
-  hopeful: "looking forward with cautious optimism", lonely: "drifting at the edges",
+  frustrated: "wound tight", heartbroken: "quietly devastated",
+  ambitious: "hungry and driven", anxious: "on edge",
+  content: "at ease", angry: "simmering",
+  hopeful: "cautiously optimistic", lonely: "drifting",
   confident: "assured and decisive",
 };
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
-
 function buildNarrative(agent: Agent): string {
-  const traitStr = agent.traits.length
-    ? agent.traits.slice(0, 3).join(", ")
-    : "unremarkable";
-  const goalStr = agent.goals.length
-    ? agent.goals[0]
-    : "no clear direction";
-  const relCount = Object.keys(agent.relationships).length;
-  const topRel = Object.entries(agent.relationships).sort(
-    (a, b) => Math.abs(b[1].strength) - Math.abs(a[1].strength)
-  )[0];
+  const traitStr = agent.traits.slice(0, 3).join(", ") || "unremarkable";
   const moodLine = MOOD_DESC[agent.mood] || agent.mood;
-
-  let narrative = `${agent.name} is a ${agent.role} — ${traitStr}. Right now they're ${moodLine}.`;
-
-  if (agent.goals.length) {
-    narrative += ` Their main drive is to ${goalStr}.`;
-  }
-  if (topRel) {
-    const [name, rel] = topRel;
-    narrative += ` Their most significant connection is with ${name} — a ${rel.type} that runs ${rel.strength > 0.6 ? "deep" : rel.strength < 0.2 ? "shallow" : "somewhere in the middle"}.`;
-  } else if (relCount === 0) {
-    narrative += " They haven't formed any meaningful connections yet.";
-  }
-  if (agent.long_term_memory.length) {
-    narrative += ` One thing that stuck: "${agent.long_term_memory[agent.long_term_memory.length - 1]}"`;
-  }
-  return narrative;
+  const topRel = Object.entries(agent.relationships).sort((a, b) => Math.abs(b[1].strength) - Math.abs(a[1].strength))[0];
+  let s = `${agent.name} is a ${agent.role} — ${traitStr}. Right now they're ${moodLine}.`;
+  if (agent.goals.length) s += ` Their drive: to ${agent.goals[0]}.`;
+  if (topRel) s += ` Key connection: ${topRel[0]} (${topRel[1].type}).`;
+  if (agent.long_term_memory.length) s += ` "${agent.long_term_memory[agent.long_term_memory.length - 1]}"`;
+  return s;
 }
 
-function buildEdgeNarrative(
-  agentA: Agent, agentB: Agent, relType: RelationshipType, strength: number
-): string {
-  const descriptions: Record<RelationshipType, (a: string, b: string, s: number) => string> = {
-    friendship: (a, b, s) => `${a} and ${b} are friends${s > 0.7 ? " — the kind that actually show up for each other" : s < 0.3 ? ", though it's still early and fragile" : ""}. `,
-    romance: (a, b, s) => `There's a romantic thread between ${a} and ${b}${s > 0.6 ? " that's become hard to ignore" : " — still uncertain, still charged"}. `,
-    rivalry: (a, b, s) => `${a} and ${b} are rivals${s > 0.7 ? ". The tension between them is a defining feature of this social world" : ". They keep score, even if quietly"}. `,
-    trust: (a, b, s) => `${a} trusts ${b}${s > 0.6 ? " deeply — more than most" : " to a degree, though it hasn't been fully tested yet"}. `,
-    conflict: (a, b, s) => `${a} and ${b} are in conflict${s > 0.6 ? ". Something specific happened that hasn't been resolved" : " — a low-grade friction that colors their interactions"}. `,
-    influence: (a, b, s) => `${a} has influence over ${b}${s > 0.6 ? " — enough to shift decisions and moods" : ", though ${b} doesn't always realize it"}. `,
-    alliance: (a, b, s) => `${a} and ${b} are aligned. They've found enough common ground to move together. `,
-    group_membership: (a, b, s) => `${a} and ${b} share a group — a structural connection that shapes how often they interact. `,
+function buildEdgeNarrative(a: Agent, b: Agent, rel: RelationshipType, strength: number): string {
+  const descs: Record<RelationshipType, string> = {
+    friendship: `${a.name} and ${b.name} are friends${strength > 0.7 ? " — the real kind" : ""}.`,
+    romance: `There's a romantic thread between ${a.name} and ${b.name}${strength > 0.6 ? " — hard to ignore now" : " — still uncertain"}.`,
+    rivalry: `${a.name} and ${b.name} are rivals. They keep score.`,
+    trust: `${a.name} trusts ${b.name}${strength > 0.6 ? " deeply" : " to a degree"}.`,
+    conflict: `${a.name} and ${b.name} are in conflict${strength > 0.6 ? " — something specific happened" : " — low-grade friction"}.`,
+    influence: `${a.name} has influence over ${b.name}.`,
+    alliance: `${a.name} and ${b.name} are strategically aligned.`,
+    group_membership: `${a.name} and ${b.name} share a group — structural connection.`,
   };
-  const desc = descriptions[relType]?.(agentA.name, agentB.name, strength) ?? "";
-  const sharedGroups = agentA.groups.filter(g => agentB.groups.includes(g));
-  const suffix = sharedGroups.length
-    ? `They're both part of: ${sharedGroups.join(", ")}.`
-    : "";
-  return (desc + suffix).trim();
+  return descs[rel] ?? "";
 }
 
-// ─── sub-components ───────────────────────────────────────────────────────────
+// ── sub-components ─────────────────────────────────────────────────────────────
 
 function Divider() {
-  return <div style={{ height: 1, background: "#1a2030", margin: "16px 0" }} />;
+  return <div style={{ height: 1, background: "#0a1a0a", margin: "12px 0" }} />;
 }
 
-function Label({ children }: { children: React.ReactNode }) {
+function Label({ children, color = "var(--text-dim)" }: { children: React.ReactNode; color?: string }) {
   return (
-    <div style={{ fontSize: 10, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
+    <div className="font-pixel" style={{ fontSize: 7, color, letterSpacing: "0.12em", marginBottom: 6, textTransform: "uppercase" }}>
       {children}
     </div>
   );
@@ -98,25 +67,30 @@ function Label({ children }: { children: React.ReactNode }) {
 function Tag({ label, color }: { label: string; color?: string }) {
   return (
     <span style={{
-      display: "inline-block", fontSize: 11, padding: "2px 8px", borderRadius: 999,
-      background: color ? `${color}1a` : "#111827",
-      color: color || "#6b7785",
-      border: `1px solid ${color ? `${color}35` : "#1e2b3a"}`,
+      display: "inline-block", fontSize: 8, padding: "2px 7px",
+      background: color ? `${color}12` : "rgba(0,212,255,0.06)",
+      color: color ?? "var(--cyan)",
+      border: `1px solid ${color ? `${color}30` : "rgba(0,212,255,0.22)"}`,
       marginRight: 4, marginBottom: 4,
+      fontFamily: "var(--font-pixel, monospace)", textTransform: "uppercase",
     }}>{label}</span>
   );
 }
 
-function StrengthBar({ value, color }: { value: number; color: string }) {
-  const pct = Math.min(100, Math.abs(value) * 100);
+function HpBar({ value, color, max = 1 }: { value: number; color: string; max?: number }) {
+  const pct = Math.min(100, (Math.abs(value) / max) * 100);
   return (
-    <div style={{ height: 3, background: "#111827", borderRadius: 2, overflow: "hidden" }}>
-      <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 2 }} />
+    <div style={{ height: 5, background: "#06060f", border: "1px solid #1a1a3a", overflow: "hidden" }}>
+      <div style={{
+        width: `${pct}%`, height: "100%",
+        background: color, boxShadow: `0 0 4px ${color}`,
+        transition: "width 0.3s ease",
+      }} />
     </div>
   );
 }
 
-// ─── Agent Chat ───────────────────────────────────────────────────────────────
+// ── Agent Chat ─────────────────────────────────────────────────────────────────
 
 function AgentChat({ worldId, agentId, agentName, currentDay }: {
   worldId: string; agentId: string; agentName: string; currentDay: number;
@@ -136,7 +110,7 @@ function AgentChat({ worldId, agentId, agentName, currentDay }: {
       const { reply } = await api.agentChat(worldId, agentId, msg, currentDay);
       setMessages(m => [...m, { role: "agent", text: reply }]);
     } catch {
-      setMessages(m => [...m, { role: "agent", text: "(No response — check backend and LLM provider.)" }]);
+      setMessages(m => [...m, { role: "agent", text: "(No response — check LLM provider.)" }]);
     } finally {
       setLoading(false);
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
@@ -145,163 +119,138 @@ function AgentChat({ worldId, agentId, agentName, currentDay }: {
 
   return (
     <div>
-      <Label>Talk to {agentName}</Label>
+      <Label color="var(--purple)">◌ DIALOGUE — {agentName}</Label>
       <div style={{
-        background: "#080d13", borderRadius: 8, border: "1px solid #1a2030",
-        padding: 10, minHeight: 80, maxHeight: 220, overflowY: "auto",
-        marginBottom: 8, display: "flex", flexDirection: "column", gap: 8,
+        background: "#020208", border: "1px solid #1a1a3a",
+        padding: 10, minHeight: 70, maxHeight: 200, overflowY: "auto",
+        marginBottom: 7, display: "flex", flexDirection: "column", gap: 7,
       }}>
         {messages.length === 0 && (
-          <div style={{ fontSize: 11, color: "#374151", fontStyle: "italic" }}>
-            Ask {agentName} anything. They'll respond in character.
+          <div style={{ fontSize: 9, color: "var(--text-dim)", fontStyle: "italic", fontFamily: "ui-monospace" }}>
+            {agentName} is ready. Ask anything.
+            <span className="blink" style={{ color: "var(--accent)", marginLeft: 2 }}>█</span>
           </div>
         )}
         {messages.map((m, i) => (
           <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-            <span style={{
-              fontSize: 10, color: m.role === "user" ? "#60a5fa" : "#a855f7",
-              flexShrink: 0, paddingTop: 1, fontWeight: 600,
+            <span className="font-pixel" style={{
+              fontSize: 6, color: m.role === "user" ? "var(--cyan)" : "var(--purple)",
+              flexShrink: 0, paddingTop: 2, letterSpacing: "0.05em",
             }}>
-              {m.role === "user" ? "You" : agentName}
+              {m.role === "user" ? "YOU" : agentName.slice(0, 6).toUpperCase()}
             </span>
-            <span style={{ fontSize: 12, color: m.role === "user" ? "#94a3b8" : "#e2e8f0", lineHeight: 1.5 }}>
+            <span style={{ fontSize: 10, color: m.role === "user" ? "var(--text-dim)" : "var(--text)", lineHeight: 1.5, fontFamily: "ui-monospace" }}>
               {m.text}
             </span>
           </div>
         ))}
         {loading && (
-          <div style={{ fontSize: 11, color: "#374151", fontStyle: "italic" }}>
-            {agentName} is thinking...
+          <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace" }}>
+            {agentName} is thinking
+            <span className="blink" style={{ color: "var(--accent)" }}>█</span>
           </div>
         )}
         <div ref={bottomRef} />
       </div>
-      <div style={{ display: "flex", gap: 6 }}>
+      <div style={{ display: "flex", gap: 5 }}>
         <input
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === "Enter" && send()}
-          placeholder={`Message ${agentName}...`}
-          style={{
-            flex: 1, background: "#0e1420", border: "1px solid #1e2b3a",
-            borderRadius: 6, padding: "5px 9px", fontSize: 12, color: "#e2e8f0",
-          }}
+          placeholder={`message ${agentName}...`}
+          style={{ flex: 1, fontSize: 11 }}
         />
-        <button
-          onClick={send}
-          disabled={loading || !input.trim()}
-          style={{
-            background: loading || !input.trim() ? "#111827" : "#1e3a5f",
-            color: loading || !input.trim() ? "#374151" : "#60a5fa",
-            border: "1px solid #1e2b3a", borderRadius: 6,
-            padding: "5px 12px", fontSize: 12, cursor: "pointer",
-          }}
-        >
-          Send
+        <button onClick={send} disabled={loading || !input.trim()} className="btn"
+          style={{ padding: "5px 12px", fontSize: 8 }}>
+          SEND
         </button>
       </div>
     </div>
   );
 }
 
-// ─── Agent Inspector ──────────────────────────────────────────────────────────
+// ── Agent panel ────────────────────────────────────────────────────────────────
 
 function AgentInspector({ agent, allAgents, worldId, currentDay }: {
   agent: Agent; allAgents: Agent[]; worldId: string | null; currentDay: number;
 }) {
   const moodColor = MOOD_COLOR[agent.mood] || "#6b7785";
-  const narrative = buildNarrative(agent);
-  const rels = Object.entries(agent.relationships).sort(
-    (a, b) => Math.abs(b[1].strength) - Math.abs(a[1].strength)
-  );
+  const rels = Object.entries(agent.relationships).sort((a, b) => Math.abs(b[1].strength) - Math.abs(a[1].strength));
 
   return (
     <div>
-      {/* avatar + header */}
+      {/* Character header */}
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 14 }}>
         <div style={{
-          width: 52, height: 52, borderRadius: "50%", flexShrink: 0,
-          background: `radial-gradient(circle at 35% 35%, ${moodColor}30, #0e1420)`,
+          width: 48, height: 48, flexShrink: 0,
+          background: `radial-gradient(circle at 35% 35%, ${moodColor}25, #020208)`,
           border: `2px solid ${moodColor}`,
-          boxShadow: `0 0 16px ${moodColor}40`,
+          boxShadow: `0 0 14px ${moodColor}50`,
           display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 17, fontWeight: 700, color: "#f1f5f9",
         }}>
-          {agent.name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase()}
+          <span className="font-pixel" style={{ fontSize: 10, color: "var(--text)", letterSpacing: 0 }}>
+            {agent.name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase()}
+          </span>
         </div>
         <div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#f1f5f9" }}>{agent.name}</div>
-          <div style={{ fontSize: 12, color: "#475569", marginTop: 1 }}>{agent.role}</div>
-          <div style={{ display: "flex", gap: 6, marginTop: 5 }}>
+          <div className="font-pixel" style={{ fontSize: 10, color: "var(--text)", marginBottom: 4, letterSpacing: "0.05em" }}>{agent.name}</div>
+          <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace", marginBottom: 5 }}>{agent.role}</div>
+          <div style={{ display: "flex", gap: 5 }}>
             <span style={{
-              fontSize: 11, padding: "2px 8px", borderRadius: 999,
-              background: `${moodColor}1a`, color: moodColor, border: `1px solid ${moodColor}35`,
+              fontSize: 8, padding: "2px 7px",
+              background: `${moodColor}12`, color: moodColor, border: `1px solid ${moodColor}35`,
+              fontFamily: "var(--font-pixel)", textTransform: "uppercase",
             }}>{agent.mood}</span>
             <span style={{
-              fontSize: 11, padding: "2px 8px", borderRadius: 999,
-              background: "#111827", color: "#475569", border: "1px solid #1e2b3a",
+              fontSize: 8, padding: "2px 7px",
+              background: "rgba(0,255,136,0.06)", color: "var(--accent)", border: "1px solid rgba(0,255,136,0.2)",
+              fontFamily: "var(--font-pixel)",
             }}>
-              {agent.influence_score >= 0 ? "+" : ""}{agent.influence_score.toFixed(1)} influence
+              {agent.influence_score >= 0 ? "+" : ""}{agent.influence_score.toFixed(1)} INF
             </span>
           </div>
         </div>
       </div>
 
-      {/* narrative summary */}
+      {/* narrative */}
       <div style={{
-        fontSize: 12, color: "#94a3b8", lineHeight: 1.65,
-        padding: "10px 12px", background: "#080d13",
-        borderRadius: 8, border: "1px solid #111827", marginBottom: 16,
+        fontSize: 10, color: "var(--text-dim)", lineHeight: 1.7,
+        padding: "8px 10px", background: "#020208",
+        border: "1px solid #0a0a1a", marginBottom: 14, fontFamily: "ui-monospace",
       }}>
-        {narrative}
+        {buildNarrative(agent)}
       </div>
 
       <Divider />
 
-      {/* traits */}
       {agent.traits.length > 0 && (
-        <>
-          <Label>Personality</Label>
-          <div style={{ marginBottom: 14 }}>
-            {agent.traits.map(t => <Tag key={t} label={t} />)}
-          </div>
-        </>
+        <><Label>TRAITS</Label>
+        <div style={{ marginBottom: 12 }}>{agent.traits.map(t => <Tag key={t} label={t} />)}</div></>
       )}
 
-      {/* goals */}
       {agent.goals.length > 0 && (
-        <>
-          <Label>Wants</Label>
-          <div style={{ marginBottom: 14 }}>
-            {agent.goals.map((g, i) => (
-              <div key={i} style={{
-                fontSize: 12, color: "#94a3b8", padding: "5px 10px",
-                background: "#080d13", borderRadius: 6, marginBottom: 4,
-                borderLeft: "2px solid #1e3a5f",
-              }}>
-                {g}
-              </div>
-            ))}
-          </div>
-        </>
+        <><Label>OBJECTIVES</Label>
+        <div style={{ marginBottom: 12 }}>
+          {agent.goals.map((g, i) => (
+            <div key={i} style={{
+              fontSize: 10, color: "var(--text-dim)", padding: "5px 8px",
+              background: "#020208", marginBottom: 3, borderLeft: "2px solid var(--accent-dim)",
+              fontFamily: "ui-monospace",
+            }}>{g}</div>
+          ))}
+        </div></>
       )}
 
-      {/* groups */}
       {agent.groups.length > 0 && (
-        <>
-          <Label>Groups</Label>
-          <div style={{ marginBottom: 14 }}>
-            {agent.groups.map(g => <Tag key={g} label={g} color="#06b6d4" />)}
-          </div>
-        </>
+        <><Label>FACTIONS</Label>
+        <div style={{ marginBottom: 12 }}>{agent.groups.map(g => <Tag key={g} label={g} color="var(--cyan)" />)}</div></>
       )}
 
-      {/* relationships */}
       {rels.length > 0 && (
         <>
           <Divider />
-          <Label>Relationships ({rels.length})</Label>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
+          <Label>RELATIONSHIPS [{rels.length}]</Label>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
             {rels.map(([name, r]) => {
               const color = REL_COLOR[r.type] || "#6b7785";
               const other = allAgents.find(a => a.name === name);
@@ -310,24 +259,25 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <div style={{
-                        width: 24, height: 24, borderRadius: "50%", background: "#0e1420",
-                        border: `1px solid ${color}60`,
+                        width: 22, height: 22, background: "#06060f",
+                        border: `1px solid ${color}50`,
                         display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 9, color: "#94a3b8", flexShrink: 0,
+                        flexShrink: 0,
                       }}>
-                        {name.slice(0, 2).toUpperCase()}
+                        <span style={{ fontSize: 7, color: "var(--text-dim)", fontFamily: "var(--font-pixel)" }}>
+                          {name.slice(0, 2).toUpperCase()}
+                        </span>
                       </div>
-                      <span style={{ fontSize: 12, color: "#e2e8f0" }}>{name}</span>
-                      {other && (
-                        <span style={{ fontSize: 10, color: "#374151" }}>{other.role}</span>
-                      )}
+                      <span style={{ fontSize: 10, color: "var(--text)", fontFamily: "ui-monospace" }}>{name}</span>
+                      {other && <span style={{ fontSize: 8, color: "var(--text-dim)", fontFamily: "ui-monospace" }}>{other.role}</span>}
                     </div>
                     <span style={{
-                      fontSize: 10, padding: "1px 6px", borderRadius: 999,
-                      background: `${color}18`, color, border: `1px solid ${color}30`,
+                      fontSize: 7, padding: "1px 5px",
+                      background: `${color}12`, color, border: `1px solid ${color}28`,
+                      fontFamily: "var(--font-pixel)", textTransform: "uppercase",
                     }}>{r.type}</span>
                   </div>
-                  <StrengthBar value={r.strength} color={color} />
+                  <HpBar value={r.strength} color={color} />
                 </div>
               );
             })}
@@ -335,29 +285,26 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
         </>
       )}
 
-      {/* memories */}
       {(agent.long_term_memory.length > 0 || agent.short_term_memory.length > 0) && (
         <>
           <Divider />
-          <Label>Memory</Label>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 14 }}>
+          <Label>MEMORY LOG</Label>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
             {agent.short_term_memory.slice(-3).map((m, i) => (
               <div key={`st-${i}`} style={{
-                fontSize: 11, color: "#94a3b8", padding: "6px 10px",
-                background: "#080d13", borderRadius: 6,
-                borderLeft: "2px solid #1e3a5f",
+                fontSize: 9, color: "var(--text-dim)", padding: "5px 8px",
+                background: "#020208", borderLeft: "2px solid var(--accent-dim)", fontFamily: "ui-monospace",
               }}>
-                <span style={{ fontSize: 9, color: "#1e3a5f", display: "block", marginBottom: 2 }}>TODAY</span>
+                <span className="font-pixel" style={{ fontSize: 6, color: "var(--accent-dim)", display: "block", marginBottom: 2 }}>TODAY</span>
                 {m}
               </div>
             ))}
             {agent.long_term_memory.slice(-4).map((m, i) => (
               <div key={`lt-${i}`} style={{
-                fontSize: 11, color: "#64748b", padding: "6px 10px",
-                background: "#080d13", borderRadius: 6,
-                borderLeft: "2px solid #111827",
+                fontSize: 9, color: "#3a4a6a", padding: "5px 8px",
+                background: "#020208", borderLeft: "2px solid #0a1a0a", fontFamily: "ui-monospace",
               }}>
-                <span style={{ fontSize: 9, color: "#1a2535", display: "block", marginBottom: 2 }}>PAST</span>
+                <span className="font-pixel" style={{ fontSize: 6, color: "#1a2a3a", display: "block", marginBottom: 2 }}>PAST</span>
                 {m}
               </div>
             ))}
@@ -365,134 +312,102 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
         </>
       )}
 
-      {/* agent chat */}
       {worldId && (
         <>
           <Divider />
-          <AgentChat
-            worldId={worldId}
-            agentId={agent.id}
-            agentName={agent.name}
-            currentDay={currentDay}
-          />
+          <AgentChat worldId={worldId} agentId={agent.id} agentName={agent.name} currentDay={currentDay} />
         </>
       )}
     </div>
   );
 }
 
-// ─── Edge Inspector ───────────────────────────────────────────────────────────
+// ── Edge panel ─────────────────────────────────────────────────────────────────
 
-function EdgeInspector({ edgeKey, allAgents }: {
-  edgeKey: string; allAgents: Agent[];
-}) {
+function EdgeInspector({ edgeKey, allAgents }: { edgeKey: string; allAgents: Agent[] }) {
   const parts = edgeKey.split("|");
   const relType = (parts[2] || "trust") as RelationshipType;
   const color = REL_COLOR[relType] || "#6b7785";
   const agentA = allAgents.find(a => a.id === parts[0]);
   const agentB = allAgents.find(a => a.id === parts[1]);
 
-  if (!agentA || !agentB) {
-    return <div style={{ fontSize: 12, color: "#374151" }}>Relationship data unavailable.</div>;
-  }
+  if (!agentA || !agentB) return <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace" }}>Data unavailable.</div>;
 
   const relAB = agentA.relationships[agentB.name];
   const relBA = agentB.relationships[agentA.name];
   const strength = relAB?.strength ?? relBA?.strength ?? 0;
-  const narrative = buildEdgeNarrative(agentA, agentB, relType, strength);
 
   return (
     <div>
-      {/* header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-        <div style={{
-          fontSize: 13, fontWeight: 600, color: "#f1f5f9",
-          padding: "6px 10px", background: "#0e1420",
-          borderRadius: 7, border: "1px solid #1e2b3a",
+        <div className="font-pixel" style={{
+          fontSize: 8, color: "var(--text)", padding: "5px 10px",
+          background: "#06060f", border: "1px solid #1a1a3a",
         }}>{agentA.name}</div>
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ height: 2, background: color, opacity: 0.5, marginBottom: 4 }} />
+          <div style={{ height: 2, background: color, opacity: 0.6, marginBottom: 4 }} />
           <Tag label={relType} color={color} />
         </div>
-        <div style={{
-          fontSize: 13, fontWeight: 600, color: "#f1f5f9",
-          padding: "6px 10px", background: "#0e1420",
-          borderRadius: 7, border: "1px solid #1e2b3a",
+        <div className="font-pixel" style={{
+          fontSize: 8, color: "var(--text)", padding: "5px 10px",
+          background: "#06060f", border: "1px solid #1a1a3a",
         }}>{agentB.name}</div>
       </div>
 
-      {/* narrative */}
       <div style={{
-        fontSize: 12, color: "#94a3b8", lineHeight: 1.65,
-        padding: "10px 12px", background: "#080d13",
-        borderRadius: 8, border: "1px solid #111827", marginBottom: 16,
+        fontSize: 10, color: "var(--text-dim)", lineHeight: 1.7,
+        padding: "8px 10px", background: "#020208", border: "1px solid #0a0a1a", marginBottom: 14,
+        fontFamily: "ui-monospace",
       }}>
-        {narrative}
+        {buildEdgeNarrative(agentA, agentB, relType, strength)}
       </div>
 
       <Divider />
-
-      <Label>Bond strength</Label>
-      <div style={{ marginBottom: 4 }}><StrengthBar value={strength} color={color} /></div>
-      <div style={{ fontSize: 11, color: "#374151", marginBottom: 16 }}>
-        {(strength * 100).toFixed(0)}% — {strength > 0.7 ? "strong" : strength > 0.4 ? "moderate" : "weak"}
+      <Label>BOND STRENGTH</Label>
+      <div style={{ marginBottom: 4 }}><HpBar value={strength} color={color} /></div>
+      <div className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", marginBottom: 14, letterSpacing: "0.06em" }}>
+        {(strength * 100).toFixed(0)}% — {strength > 0.7 ? "STRONG" : strength > 0.4 ? "MODERATE" : "WEAK"}
       </div>
 
-      <Label>{agentA.name}'s perspective</Label>
-      <div style={{
-        fontSize: 12, color: "#64748b", padding: "8px 10px",
-        background: "#080d13", borderRadius: 6, marginBottom: 10,
-      }}>
-        {relAB
-          ? `Views this as ${relAB.type} (${relAB.strength.toFixed(2)})`
-          : "No direct record of this connection."}
+      <Label>{agentA.name}'s VIEW</Label>
+      <div style={{ fontSize: 10, color: "var(--text-dim)", padding: "6px 8px", background: "#020208", marginBottom: 8, fontFamily: "ui-monospace" }}>
+        {relAB ? `${relAB.type} (${relAB.strength.toFixed(2)})` : "No record."}
       </div>
-
-      <Label>{agentB.name}'s perspective</Label>
-      <div style={{
-        fontSize: 12, color: "#64748b", padding: "8px 10px",
-        background: "#080d13", borderRadius: 6, marginBottom: 14,
-      }}>
-        {relBA
-          ? `Views this as ${relBA.type} (${relBA.strength.toFixed(2)})`
-          : "No direct record of this connection."}
+      <Label>{agentB.name}'s VIEW</Label>
+      <div style={{ fontSize: 10, color: "var(--text-dim)", padding: "6px 8px", background: "#020208", marginBottom: 12, fontFamily: "ui-monospace" }}>
+        {relBA ? `${relBA.type} (${relBA.strength.toFixed(2)})` : "No record."}
       </div>
 
       {agentA.groups.filter(g => agentB.groups.includes(g)).length > 0 && (
         <>
-          <Label>Shared groups</Label>
-          <div>
-            {agentA.groups.filter(g => agentB.groups.includes(g)).map(g => (
-              <Tag key={g} label={g} color="#06b6d4" />
-            ))}
-          </div>
+          <Label>SHARED FACTIONS</Label>
+          <div>{agentA.groups.filter(g => agentB.groups.includes(g)).map(g => <Tag key={g} label={g} color="var(--cyan)" />)}</div>
         </>
       )}
     </div>
   );
 }
 
-// ─── Metrics summary (default state) ─────────────────────────────────────────
+// ── Metrics overview ───────────────────────────────────────────────────────────
 
-function MetricsSummary({ initial, current, day }: {
-  initial: MacroMetrics; current: MacroMetrics; day: number;
-}) {
-  function Delta({ a, b, label, color }: { a: number; b: number; label: string; color: string }) {
+function MetricsSummary({ initial, current, day }: { initial: MacroMetrics; current: MacroMetrics; day: number }) {
+  function Row({ a, b, label, color }: { a: number; b: number; label: string; color: string }) {
     const d = b - a;
     const fmt = (v: number) => Number.isInteger(v) ? String(v) : v.toFixed(2);
     return (
       <div style={{
         display: "flex", justifyContent: "space-between", alignItems: "center",
-        padding: "5px 0", borderBottom: "1px solid #111827",
+        padding: "5px 0", borderBottom: "1px solid #06060f",
       }}>
-        <span style={{ fontSize: 11, color: "#475569" }}>{label}</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, color: "#f1f5f9", fontWeight: 500 }}>{fmt(b)}</span>
+        <span style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace" }}>{label}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span className="font-pixel" style={{ fontSize: 8, color: "var(--text)" }}>{fmt(b)}</span>
           {d !== 0 && (
-            <span style={{
-              fontSize: 10, padding: "1px 5px", borderRadius: 4,
-              background: d > 0 ? "#14321a" : "#320a0a",
-              color: d > 0 ? "#22c55e" : "#ef4444",
+            <span className="font-pixel" style={{
+              fontSize: 7, padding: "1px 5px",
+              background: d > 0 ? "rgba(34,197,94,0.1)" : "rgba(255,68,68,0.1)",
+              color: d > 0 ? "#22c55e" : "var(--red)",
+              border: `1px solid ${d > 0 ? "rgba(34,197,94,0.3)" : "rgba(255,68,68,0.3)"}`,
             }}>
               {d > 0 ? "+" : ""}{fmt(d)}
             </span>
@@ -504,103 +419,90 @@ function MetricsSummary({ initial, current, day }: {
 
   return (
     <div>
-      <div style={{ marginBottom: 14 }}>
-        <Delta label="Friendships" a={initial.friendship_count} b={current.friendship_count} color="#22c55e" />
-        <Delta label="Rivalries" a={initial.rivalry_count} b={current.rivalry_count} color="#ef4444" />
-        <Delta label="Romances" a={initial.romance_count} b={current.romance_count} color="#f472b6" />
-        <Delta label="Conflicts" a={initial.conflict_count} b={current.conflict_count} color="#f97316" />
-        <Delta label="Alliances" a={initial.alliance_count} b={current.alliance_count} color="#06b6d4" />
-        <Delta label="Avg strength" a={initial.average_relationship_strength} b={current.average_relationship_strength} color="#3b82f6" />
-        <Delta label="Fragmentation" a={initial.social_fragmentation} b={current.social_fragmentation} color="#6b7785" />
+      <div style={{ marginBottom: 12 }}>
+        <Row a={initial.friendship_count} b={current.friendship_count} label="Friendships" color="#22c55e" />
+        <Row a={initial.rivalry_count} b={current.rivalry_count} label="Rivalries" color="var(--red)" />
+        <Row a={initial.romance_count} b={current.romance_count} label="Romances" color="var(--pink)" />
+        <Row a={initial.conflict_count} b={current.conflict_count} label="Conflicts" color="var(--orange)" />
+        <Row a={initial.alliance_count} b={current.alliance_count} label="Alliances" color="var(--cyan)" />
+        <Row a={initial.average_relationship_strength} b={current.average_relationship_strength} label="Avg strength" color="var(--accent)" />
+        <Row a={initial.social_fragmentation} b={current.social_fragmentation} label="Fragmentation" color="var(--text-dim)" />
       </div>
 
       {current.most_connected.length > 0 && (
         <div style={{ marginBottom: 10 }}>
-          <Label>Most connected</Label>
+          <Label>MOST CONNECTED</Label>
           <div>{current.most_connected.map(n => <Tag key={n} label={n} />)}</div>
         </div>
       )}
       {current.influence_gainers.length > 0 && (
         <div style={{ marginBottom: 10 }}>
-          <Label>Rising influence</Label>
-          <div>{current.influence_gainers.map(n => <Tag key={n} label={n} color="#22c55e" />)}</div>
+          <Label>RISING</Label>
+          <div>{current.influence_gainers.map(n => <Tag key={n} label={n} color="var(--accent)" />)}</div>
         </div>
       )}
       {current.influence_losers.length > 0 && (
         <div>
-          <Label>Losing ground</Label>
-          <div>{current.influence_losers.map(n => <Tag key={n} label={n} color="#ef4444" />)}</div>
+          <Label>LOSING GROUND</Label>
+          <div>{current.influence_losers.map(n => <Tag key={n} label={n} color="var(--red)" />)}</div>
         </div>
       )}
     </div>
   );
 }
 
-// ─── Main export ──────────────────────────────────────────────────────────────
+// ── Main export ────────────────────────────────────────────────────────────────
 
 type Selection = { kind: "node"; id: string } | { kind: "edge"; key: string } | null;
 
-export function Inspector({
-  selection,
-  snap,
-  initialMetrics,
-  worldId,
-}: {
+export function Inspector({ selection, snap, initialMetrics, worldId }: {
   selection: Selection;
   snap: { agents: Agent[]; metrics: MacroMetrics; day: number; highlights: any[] };
   initialMetrics: MacroMetrics;
   worldId: string | null;
 }) {
-  const selectedAgent = selection?.kind === "node"
-    ? snap.agents.find(a => a.id === selection.id) ?? null
-    : null;
-
-  const title = selection?.kind === "node"
-    ? selectedAgent?.name ?? "Character"
-    : selection?.kind === "edge"
-    ? "Relationship"
-    : `Day ${snap.day}`;
+  const selectedAgent = selection?.kind === "node" ? snap.agents.find(a => a.id === selection.id) ?? null : null;
+  const title = selection?.kind === "node" ? selectedAgent?.name ?? "AGENT" : selection?.kind === "edge" ? "RELATIONSHIP" : `DAY ${snap.day}`;
+  const subtitle = selection?.kind === "node" ? "CHARACTER" : selection?.kind === "edge" ? "EDGE" : "OVERVIEW";
 
   return (
     <div style={{
       width: 300, flexShrink: 0, display: "flex", flexDirection: "column",
-      background: "#090c10", borderLeft: "1px solid #141b24", height: "100%",
+      background: "#070710", borderLeft: "1px solid var(--accent-dim)", height: "100%",
     }}>
       {/* header */}
       <div style={{
-        padding: "10px 14px", borderBottom: "1px solid #141b24",
+        padding: "9px 14px", borderBottom: "1px solid #0a1a0a",
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        flexShrink: 0,
+        flexShrink: 0, background: "rgba(0,255,136,0.03)",
       }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "#94a3b8" }}>{title}</span>
-        <span style={{ fontSize: 10, color: "#374151" }}>
-          {selection?.kind === "node" ? "character" : selection?.kind === "edge" ? "edge" : "overview"}
-        </span>
+        <span className="font-pixel" style={{ fontSize: 8, color: "var(--accent)", letterSpacing: "0.08em" }}>{title}</span>
+        <span className="font-pixel" style={{ fontSize: 6, color: "var(--text-dim)", letterSpacing: "0.1em" }}>{subtitle}</span>
       </div>
 
       {/* body */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px" }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px" }}>
         {!selection && (
           <>
-            <div style={{ fontSize: 11, color: "#374151", marginBottom: 16, lineHeight: 1.6 }}>
-              Click any node to inspect a character, or click an edge to read about a relationship.
+            <div style={{ fontSize: 9, color: "var(--text-dim)", marginBottom: 14, lineHeight: 1.7, fontFamily: "ui-monospace" }}>
+              Click a node to inspect an agent, or click an edge to read about a relationship.
             </div>
             <MetricsSummary initial={initialMetrics} current={snap.metrics} day={snap.day} />
 
             {snap.highlights.length > 0 && (
               <>
                 <Divider />
-                <Label>What happened today</Label>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <Label color="var(--gold)">TODAY'S EVENTS</Label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {snap.highlights.slice(0, 6).map((h, i) => (
                     <div key={i} style={{
-                      padding: "8px 10px", background: "#080d13",
-                      borderRadius: 7, borderLeft: "2px solid #1e3a5f",
+                      padding: "7px 9px", background: "#020208",
+                      borderLeft: "2px solid var(--gold)",
                     }}>
-                      <div style={{ fontSize: 11, color: "#60a5fa", fontWeight: 600, marginBottom: 3 }}>
+                      <div className="font-pixel" style={{ fontSize: 7, color: "var(--gold)", marginBottom: 3, letterSpacing: "0.05em" }}>
                         {h.agent}
                       </div>
-                      <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.5 }}>
+                      <div style={{ fontSize: 9, color: "var(--text-dim)", lineHeight: 1.5, fontFamily: "ui-monospace" }}>
                         {h.summary}
                       </div>
                     </div>
@@ -612,14 +514,8 @@ export function Inspector({
         )}
 
         {selection?.kind === "node" && selectedAgent && (
-          <AgentInspector
-            agent={selectedAgent}
-            allAgents={snap.agents}
-            worldId={worldId}
-            currentDay={snap.day}
-          />
+          <AgentInspector agent={selectedAgent} allAgents={snap.agents} worldId={worldId} currentDay={snap.day} />
         )}
-
         {selection?.kind === "edge" && (
           <EdgeInspector edgeKey={selection.key} allAgents={snap.agents} />
         )}
