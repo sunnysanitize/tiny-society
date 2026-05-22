@@ -82,6 +82,8 @@ def run_simulation(
 
         _llm_delay = float(os.getenv("LLM_CALL_DELAY_SECS", "2.0"))
 
+        day_perception_notes: list = []
+
         for i, actor in enumerate(selected):
             if i > 0 and _llm_delay > 0:
                 time.sleep(_llm_delay)
@@ -94,8 +96,9 @@ def run_simulation(
             )
             if action is None:
                 continue
-            log_line = apply_action(actor, action, agents)
+            log_line, notes = apply_action(actor, action, agents)
             day_log.append(log_line)
+            day_perception_notes.extend(notes)
             day_highlights.append(DayHighlight(
                 agent=actor.name,
                 summary=action.new_memory or f"{action.action} {', '.join(action.target_agents) or '(no one)'} — {action.explanation}",
@@ -124,6 +127,7 @@ def run_simulation(
             highlights=day_highlights,
             metrics=metrics,
             active_event=active_event,
+            perception_notes=day_perception_notes,
         )
         snapshots.append(snap)
 

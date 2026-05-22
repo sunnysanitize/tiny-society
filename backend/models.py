@@ -29,7 +29,8 @@ class Agent(BaseModel):
     id: str
     name: str
     role: str
-    traits: list[str] = []
+    traits: list[str] = []           # declared by the user at setup
+    revealed_traits: list[str] = []  # emerged from simulation behavior
     goals: list[str] = []
     mood: Mood = "calm"
     influence_score: float = 0.0
@@ -73,6 +74,16 @@ class RelationshipEffect(BaseModel):
     strength_delta: float = Field(ge=-1.0, le=1.0)
 
 
+class PerceptionNote(BaseModel):
+    perceiver: str
+    actor: str
+    raw_delta: float
+    perceived_delta: float
+    relationship_type: str
+    narrative: str
+    revealed_trait: Optional[str] = None
+
+
 class AgentAction(BaseModel):
     """Structured output contract returned by the AI reasoning layer."""
     action: str
@@ -96,6 +107,7 @@ class DaySnapshot(BaseModel):
     highlights: list[DayHighlight]
     metrics: MacroMetrics
     active_event: Optional[str] = None
+    perception_notes: list[PerceptionNote] = []
 
 
 class MacroMetrics(BaseModel):

@@ -261,6 +261,93 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
             })
         return json.dumps({"agents": agents})
 
+    # ── perception narration ───────────────────────────────────────────────────
+    if "PERCEPTION_NARRATION" in system:
+        perceiver_name, actor_name, rel_type, raw_delta_str = "", "", "trust", "0.1"
+        existing_rel = ""
+        memories: list[str] = []
+        _section = ""
+        for line in user.splitlines():
+            stripped = line.strip()
+            if stripped == "YOUR CHARACTER":
+                _section = "char"
+            elif stripped == "INCOMING EVENT":
+                _section = "event"
+            elif stripped.startswith("YOUR EXISTING RELATIONSHIP WITH"):
+                _section = "rel"
+            elif stripped == "YOUR MEMORIES MOST RELEVANT TO THIS PERSON":
+                _section = "mems"
+            elif _section == "char" and line.startswith("Name: "):
+                perceiver_name = line[6:].strip()
+            elif _section == "event" and line.startswith("Acting character: "):
+                actor_name = line[18:].split("(")[0].strip()
+            elif _section == "event" and line.startswith("Raw social signal"):
+                parts_sig = line.split("magnitude")
+                if len(parts_sig) > 1:
+                    raw_delta_str = parts_sig[1].split("—")[0].strip().rstrip(",")
+                if "negative" in line:
+                    raw_delta_str = f"-{raw_delta_str}"
+                if "relationship type:" in line:
+                    rel_type = line.split("relationship type:")[-1].strip()
+            elif _section == "rel" and stripped and not stripped.startswith("("):
+                existing_rel = stripped
+            elif _section == "mems" and stripped.startswith("- "):
+                memories.append(stripped[2:])
+
+        try:
+            base = float(raw_delta_str)
+        except ValueError:
+            base = 0.1
+
+        # Generate a contextually varied perceived_delta from the mock rng
+        perceived = round(base * rng.uniform(0.3, 1.2), 3)
+        perceived = max(-1.0, min(1.0, perceived))
+
+        has_conflict = any(w in existing_rel for w in ("conflict", "rivalry"))
+        has_trust = any(w in existing_rel for w in ("trust", "friendship", "alliance"))
+        if has_conflict and base > 0:
+            perceived = round(base * rng.uniform(0.1, 0.4), 3)
+        elif has_trust and base > 0:
+            perceived = round(base * rng.uniform(0.8, 1.15), 3)
+        perceived = round(max(-1.0, min(1.0, perceived)), 3)
+
+        actor_first = actor_name.split("-")[0] if actor_name else "them"
+        perceiver_first = perceiver_name.split("-")[0] if perceiver_name else "they"
+
+        if has_conflict and base > 0:
+            narratives = [
+                f"{perceiver_first} acknowledged {actor_first}'s gesture with guarded eyes — the history between them made warmth feel like a gamble.",
+                f"The overture landed with less weight than intended; {perceiver_first} had learned not to read too much into {actor_first}'s moments of goodwill.",
+                f"{perceiver_first} noticed the shift in {actor_first}'s tone but held back — old wounds don't close overnight.",
+            ]
+            trait = "slow to forgive"
+        elif has_trust and base > 0:
+            narratives = [
+                f"{perceiver_first} felt {actor_first}'s gesture land more deeply than the moment might have warranted — trust amplifies everything.",
+                f"Because the foundation was solid, {perceiver_first} let {actor_first}'s move in without questioning the motive.",
+                f"{perceiver_first} received it warmly; with {actor_first}, there was nothing to second-guess.",
+            ]
+            trait = None
+        elif base < 0:
+            narratives = [
+                f"{perceiver_first} absorbed the friction quietly, filing it away without drama — confrontation wasn't worth it yet.",
+                f"The negative signal registered, but {perceiver_first} held their reaction close rather than showing it.",
+                f"{perceiver_first} felt the sting of {actor_first}'s move but chose not to react — at least not visibly.",
+            ]
+            trait = "internalizes conflict"
+        else:
+            narratives = [
+                f"{perceiver_first} processed {actor_first}'s action through the lens of their own uncertainty, unsure what to make of it.",
+                f"The signal was clear enough, but {perceiver_first} hadn't yet decided what it meant for them.",
+            ]
+            trait = None
+
+        return json.dumps({
+            "perceived_delta": perceived,
+            "narrative": rng.choice(narratives),
+            "revealed_trait": trait,
+        })
+
     # ── agent daily reasoning ──────────────────────────────────────────────────
     if "AGENT_REASONING" in system:
         lines = user.splitlines()
