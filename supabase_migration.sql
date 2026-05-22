@@ -19,3 +19,8 @@ create policy "Users can manage their own saves"
   on saves for all
   using  (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- Table privileges. service_role (backend) bypasses RLS and needs full access.
+-- authenticated (frontend, via the user's JWT) is still gated by the RLS policy above.
+grant all privileges on table public.saves to service_role;
+grant all privileges on table public.saves to authenticated;
