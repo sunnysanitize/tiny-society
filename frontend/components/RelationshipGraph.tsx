@@ -166,7 +166,7 @@ function Defs() {
         <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
       </filter>
       <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-        <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(0,255,136,0.07)" strokeWidth="0.5" />
+        <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(100,80,200,0.08)" strokeWidth="0.5" />
       </pattern>
       <marker id="arrow-influence" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
         <path d="M 0 0 L 6 3 L 0 6 Z" fill="#a855f7" opacity="0.8" />
@@ -364,14 +364,14 @@ export function RelationshipGraph({
   const selEdgeKey = selection?.kind === "edge" ? selection.key : null;
 
   return (
-    <div className="relative flex flex-col" style={{ height: "100%", background: "#03030a", overflow: "hidden" }}>
+    <div className="relative flex flex-col" style={{ height: "100%", background: "var(--surface-2)", overflow: "hidden" }}>
       {/* top controls */}
       <div style={{
         display: "flex", alignItems: "center", gap: 10, padding: "7px 14px",
-        borderBottom: "1px solid rgba(0,255,136,0.1)", background: "rgba(5,5,15,0.95)",
+        borderBottom: "1px solid var(--border)", background: "var(--surface)",
         zIndex: 10, flexShrink: 0,
       }}>
-        <span className="font-pixel" style={{ fontSize: 7, color: "rgba(0,255,136,0.5)", letterSpacing: "0.08em" }}>
+        <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", letterSpacing: "0.08em" }}>
           {agents.length} AGENTS · {graphLinks.length} LINKS
         </span>
         <div style={{ flex: 1 }} />
@@ -380,9 +380,9 @@ export function RelationshipGraph({
           className="font-pixel"
           style={{
             fontSize: 6, padding: "4px 9px", cursor: "pointer", letterSpacing: "0.08em",
-            background: showLabels ? "rgba(0,212,255,0.1)" : "transparent",
-            color: showLabels ? "var(--cyan)" : "rgba(0,255,136,0.4)",
-            border: `1px solid ${showLabels ? "var(--cyan)" : "rgba(0,255,136,0.15)"}`,
+            background: showLabels ? "rgba(78,197,240,0.1)" : "transparent",
+            color: showLabels ? "var(--cyan)" : "var(--text-dim)",
+            border: `1px solid ${showLabels ? "var(--cyan)" : "var(--border)"}`,
             textTransform: "uppercase",
           }}
         >
@@ -393,8 +393,8 @@ export function RelationshipGraph({
           className="font-pixel"
           style={{
             fontSize: 6, padding: "4px 9px", cursor: "pointer", letterSpacing: "0.08em",
-            background: "transparent", color: "rgba(0,255,136,0.4)",
-            border: "1px solid rgba(0,255,136,0.15)", textTransform: "uppercase",
+            background: "transparent", color: "var(--text-dim)",
+            border: "1px solid var(--border)", textTransform: "uppercase",
           }}
         >
           LAYOUT
@@ -404,8 +404,8 @@ export function RelationshipGraph({
           className="font-pixel"
           style={{
             fontSize: 6, padding: "4px 9px", cursor: "pointer", letterSpacing: "0.08em",
-            background: "transparent", color: "rgba(0,255,136,0.4)",
-            border: "1px solid rgba(0,255,136,0.15)", textTransform: "uppercase",
+            background: "transparent", color: "var(--text-dim)",
+            border: "1px solid var(--border)", textTransform: "uppercase",
           }}
         >
           RESET
@@ -537,15 +537,15 @@ export function RelationshipGraph({
                   strokeWidth={selected ? 2 : 1} opacity={selected ? 0.8 : 0.4} />
 
                 {/* node fill */}
-                <circle r={r} fill={selected ? "#060f18" : "#030309"}
-                  stroke={selected ? "#00ff88" : groupColor}
+                <circle r={r} fill={selected ? "#f0eeff" : "#ffffff"}
+                  stroke={selected ? "#7950f2" : groupColor}
                   strokeWidth={selected ? 2 : 1.5} />
 
                 {/* group color tint */}
                 <circle r={r} fill={groupColor} opacity={0.07} />
 
                 {/* inner specular highlight */}
-                <circle r={r * 0.55} cx={-r * 0.22} cy={-r * 0.22} fill="white" opacity={0.05} />
+                <circle r={r * 0.55} cx={-r * 0.22} cy={-r * 0.22} fill="white" opacity={0.25} />
 
                 {/* initials */}
                 <text
@@ -555,7 +555,7 @@ export function RelationshipGraph({
                   fontSize={r * 0.58}
                   fontWeight="700"
                   fontFamily="ui-monospace, 'Courier New', monospace"
-                  fill={selected ? "#93c5fd" : "rgba(230,232,235,0.9)"}
+                  fill={selected ? "#7950f2" : "#2d3a50"}
                   style={{ pointerEvents: "none", letterSpacing: "0.06em" }}
                 >
                   {initials(n.name)}
@@ -575,7 +575,7 @@ export function RelationshipGraph({
                 {/* relationship count badge — bottom right */}
                 {relCount > 0 && (
                   <g transform={`translate(${r * 0.72}, ${r * 0.72})`} style={{ pointerEvents: "none" }}>
-                    <circle r={8} fill="#0b0f17" stroke={groupColor} strokeWidth={1.5} />
+                    <circle r={8} fill="#ffffff" stroke={groupColor} strokeWidth={1.5} />
                     <text textAnchor="middle" dominantBaseline="central"
                       fontSize={8} fill={groupColor} fontWeight="700"
                       style={{ pointerEvents: "none" }}>
@@ -586,15 +586,15 @@ export function RelationshipGraph({
 
                 {/* nameplate */}
                 <g transform={`translate(0, ${r + 10})`} style={{ pointerEvents: "none" }}>
-                  <rect x={-nameplateW / 2} y={-9} width={nameplateW} height={17} rx={3}
-                    fill="#0b0f17"
-                    stroke={selected ? "#2563eb" : groupColor}
+                  <rect x={-nameplateW / 2} y={-9} width={nameplateW} height={17} rx={0}
+                    fill="#ffffff"
+                    stroke={selected ? "#7950f2" : groupColor}
                     strokeWidth={selected ? 1.5 : 0.8}
                     opacity={0.96} />
                   <text textAnchor="middle" dominantBaseline="central"
                     fontSize={10} fontWeight="600"
                     fontFamily="ui-sans-serif, system-ui, sans-serif"
-                    fill={selected ? "#e2e8f0" : "#94a3b8"}
+                    fill={selected ? "#2d3a50" : "#7a8a9e"}
                     style={{ pointerEvents: "none" }}>
                     {n.name}
                   </text>
@@ -603,14 +603,14 @@ export function RelationshipGraph({
                 {/* role label */}
                 <text y={r + 27} textAnchor="middle" dominantBaseline="central"
                   fontSize={8.5} fontFamily="ui-sans-serif, system-ui, sans-serif"
-                  fill="#374151" style={{ pointerEvents: "none" }}>
+                  fill="#7a8a9e" style={{ pointerEvents: "none" }}>
                   {n.role.length > 20 ? n.role.slice(0, 19) + "…" : n.role}
                 </text>
 
                 {/* influence bar */}
                 <g transform={`translate(0, ${r + 38})`} style={{ pointerEvents: "none" }}>
-                  <rect x={-barW / 2} y={0} width={barW} height={3} rx={1.5} fill="#111827" />
-                  <rect x={-barW / 2} y={0} width={barW * infPct} height={3} rx={1.5}
+                  <rect x={-barW / 2} y={0} width={barW} height={3} rx={0} fill="#ddd6f8" />
+                  <rect x={-barW / 2} y={0} width={barW * infPct} height={3} rx={0}
                     fill={moodColor} opacity={0.85} />
                 </g>
               </g>
@@ -621,8 +621,8 @@ export function RelationshipGraph({
 
       {/* legend */}
       <div style={{
-        borderTop: "1px solid rgba(0,255,136,0.1)",
-        background: "rgba(3,3,10,0.97)", flexShrink: 0,
+        borderTop: "1px solid var(--border)",
+        background: "var(--surface)", flexShrink: 0,
       }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", padding: "5px 14px" }}>
           {(Object.entries(EDGE) as [RelationshipType, typeof EDGE[RelationshipType]][]).map(([t, cfg]) => (
@@ -640,13 +640,13 @@ export function RelationshipGraph({
         {groupColors.size > 0 && (
           <div style={{
             display: "flex", flexWrap: "wrap", gap: "4px 10px",
-            padding: "3px 14px 6px", borderTop: "1px solid rgba(0,255,136,0.05)",
+            padding: "3px 14px 6px", borderTop: "1px solid var(--border)",
           }}>
-            <span className="font-pixel" style={{ fontSize: 6, color: "rgba(0,255,136,0.3)", marginRight: 4, alignSelf: "center", letterSpacing: "0.08em" }}>FACTIONS</span>
+            <span className="font-pixel" style={{ fontSize: 6, color: "var(--text-dim)", marginRight: 4, alignSelf: "center", letterSpacing: "0.08em" }}>FACTIONS</span>
             {Array.from(groupColors.entries()).map(([group, color]) => (
               <span key={group} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <span style={{ width: 6, height: 6, background: color, flexShrink: 0, boxShadow: `0 0 4px ${color}` }} />
-                <span className="font-pixel" style={{ fontSize: 6, color: "rgba(200,216,240,0.5)", letterSpacing: "0.04em" }}>{group}</span>
+                <span style={{ width: 6, height: 6, background: color, flexShrink: 0, borderRadius: "50%" }} />
+                <span className="font-pixel" style={{ fontSize: 6, color: "var(--text-dim)", letterSpacing: "0.04em" }}>{group}</span>
               </span>
             ))}
           </div>

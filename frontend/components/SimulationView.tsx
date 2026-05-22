@@ -49,7 +49,7 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
       {/* ── HUD header ─────────────────────────────────────────────────── */}
       <div style={{
         background: "var(--surface)", border: "1px solid var(--accent-dim)",
-        boxShadow: "0 0 16px rgba(0,255,136,0.1)",
+        boxShadow: "0 6px 24px rgba(100,80,200,0.09)",
         padding: "12px 18px", position: "relative",
       }}>
         <div style={{ position: "absolute", top: -2, left: -2, width: 12, height: 12, borderTop: "2px solid var(--accent)", borderLeft: "2px solid var(--accent)" }} />
@@ -98,7 +98,7 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
         display: "flex", height: "calc(100vh - 290px)", minHeight: 480,
         overflow: "hidden",
         border: "1px solid var(--accent-dim)",
-        boxShadow: "0 0 20px rgba(0,255,136,0.1)",
+        boxShadow: "0 4px 16px rgba(100,80,200,0.08)",
       }}>
         <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
           <RelationshipGraph agents={snap.agents} selection={selection} onSelect={setSelection} />
@@ -106,8 +106,8 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
             <div style={{
               position: "absolute", top: 10, left: 10,
               display: "flex", alignItems: "center", gap: 6,
-              background: "rgba(5,5,15,0.85)", backdropFilter: "blur(6px)",
-              border: "1px solid var(--accent-dim)",
+              background: "rgba(255,255,255,0.92)", backdropFilter: "blur(6px)",
+              border: "1px solid var(--border)",
               padding: "5px 10px",
             }}>
               <div style={{
@@ -144,10 +144,10 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
                   style={{
                     width: 30, height: 26, cursor: isLive ? "default" : "pointer",
                     fontSize: 7, letterSpacing: 0,
-                    background: isActive ? "rgba(0,255,136,0.12)" : hasDynEv ? "rgba(255,215,0,0.06)" : hasHL ? "rgba(0,212,255,0.04)" : "transparent",
+                    background: isActive ? "rgba(121,80,242,0.1)" : hasDynEv ? "rgba(255,212,59,0.08)" : hasHL ? "rgba(78,197,240,0.06)" : "transparent",
                     color: isActive ? "var(--accent)" : hasDynEv ? "var(--gold)" : hasHL ? "var(--cyan)" : "var(--text-muted)",
-                    border: `1px solid ${isActive ? "var(--accent)" : hasDynEv ? "rgba(255,215,0,0.3)" : hasHL ? "rgba(0,212,255,0.2)" : "transparent"}`,
-                    boxShadow: isActive ? "0 0 8px rgba(0,255,136,0.3)" : "none",
+                    border: `1px solid ${isActive ? "var(--accent)" : hasDynEv ? "rgba(255,212,59,0.35)" : hasHL ? "rgba(78,197,240,0.25)" : "transparent"}`,
+                    boxShadow: isActive ? "0 2px 0 var(--accent-dim)" : "none",
                     position: "relative", transition: "all 0.1s",
                   }}>
                   {s.day}
@@ -168,7 +168,7 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
                   fontSize: 7, padding: "4px 10px", cursor: "pointer", letterSpacing: "0.08em",
                   background: showReport ? "rgba(0,212,255,0.1)" : "transparent",
                   color: showReport ? "var(--cyan)" : "var(--text-dim)",
-                  border: `1px solid ${showReport ? "var(--cyan)" : "#1a1a3a"}`,
+                  border: `1px solid ${showReport ? "var(--cyan)" : "var(--border)"}`,
                   textTransform: "uppercase",
                 }}>
                 REPORT
@@ -181,9 +181,9 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
                   onClick={() => setShowContinueMenu(v => !v)}
                   style={{
                     fontSize: 7, padding: "4px 10px", cursor: "pointer", letterSpacing: "0.08em",
-                    background: showContinueMenu ? "rgba(0,255,136,0.1)" : "transparent",
+                    background: showContinueMenu ? "rgba(121,80,242,0.08)" : "transparent",
                     color: showContinueMenu ? "var(--accent)" : "var(--text-dim)",
-                    border: `1px solid ${showContinueMenu ? "var(--accent)" : "#1a1a3a"}`,
+                    border: `1px solid ${showContinueMenu ? "var(--accent)" : "var(--border)"}`,
                     textTransform: "uppercase",
                   }}>
                   CONTINUE +
@@ -192,7 +192,7 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
                   <div style={{
                     position: "absolute", right: 0, bottom: "calc(100% + 6px)",
                     background: "var(--surface)", border: "1px solid var(--accent-dim)",
-                    boxShadow: "0 0 20px rgba(0,255,136,0.2)",
+                    boxShadow: "0 6px 24px rgba(100,80,200,0.12)",
                     padding: "14px 16px", width: 200, zIndex: 10,
                   }}>
                     <div className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", marginBottom: 10, letterSpacing: "0.08em" }}>
@@ -203,9 +203,9 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
                         <button key={d} onClick={() => setContinueDays(d)} className="font-pixel" style={{
                           flex: 1, padding: "5px 0", fontSize: 7, cursor: "pointer",
                           letterSpacing: "0.05em", textTransform: "uppercase",
-                          background: continueDays === d ? "rgba(0,255,136,0.1)" : "transparent",
+                          background: continueDays === d ? "rgba(121,80,242,0.1)" : "transparent",
                           color: continueDays === d ? "var(--accent)" : "var(--text-dim)",
-                          border: `1px solid ${continueDays === d ? "var(--accent)" : "#1a1a3a"}`,
+                          border: `1px solid ${continueDays === d ? "var(--accent)" : "var(--border)"}`,
                         }}>{d}D</button>
                       ))}
                     </div>
@@ -246,8 +246,8 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
       {/* final report */}
       {showReport && result.final_report && (
         <div style={{
-          background: "var(--surface)", border: "1px solid #1a1a3a",
-          boxShadow: "0 0 16px rgba(0,212,255,0.08)",
+          background: "var(--surface)", border: "1px solid var(--border)",
+          boxShadow: "0 4px 16px rgba(100,80,200,0.08)",
           padding: "20px 24px", position: "relative",
         }}>
           <div style={{ position: "absolute", top: -2, left: -2, width: 12, height: 12, borderTop: "2px solid var(--cyan)", borderLeft: "2px solid var(--cyan)" }} />

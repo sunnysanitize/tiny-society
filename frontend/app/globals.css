@@ -4,14 +4,14 @@
 
 /* ── Tomodachi Life-inspired palette ──────────────────────────────────────── */
 :root {
-  --accent:      #ff6eb4;   /* hot pink — primary action */
-  --accent-dim:  #d94f94;   /* pressed pink */
+  --accent:      #7950f2;   /* vivid purple — primary action */
+  --accent-dim:  #5f3dc4;   /* pressed purple */
   --cyan:        #4ec5f0;   /* sky blue */
   --gold:        #ffd43b;   /* warm yellow */
   --green:       #51cf66;   /* fresh green */
   --red:         #ff6b6b;   /* coral red */
   --purple:      #cc5de8;   /* bright purple */
-  --pink:        #ff6eb4;
+  --pink:        #f06595;   /* soft pink (romance indicators only) */
   --orange:      #ff922b;
   --bg:          #eef0ff;   /* soft lavender background */
   --surface:     #ffffff;
@@ -39,8 +39,8 @@ body {
 .panel {
   background: var(--surface);
   border: 2px solid var(--border);
-  border-radius: 16px;
-  box-shadow: 0 6px 24px rgba(100, 80, 200, 0.09);
+  border-radius: 0;
+  box-shadow: 0 4px 0 var(--border), 0 6px 24px rgba(100, 80, 200, 0.07);
   position: relative;
 }
 /* remove dark-mode corner brackets */
@@ -55,7 +55,7 @@ input, textarea, select, button {
 input, textarea, select {
   background: var(--surface-2);
   border: 2px solid var(--border);
-  border-radius: 10px;
+  border-radius: 0;
   padding: 9px 12px;
   width: 100%;
   color: var(--text);
@@ -69,7 +69,7 @@ input::placeholder, textarea::placeholder {
 input:focus, textarea:focus, select:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(255, 110, 180, 0.14);
+  box-shadow: 0 0 0 3px rgba(121, 80, 242, 0.14);
   background: var(--surface);
 }
 
@@ -78,7 +78,7 @@ button.btn {
   background: var(--accent);
   color: #fff;
   border: none;
-  border-radius: 10px;
+  border-radius: 0;
   padding: 10px 20px;
   cursor: pointer;
   font-family: var(--font-pixel, ui-sans-serif, sans-serif);
@@ -110,7 +110,7 @@ button.btn-ghost {
   background: var(--surface);
   color: var(--cyan);
   border: 2px solid var(--cyan);
-  border-radius: 10px;
+  border-radius: 0;
   padding: 8px 14px;
   cursor: pointer;
   font-family: var(--font-pixel, ui-sans-serif, sans-serif);
@@ -142,7 +142,7 @@ button.btn-ghost:disabled {
   display: inline-block;
   font-size: 9px;
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: 0;
   background: #eef1ff;
   color: #6a7ee0;
   border: 1.5px solid #d0d8f8;
@@ -163,7 +163,6 @@ button.btn-ghost:disabled {
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--border), transparent);
   margin: 12px 0;
-  border-radius: 999px;
 }
 
 /* ── Animations ───────────────────────────────────────────────────────────── */
@@ -208,7 +207,7 @@ button.btn-ghost:disabled {
 }
 
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: #f0eeff; border-radius: 999px; }
-::-webkit-scrollbar-thumb { background: #d0c8f0; border-radius: 999px; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #f0eeff; }
+::-webkit-scrollbar-thumb { background: #d0c8f0; }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent); }

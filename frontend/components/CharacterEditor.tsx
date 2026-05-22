@@ -89,7 +89,7 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
             {world.agents.length} / {world.target_population}
           </span>
           {/* roster fill bar */}
-          <div style={{ width: 80, height: 6, background: "#0a0a1a", border: "1px solid #1a1a3a", overflow: "hidden" }}>
+          <div style={{ width: 80, height: 6, background: "#ebe8f8", border: "1px solid var(--border)", overflow: "hidden" }}>
             <div style={{
               width: `${rosterPct}%`, height: "100%",
               background: rosterPct >= 100 ? "var(--accent)" : "var(--cyan)",
@@ -159,7 +159,7 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
       {/* Roster list */}
       {world.agents.length > 0 && (
         <>
-          <div style={{ height: 1, background: "#0a1a0a", marginBottom: 10 }} />
+          <div style={{ height: 1, background: "var(--border)", marginBottom: 10 }} />
           <div className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", marginBottom: 8, letterSpacing: "0.08em" }}>
             ▸ CURRENT ROSTER
           </div>
@@ -170,8 +170,8 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
                 <div key={a.id} style={{
                   display: "flex", alignItems: "flex-start", gap: 10,
                   padding: "8px 10px",
-                  background: "#06060f",
-                  border: "1px solid #0e0e20",
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border)",
                   transition: "border-color 0.1s",
                 }}>
                   {/* mood dot */}
@@ -203,12 +203,12 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
                     style={{
                       fontSize: 8, padding: "4px 8px", cursor: "pointer",
                       background: "transparent", color: "var(--text-dim)",
-                      border: "1px solid #1a1a3a", fontFamily: "var(--font-pixel)",
+                      border: "1px solid var(--border)", fontFamily: "var(--font-pixel)",
                       textTransform: "uppercase", letterSpacing: "0.05em",
                       transition: "border-color 0.1s, color 0.1s", flexShrink: 0,
                     }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--red)"; (e.currentTarget as HTMLElement).style.color = "var(--red)"; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#1a1a3a"; (e.currentTarget as HTMLElement).style.color = "var(--text-dim)"; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"; (e.currentTarget as HTMLElement).style.color = "var(--text-dim)"; }}
                   >
                     REMOVE
                   </button>

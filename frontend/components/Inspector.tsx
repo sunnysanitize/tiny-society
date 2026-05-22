@@ -53,7 +53,7 @@ function buildEdgeNarrative(a: Agent, b: Agent, rel: RelationshipType, strength:
 // ── sub-components ─────────────────────────────────────────────────────────────
 
 function Divider() {
-  return <div style={{ height: 1, background: "#0a1a0a", margin: "12px 0" }} />;
+  return <div style={{ height: 1, background: "var(--border)", margin: "12px 0" }} />;
 }
 
 function Label({ children, color = "var(--text-dim)" }: { children: React.ReactNode; color?: string }) {
@@ -68,9 +68,9 @@ function Tag({ label, color }: { label: string; color?: string }) {
   return (
     <span style={{
       display: "inline-block", fontSize: 8, padding: "2px 7px",
-      background: color ? `${color}12` : "rgba(0,212,255,0.06)",
+      background: color ? `${color}14` : "rgba(78,197,240,0.1)",
       color: color ?? "var(--cyan)",
-      border: `1px solid ${color ? `${color}30` : "rgba(0,212,255,0.22)"}`,
+      border: `1px solid ${color ? `${color}35` : "rgba(78,197,240,0.28)"}`,
       marginRight: 4, marginBottom: 4,
       fontFamily: "var(--font-pixel, monospace)", textTransform: "uppercase",
     }}>{label}</span>
@@ -80,7 +80,7 @@ function Tag({ label, color }: { label: string; color?: string }) {
 function HpBar({ value, color, max = 1 }: { value: number; color: string; max?: number }) {
   const pct = Math.min(100, (Math.abs(value) / max) * 100);
   return (
-    <div style={{ height: 5, background: "#06060f", border: "1px solid #1a1a3a", overflow: "hidden" }}>
+    <div style={{ height: 5, background: "#ebe8f8", border: "1px solid var(--border)", overflow: "hidden" }}>
       <div style={{
         width: `${pct}%`, height: "100%",
         background: color, boxShadow: `0 0 4px ${color}`,
@@ -121,7 +121,7 @@ function AgentChat({ worldId, agentId, agentName, currentDay }: {
     <div>
       <Label color="var(--purple)">◌ DIALOGUE — {agentName}</Label>
       <div style={{
-        background: "#020208", border: "1px solid #1a1a3a",
+        background: "var(--surface-2)", border: "1px solid var(--border)",
         padding: 10, minHeight: 70, maxHeight: 200, overflowY: "auto",
         marginBottom: 7, display: "flex", flexDirection: "column", gap: 7,
       }}>
@@ -183,7 +183,7 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 14 }}>
         <div style={{
           width: 48, height: 48, flexShrink: 0,
-          background: `radial-gradient(circle at 35% 35%, ${moodColor}25, #020208)`,
+          background: `radial-gradient(circle at 35% 35%, ${moodColor}25, #f8f6ff)`,
           border: `2px solid ${moodColor}`,
           boxShadow: `0 0 14px ${moodColor}50`,
           display: "flex", alignItems: "center", justifyContent: "center",
@@ -203,7 +203,7 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
             }}>{agent.mood}</span>
             <span style={{
               fontSize: 8, padding: "2px 7px",
-              background: "rgba(0,255,136,0.06)", color: "var(--accent)", border: "1px solid rgba(0,255,136,0.2)",
+              background: "rgba(121,80,242,0.08)", color: "var(--accent)", border: "1px solid rgba(121,80,242,0.22)",
               fontFamily: "var(--font-pixel)",
             }}>
               {agent.influence_score >= 0 ? "+" : ""}{agent.influence_score.toFixed(1)} INF
@@ -215,8 +215,8 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
       {/* narrative */}
       <div style={{
         fontSize: 10, color: "var(--text-dim)", lineHeight: 1.7,
-        padding: "8px 10px", background: "#020208",
-        border: "1px solid #0a0a1a", marginBottom: 14, fontFamily: "ui-monospace",
+        padding: "8px 10px", background: "var(--surface-2)",
+        border: "1px solid var(--border)", marginBottom: 14, fontFamily: "ui-monospace",
       }}>
         {buildNarrative(agent)}
       </div>
@@ -234,7 +234,7 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
           {agent.goals.map((g, i) => (
             <div key={i} style={{
               fontSize: 10, color: "var(--text-dim)", padding: "5px 8px",
-              background: "#020208", marginBottom: 3, borderLeft: "2px solid var(--accent-dim)",
+              background: "var(--surface-2)", marginBottom: 3, borderLeft: "2px solid var(--accent-dim)",
               fontFamily: "ui-monospace",
             }}>{g}</div>
           ))}
@@ -259,7 +259,7 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <div style={{
-                        width: 22, height: 22, background: "#06060f",
+                        width: 22, height: 22, background: "var(--surface-2)",
                         border: `1px solid ${color}50`,
                         display: "flex", alignItems: "center", justifyContent: "center",
                         flexShrink: 0,
@@ -293,7 +293,7 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
             {agent.short_term_memory.slice(-3).map((m, i) => (
               <div key={`st-${i}`} style={{
                 fontSize: 9, color: "var(--text-dim)", padding: "5px 8px",
-                background: "#020208", borderLeft: "2px solid var(--accent-dim)", fontFamily: "ui-monospace",
+                background: "var(--surface-2)", borderLeft: "2px solid var(--accent-dim)", fontFamily: "ui-monospace",
               }}>
                 <span className="font-pixel" style={{ fontSize: 6, color: "var(--accent-dim)", display: "block", marginBottom: 2 }}>TODAY</span>
                 {m}
@@ -301,10 +301,10 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
             ))}
             {agent.long_term_memory.slice(-4).map((m, i) => (
               <div key={`lt-${i}`} style={{
-                fontSize: 9, color: "#3a4a6a", padding: "5px 8px",
-                background: "#020208", borderLeft: "2px solid #0a1a0a", fontFamily: "ui-monospace",
+                fontSize: 9, color: "var(--text-dim)", padding: "5px 8px",
+                background: "var(--surface-2)", borderLeft: "2px solid var(--border)", fontFamily: "ui-monospace",
               }}>
-                <span className="font-pixel" style={{ fontSize: 6, color: "#1a2a3a", display: "block", marginBottom: 2 }}>PAST</span>
+                <span className="font-pixel" style={{ fontSize: 6, color: "var(--text-muted)", display: "block", marginBottom: 2 }}>PAST</span>
                 {m}
               </div>
             ))}
@@ -342,7 +342,7 @@ function EdgeInspector({ edgeKey, allAgents }: { edgeKey: string; allAgents: Age
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
         <div className="font-pixel" style={{
           fontSize: 8, color: "var(--text)", padding: "5px 10px",
-          background: "#06060f", border: "1px solid #1a1a3a",
+          background: "var(--surface-2)", border: "1px solid var(--border)",
         }}>{agentA.name}</div>
         <div style={{ flex: 1, textAlign: "center" }}>
           <div style={{ height: 2, background: color, opacity: 0.6, marginBottom: 4 }} />
@@ -350,13 +350,13 @@ function EdgeInspector({ edgeKey, allAgents }: { edgeKey: string; allAgents: Age
         </div>
         <div className="font-pixel" style={{
           fontSize: 8, color: "var(--text)", padding: "5px 10px",
-          background: "#06060f", border: "1px solid #1a1a3a",
+          background: "var(--surface-2)", border: "1px solid var(--border)",
         }}>{agentB.name}</div>
       </div>
 
       <div style={{
         fontSize: 10, color: "var(--text-dim)", lineHeight: 1.7,
-        padding: "8px 10px", background: "#020208", border: "1px solid #0a0a1a", marginBottom: 14,
+        padding: "8px 10px", background: "var(--surface-2)", border: "1px solid var(--border)", marginBottom: 14,
         fontFamily: "ui-monospace",
       }}>
         {buildEdgeNarrative(agentA, agentB, relType, strength)}
@@ -370,11 +370,11 @@ function EdgeInspector({ edgeKey, allAgents }: { edgeKey: string; allAgents: Age
       </div>
 
       <Label>{agentA.name}'s VIEW</Label>
-      <div style={{ fontSize: 10, color: "var(--text-dim)", padding: "6px 8px", background: "#020208", marginBottom: 8, fontFamily: "ui-monospace" }}>
+      <div style={{ fontSize: 10, color: "var(--text-dim)", padding: "6px 8px", background: "var(--surface-2)", marginBottom: 8, fontFamily: "ui-monospace" }}>
         {relAB ? `${relAB.type} (${relAB.strength.toFixed(2)})` : "No record."}
       </div>
       <Label>{agentB.name}'s VIEW</Label>
-      <div style={{ fontSize: 10, color: "var(--text-dim)", padding: "6px 8px", background: "#020208", marginBottom: 12, fontFamily: "ui-monospace" }}>
+      <div style={{ fontSize: 10, color: "var(--text-dim)", padding: "6px 8px", background: "var(--surface-2)", marginBottom: 12, fontFamily: "ui-monospace" }}>
         {relBA ? `${relBA.type} (${relBA.strength.toFixed(2)})` : "No record."}
       </div>
 
@@ -397,7 +397,7 @@ function MetricsSummary({ initial, current, day }: { initial: MacroMetrics; curr
     return (
       <div style={{
         display: "flex", justifyContent: "space-between", alignItems: "center",
-        padding: "5px 0", borderBottom: "1px solid #06060f",
+        padding: "5px 0", borderBottom: "1px solid var(--border)",
       }}>
         <span style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace" }}>{label}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -468,13 +468,13 @@ export function Inspector({ selection, snap, initialMetrics, worldId }: {
   return (
     <div style={{
       width: 300, flexShrink: 0, display: "flex", flexDirection: "column",
-      background: "#070710", borderLeft: "1px solid var(--accent-dim)", height: "100%",
+      background: "var(--surface-2)", borderLeft: "1px solid var(--border)", height: "100%",
     }}>
       {/* header */}
       <div style={{
-        padding: "9px 14px", borderBottom: "1px solid #0a1a0a",
+        padding: "9px 14px", borderBottom: "1px solid var(--border)",
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        flexShrink: 0, background: "rgba(0,255,136,0.03)",
+        flexShrink: 0, background: "var(--surface)",
       }}>
         <span className="font-pixel" style={{ fontSize: 8, color: "var(--accent)", letterSpacing: "0.08em" }}>{title}</span>
         <span className="font-pixel" style={{ fontSize: 6, color: "var(--text-dim)", letterSpacing: "0.1em" }}>{subtitle}</span>
@@ -496,7 +496,7 @@ export function Inspector({ selection, snap, initialMetrics, worldId }: {
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {snap.highlights.slice(0, 6).map((h, i) => (
                     <div key={i} style={{
-                      padding: "7px 9px", background: "#020208",
+                      padding: "7px 9px", background: "var(--surface-2)",
                       borderLeft: "2px solid var(--gold)",
                     }}>
                       <div className="font-pixel" style={{ fontSize: 7, color: "var(--gold)", marginBottom: 3, letterSpacing: "0.05em" }}>

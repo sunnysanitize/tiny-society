@@ -12,8 +12,8 @@ type Phase = "setup" | "running" | "result";
 const SCANLINE_BG: React.CSSProperties = {
   position: "fixed", inset: 0, pointerEvents: "none", zIndex: -1,
   background:
-    "radial-gradient(ellipse at 20% 30%, rgba(0,255,136,0.04) 0%, transparent 55%)," +
-    "radial-gradient(ellipse at 80% 70%, rgba(0,212,255,0.03) 0%, transparent 55%)",
+    "radial-gradient(ellipse at 20% 30%, rgba(121,80,242,0.05) 0%, transparent 55%)," +
+    "radial-gradient(ellipse at 80% 70%, rgba(78,197,240,0.04) 0%, transparent 55%)",
 };
 
 export default function Page() {
@@ -86,7 +86,7 @@ export default function Page() {
             padding: "14px 20px",
             background: "var(--surface)",
             border: "1px solid var(--accent-dim)",
-            boxShadow: "0 0 20px rgba(0,255,136,0.12)",
+            boxShadow: "0 6px 24px rgba(100,80,200,0.09)",
             position: "relative",
           }}>
             {/* corner brackets */}
@@ -102,13 +102,13 @@ export default function Page() {
                 }} />
                 <h1 className="font-pixel" style={{
                   fontSize: 14, color: "var(--accent)", margin: 0,
-                  textShadow: "0 0 20px rgba(0,255,136,0.6)",
+                  textShadow: "none",
                   animation: "title-flicker 10s infinite",
                   letterSpacing: "0.05em",
                 }}>
                   TINY SOCIETY AI
                 </h1>
-                <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", padding: "2px 6px", border: "1px solid #1a1a3a" }}>
+                <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", padding: "2px 6px", border: "1px solid var(--border)" }}>
                   v1.0
                 </span>
               </div>
@@ -124,12 +124,12 @@ export default function Page() {
                 style={{
                   fontSize: 8, padding: "7px 14px", cursor: "pointer",
                   background: "transparent", color: "var(--text-dim)",
-                  border: "1px solid #1a1a3a", letterSpacing: "0.08em",
+                  border: "1px solid var(--border)", letterSpacing: "0.08em",
                   textTransform: "uppercase",
                   transition: "border-color 0.1s, color 0.1s",
                 }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--red)"; (e.currentTarget as HTMLElement).style.color = "var(--red)"; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#1a1a3a"; (e.currentTarget as HTMLElement).style.color = "var(--text-dim)"; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"; (e.currentTarget as HTMLElement).style.color = "var(--text-dim)"; }}
               >
                 ← QUIT
               </button>
@@ -208,7 +208,7 @@ function LiveProgress({ currentDay, totalDays, latestLog }: {
   return (
     <div style={{
       background: "var(--surface)", border: "1px solid var(--accent-dim)",
-      boxShadow: "0 0 20px rgba(0,255,136,0.15)",
+      boxShadow: "0 6px 24px rgba(100,80,200,0.09)",
       padding: "16px 20px", position: "relative",
     }}>
       <div style={{ position: "absolute", top: -2, left: -2, width: 12, height: 12, borderTop: "2px solid var(--accent)", borderLeft: "2px solid var(--accent)" }} />
@@ -233,7 +233,7 @@ function LiveProgress({ currentDay, totalDays, latestLog }: {
         fontSize: 8, letterSpacing: "0px",
         color: "var(--accent)", marginBottom: 12,
         fontFamily: "ui-monospace, monospace",
-        textShadow: "0 0 8px rgba(0,255,136,0.4)",
+        textShadow: "none",
         overflowX: "hidden", whiteSpace: "nowrap",
       }}>
         {"▓".repeat(barFilled)}
@@ -242,7 +242,7 @@ function LiveProgress({ currentDay, totalDays, latestLog }: {
 
       {/* log */}
       {latestLog.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 3, borderTop: "1px solid #0a1a0a", paddingTop: 10 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
           {latestLog.slice(-4).map((line, i, arr) => (
             <div key={i} style={{
               fontSize: 10, color: i === arr.length - 1 ? "var(--text)" : "var(--text-dim)",

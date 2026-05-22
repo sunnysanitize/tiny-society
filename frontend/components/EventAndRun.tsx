@@ -71,7 +71,7 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun }: {
                 padding: "7px 12px", cursor: "pointer",
                 fontFamily: "var(--font-pixel, monospace)", fontSize: 9,
                 textTransform: "uppercase", letterSpacing: "0.05em",
-                border: `1px solid ${days === d ? "var(--gold)" : "#1a1a3a"}`,
+                border: `1px solid ${days === d ? "var(--gold)" : "var(--border)"}`,
                 background: days === d ? "rgba(255,215,0,0.08)" : "transparent",
                 color: days === d ? "var(--gold)" : "var(--text-dim)",
                 boxShadow: days === d ? "0 0 8px rgba(255,215,0,0.2)" : "none",
@@ -102,7 +102,7 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun }: {
           </div>
           <div className="font-pixel" style={{
             fontSize: 18, color: world.agents.length > 0 ? "var(--accent)" : "var(--red)",
-            textShadow: world.agents.length > 0 ? "0 0 12px rgba(0,255,136,0.5)" : "0 0 12px rgba(255,68,68,0.5)",
+            textShadow: "none",
           }}>
             {world.agents.length}
           </div>

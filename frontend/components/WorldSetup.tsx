@@ -86,10 +86,10 @@ export function WorldSetup({ onCreated }: { onCreated: (wid: string, world: Worl
               <button key={n} onClick={() => setPop(n)} style={{
                 padding: "4px 10px", cursor: "pointer", fontSize: 9,
                 fontFamily: "var(--font-pixel, monospace)", textTransform: "uppercase",
-                border: `1px solid ${pop === n ? "var(--accent)" : "#1a1a3a"}`,
-                background: pop === n ? "rgba(0,255,136,0.08)" : "transparent",
+                border: `1px solid ${pop === n ? "var(--accent)" : "var(--border)"}`,
+                background: pop === n ? "rgba(121,80,242,0.1)" : "transparent",
                 color: pop === n ? "var(--accent)" : "var(--text-dim)",
-                boxShadow: pop === n ? "0 0 8px rgba(0,255,136,0.2)" : "none",
+                boxShadow: pop === n ? "0 2px 0 var(--accent-dim)" : "none",
               }}>{n}</button>
             ))}
           </div>
