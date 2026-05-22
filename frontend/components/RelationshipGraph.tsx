@@ -11,15 +11,15 @@ import type { Agent, RelationshipType, Mood } from "@/lib/types";
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
-const EDGE: Record<RelationshipType, { color: string; dash: string; label: string; width: number }> = {
-  friendship:       { color: "#22c55e", dash: "none",     label: "Friend",     width: 2 },
-  romance:          { color: "#f472b6", dash: "10 4",     label: "Romance",    width: 2 },
-  rivalry:          { color: "#ef4444", dash: "none",     label: "Rival",      width: 2.5 },
-  trust:            { color: "#3b82f6", dash: "none",     label: "Trust",      width: 3 },
-  influence:        { color: "#a855f7", dash: "8 3",      label: "Influence",  width: 1.5 },
-  alliance:         { color: "#06b6d4", dash: "none",     label: "Alliance",   width: 3 },
-  conflict:         { color: "#f97316", dash: "4 3 2 3",  label: "Conflict",   width: 2 },
-  group_membership: { color: "#eab308", dash: "2 5",      label: "Group",      width: 1.5 },
+const EDGE: Record<RelationshipType, { color: string; dash: string; label: string; width: number; flowDur?: number; pulse?: boolean }> = {
+  friendship:       { color: "#22c55e", dash: "none",  label: "Friend",    width: 2.5, flowDur: 2.8 },
+  romance:          { color: "#f472b6", dash: "none",  label: "Romance",   width: 2.5, flowDur: 3.5 },
+  rivalry:          { color: "#ef4444", dash: "none",  label: "Rival",     width: 2.5, pulse: true  },
+  trust:            { color: "#3b82f6", dash: "none",  label: "Trust",     width: 2.5, flowDur: 4   },
+  influence:        { color: "#a855f7", dash: "8 3",   label: "Influence", width: 1.5, flowDur: 2   },
+  alliance:         { color: "#06b6d4", dash: "none",  label: "Alliance",  width: 3,   flowDur: 2   },
+  conflict:         { color: "#f97316", dash: "none",  label: "Conflict",  width: 2.5, pulse: true  },
+  group_membership: { color: "#eab308", dash: "2 5",   label: "Group",     width: 1.5               },
 };
 
 const MOOD_COLOR: Record<Mood, string> = {
@@ -193,6 +193,10 @@ export function RelationshipGraph({
   const groupRef = useRef<SVGGElement>(null);
   const nodeRefs = useRef<Map<string, SVGGElement>>(new Map());
   const linkRefs = useRef<Map<string, SVGPathElement>>(new Map());
+  const connLineRefs = useRef<Map<string, SVGLineElement>>(new Map());
+  const connGlowRefs = useRef<Map<string, SVGLineElement>>(new Map());
+  const connBadgeRefs = useRef<Map<string, SVGGElement>>(new Map());
+  const selNodeIdRef = useRef<string | null>(null);
   const simRef = useRef<ReturnType<typeof forceSimulation<GraphNode, GraphLink>> | null>(null);
   const simNodes = useRef<GraphNode[]>([]);
   const simLinks = useRef<GraphLink[]>([]);
@@ -259,8 +263,29 @@ export function RelationshipGraph({
             el.setAttribute("d", edgePath(src.x, src.y!, tgt.x, tgt.y!));
           }
         });
+        // update selected-node connection lines
+        const sid = selNodeIdRef.current;
+        if (sid) {
+          const sn = simNodes.current.find(n => n.id === sid);
+          if (sn?.x != null) {
+            connLineRefs.current.forEach((el, key) => {
+              const tid = key.split("~~")[1];
+              const tn = simNodes.current.find(n => n.id === tid);
+              if (!tn?.x) return;
+              const x1 = String(sn.x!), y1 = String(sn.y!), x2 = String(tn.x!), y2 = String(tn.y!);
+              el.setAttribute("x1", x1); el.setAttribute("y1", y1);
+              el.setAttribute("x2", x2); el.setAttribute("y2", y2);
+              connGlowRefs.current.get(key)?.setAttribute("x1", x1);
+              connGlowRefs.current.get(key)?.setAttribute("y1", y1);
+              connGlowRefs.current.get(key)?.setAttribute("x2", x2);
+              connGlowRefs.current.get(key)?.setAttribute("y2", y2);
+              const mx = (sn.x! + tn.x!) / 2, my = (sn.y! + tn.y!) / 2;
+              connBadgeRefs.current.get(key)?.setAttribute("transform", `translate(${mx},${my})`);
+            });
+          }
+        }
       })
-      .on("end", () => tick((t) => t + 1));
+      .on("end", () => { tick((t) => t + 1); fitToView(); });
 
     simRef.current = sim;
     return () => { sim.stop(); };
@@ -301,20 +326,50 @@ export function RelationshipGraph({
     return connectedEdges !== null && !connectedEdges.has(key);
   }
 
-  // ── zoom / pan ───────────────────────────────────────────────────────────────
-  function onWheel(e: React.WheelEvent) {
-    e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.12 : 0.89;
-    const newK = Math.max(0.15, Math.min(6, tf.k * factor));
-    const rect = svgRef.current!.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    setTf((t) => ({
-      x: mx - (mx - t.x) * (newK / t.k),
-      y: my - (my - t.y) * (newK / t.k),
-      k: newK,
-    }));
+  // ── fit to view ──────────────────────────────────────────────────────────────
+  function fitToView() {
+    const nodes = simNodes.current.filter(n => n.x != null && n.y != null);
+    if (!nodes.length || !svgRef.current) return;
+    const W = svgRef.current.clientWidth;
+    const H = svgRef.current.clientHeight;
+    const pad = 90;
+    const xs = nodes.map(n => n.x!);
+    const ys = nodes.map(n => n.y!);
+    const gx1 = Math.min(...xs) - pad, gx2 = Math.max(...xs) + pad;
+    const gy1 = Math.min(...ys) - pad, gy2 = Math.max(...ys) + pad;
+    const k = Math.max(0.3, Math.min(2, Math.min(W / (gx2 - gx1), H / (gy2 - gy1))));
+    setTf({
+      x: (W - (gx2 - gx1) * k) / 2 - gx1 * k,
+      y: (H - (gy2 - gy1) * k) / 2 - gy1 * k,
+      k,
+    });
   }
+
+  // ── zoom / pan ───────────────────────────────────────────────────────────────
+  // Must use a native listener with { passive: false } — React registers wheel
+  // listeners as passive, which silently ignores preventDefault().
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    function handleWheel(e: WheelEvent) {
+      e.preventDefault();
+      const raw = e.deltaMode === 1 ? e.deltaY * 20 : e.deltaY;
+      const capped = Math.sign(raw) * Math.min(Math.abs(raw), 40);
+      setTf((t) => {
+        const newK = Math.max(0.3, Math.min(2.5, t.k * (1 - capped * 0.004)));
+        const rect = el!.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        return {
+          x: mx - (mx - t.x) * (newK / t.k),
+          y: my - (my - t.y) * (newK / t.k),
+          k: newK,
+        };
+      });
+    }
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function onBgDown(e: PointerEvent<SVGRectElement>) {
     if (draggingNode.current) return;
@@ -325,7 +380,15 @@ export function RelationshipGraph({
 
   function onBgMove(e: PointerEvent<SVGRectElement>) {
     if (!isPanning.current) return;
-    setTf((t) => ({ ...t, x: e.clientX - panOrigin.current.x, y: e.clientY - panOrigin.current.y }));
+    const W = svgRef.current?.clientWidth ?? 700;
+    const H = svgRef.current?.clientHeight ?? 500;
+    const newX = e.clientX - panOrigin.current.x;
+    const newY = e.clientY - panOrigin.current.y;
+    setTf((t) => ({
+      ...t,
+      x: Math.max(-W * 1.5, Math.min(W * 1.5, newX)),
+      y: Math.max(-H * 1.5, Math.min(H * 1.5, newY)),
+    }));
   }
 
   function onBgUp(e: PointerEvent<SVGRectElement>) {
@@ -362,6 +425,9 @@ export function RelationshipGraph({
   // ── render ───────────────────────────────────────────────────────────────────
   const selNodeId = selection?.kind === "node" ? selection.id : null;
   const selEdgeKey = selection?.kind === "edge" ? selection.key : null;
+
+  // Keep selNodeIdRef current so the tick closure can read it without a stale value
+  useEffect(() => { selNodeIdRef.current = selNodeId; }, [selNodeId]);
 
   return (
     <div className="relative flex flex-col" style={{ height: "100%", background: "var(--surface-2)", overflow: "hidden" }}>
@@ -400,7 +466,7 @@ export function RelationshipGraph({
           LAYOUT
         </button>
         <button
-          onClick={() => setTf({ x: 0, y: 0, k: 1 })}
+          onClick={fitToView}
           className="font-pixel"
           style={{
             fontSize: 6, padding: "4px 9px", cursor: "pointer", letterSpacing: "0.08em",
@@ -416,7 +482,6 @@ export function RelationshipGraph({
       <svg
         ref={svgRef}
         style={{ flex: 1, cursor: "grab", userSelect: "none" }}
-        onWheel={onWheel}
       >
         <Defs />
         <rect width="100%" height="100%" fill="url(#grid)" />
@@ -442,6 +507,7 @@ export function RelationshipGraph({
             const dimmed = isEdgeDimmed(l.key);
             const highlighted = selEdgeKey === l.key || hoveredEdge === l.key;
             const isConnected = connectedEdges?.has(l.key);
+            const showConnLabel = !!isConnected && selection?.kind === "node";
             return (
               <g key={l.key}>
                 {/* wider invisible hit area */}
@@ -464,6 +530,7 @@ export function RelationshipGraph({
                   highlighted={highlighted}
                   isConnected={!!isConnected}
                   showLabels={showLabels}
+                  showConnLabel={showConnLabel}
                   simNodes={simNodes}
                 />
               </g>
@@ -616,6 +683,62 @@ export function RelationshipGraph({
               </g>
             );
           })}
+
+          {/* ── selected-node relationship lines overlay ───────────────── */}
+          {selNodeId && (() => {
+            const selNode = simNodes.current.find(n => n.id === selNodeId);
+            const selAgent = agents.find(a => a.id === selNodeId);
+            if (!selNode?.x || !selAgent) return null;
+            return Object.entries(selAgent.relationships).map(([name, rel], i) => {
+              const targetAgent = agents.find(a => a.name === name);
+              if (!targetAgent) return null;
+              const targetNode = simNodes.current.find(n => n.id === targetAgent.id);
+              if (!targetNode?.x) return null;
+              const key = `${selNodeId}~~${targetAgent.id}`;
+              const color = EDGE[rel.type]?.color ?? "#7a8a9e";
+              const mx = (selNode.x! + targetNode.x!) / 2;
+              const my = (selNode.y! + targetNode.y!) / 2;
+              const label = rel.type.replace("_", " ").toUpperCase();
+              const badgeW = label.length * 5.2 + 16;
+              const delay = `${i * 0.04}s`;
+              return (
+                <g key={key} style={{ pointerEvents: "none" }}>
+                  {/* soft glow */}
+                  <line
+                    ref={el => { if (el) connGlowRefs.current.set(key, el); else connGlowRefs.current.delete(key); }}
+                    x1={selNode.x} y1={selNode.y} x2={targetNode.x} y2={targetNode.y}
+                    stroke={color} strokeWidth={3} opacity={0.1}
+                    strokeDasharray="800" filter="url(#glow-sm)"
+                    style={{ animation: `draw-line 0.35s cubic-bezier(0.22,1,0.36,1) ${delay} both` }}
+                  />
+                  {/* main line */}
+                  <line
+                    ref={el => { if (el) connLineRefs.current.set(key, el); else connLineRefs.current.delete(key); }}
+                    x1={selNode.x} y1={selNode.y} x2={targetNode.x} y2={targetNode.y}
+                    stroke={color} strokeWidth={1} strokeDasharray="800"
+                    style={{ animation: `draw-line 0.35s cubic-bezier(0.22,1,0.36,1) ${delay} both` }}
+                  />
+                  {/* badge — outer g is the live-positioned anchor, inner g fades in */}
+                  <g
+                    ref={el => { if (el) connBadgeRefs.current.set(key, el); else connBadgeRefs.current.delete(key); }}
+                    transform={`translate(${mx},${my})`}
+                  >
+                    <g style={{ animation: `badge-in 0.25s ease-out ${delay} both` }}>
+                      <rect x={-badgeW / 2} y={-9} width={badgeW} height={18} fill={color} />
+                      <rect x={-badgeW / 2 + 2} y={-7} width={badgeW - 4} height={14} fill="white" opacity={0.12} />
+                      <text
+                        textAnchor="middle" dominantBaseline="central"
+                        fontSize={7} fontFamily="var(--font-pixel, 'Courier New', monospace)"
+                        fontWeight="700" fill="white" letterSpacing="0.06em"
+                      >
+                        {label}
+                      </text>
+                    </g>
+                  </g>
+                </g>
+              );
+            });
+          })()}
         </g>
       </svg>
 
@@ -659,7 +782,7 @@ export function RelationshipGraph({
 // ─── GraphEdge sub-component (reads live sim positions) ───────────────────────
 
 function GraphEdge({
-  l, cfg, dimmed, highlighted, isConnected, showLabels, simNodes,
+  l, cfg, dimmed, highlighted, isConnected, showLabels, showConnLabel, simNodes,
 }: {
   l: GraphLink;
   cfg: typeof EDGE[RelationshipType];
@@ -667,6 +790,7 @@ function GraphEdge({
   highlighted: boolean;
   isConnected: boolean;
   showLabels: boolean;
+  showConnLabel: boolean;
   simNodes: React.RefObject<GraphNode[]>;
 }) {
   const src = l.source as GraphNode;
@@ -675,11 +799,15 @@ function GraphEdge({
 
   const d = edgePath(src.x, src.y!, tgt.x, tgt.y!);
   const mid = labelMid(src.x, src.y!, tgt.x, tgt.y!);
-  const opacity = dimmed ? 0 : highlighted ? 1 : isConnected ? 0.75 : 0.35;
+  const opacity = dimmed ? 0 : highlighted ? 1 : isConnected ? 0.85 : 0.55;
   const width = highlighted ? cfg.width + 1.5 : cfg.width;
+  const showAnim = !dimmed && opacity > 0;
+  const labelText = cfg.label.toUpperCase();
+  const badgeW = labelText.length * 5.2 + 14;
 
   return (
     <>
+      {/* base edge */}
       <path
         d={d}
         fill="none"
@@ -688,24 +816,57 @@ function GraphEdge({
         strokeDasharray={cfg.dash === "none" ? undefined : cfg.dash}
         strokeOpacity={opacity}
         markerEnd={l.type === "influence" ? "url(#arrow-influence)" : l.type === "rivalry" ? "url(#arrow-rivalry)" : undefined}
+        filter={highlighted ? "url(#glow-sm)" : undefined}
         style={{ transition: "stroke-opacity 0.2s", pointerEvents: "none" }}
       />
-      {showLabels && !dimmed && (
-        <text
-          x={mid.x} y={mid.y}
-          textAnchor="middle" dominantBaseline="central"
-          fontSize={9} fontFamily="ui-sans-serif, system-ui, sans-serif"
-          fill={cfg.color} fillOpacity={0.9}
-          style={{ pointerEvents: "none" }}
-        >
-          <tspan
-            style={{
-              background: "#0b0d10",
-            }}
+
+      {/* pulsing glow halo for negative relationships */}
+      {cfg.pulse && showAnim && (
+        <path
+          d={d}
+          fill="none"
+          stroke={cfg.color}
+          strokeWidth={width + 4}
+          style={{ pointerEvents: "none", animation: "edge-pulse 1.8s ease-in-out infinite" }}
+        />
+      )}
+
+      {/* flowing particles for positive relationships */}
+      {cfg.flowDur && showAnim && (
+        <>
+          <circle r={3} fill={cfg.color} style={{ pointerEvents: "none" }}>
+            <animateMotion dur={`${cfg.flowDur}s`} repeatCount="indefinite" path={d} />
+          </circle>
+          <circle r={2} fill={cfg.color} opacity={0.6} style={{ pointerEvents: "none" }}>
+            <animateMotion dur={`${cfg.flowDur}s`} begin={`-${cfg.flowDur * 0.5}s`} repeatCount="indefinite" path={d} />
+          </circle>
+        </>
+      )}
+
+      {/* relationship badge on connected edges when a node is selected */}
+      {(showConnLabel || showLabels) && !dimmed && (
+        <g transform={`translate(${mid.x}, ${mid.y})`} style={{ pointerEvents: "none" }}>
+          <rect
+            x={-badgeW / 2} y={-9}
+            width={badgeW} height={18}
+            fill={cfg.color}
+          />
+          <rect
+            x={-badgeW / 2 + 2} y={-7}
+            width={badgeW - 4} height={14}
+            fill="white" opacity={0.12}
+          />
+          <text
+            textAnchor="middle" dominantBaseline="central"
+            fontSize={7}
+            fontFamily="var(--font-pixel, 'Courier New', monospace)"
+            fontWeight="700"
+            fill="white"
+            letterSpacing="0.06em"
           >
-            {cfg.label}
-          </tspan>
-        </text>
+            {labelText}
+          </text>
+        </g>
       )}
     </>
   );
