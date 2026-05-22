@@ -25,6 +25,20 @@ class Relationship(BaseModel):
     strength: float = Field(ge=-1.0, le=1.0)
 
 
+class Memory(BaseModel):
+    """A single recalled experience.
+
+    Retrieval (see simulation/memory.py) scores memories on relevance + recency +
+    importance, modeled on the Stanford "Generative Agents" paper. `day` is the sim
+    day the memory was created; `last_accessed_day` is bumped whenever the memory is
+    retrieved, feeding the recency term for later reflection/observation features.
+    """
+    text: str
+    importance: float = Field(default=5.0, ge=1.0, le=10.0)
+    day: int = 0
+    last_accessed_day: int = 0
+
+
 class Agent(BaseModel):
     id: str
     name: str
@@ -36,8 +50,13 @@ class Agent(BaseModel):
     influence_score: float = 0.0
     groups: list[str] = []
     relationships: dict[str, Relationship] = {}
-    short_term_memory: list[str] = []
-    long_term_memory: list[str] = []
+    short_term_memory: list[Memory] = []
+    long_term_memory: list[Memory] = []
+    # Per-agent observation feed (information asymmetry): recent world events this
+    # agent could plausibly witness — actions it took, actions targeting it, actions
+    # by group-mates, and "public" actions by high-influence agents. Plain strings
+    # (feed entries, not scored memories), capped to a recent window.
+    observations: list[str] = []
     is_custom: bool = False
 
 

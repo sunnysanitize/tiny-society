@@ -50,7 +50,7 @@ export function AuthScreen() {
             </span>
           </div>
           <div style={{ fontSize: 10, color: "var(--text-dim)", letterSpacing: "0.08em" }}>
-            multi-agent social simulation
+            multi-character social simulation
           </div>
         </div>
 

@@ -34,7 +34,7 @@ export function WorldSetup({ onCreated }: { onCreated: (wid: string, world: Worl
           ─── SELECT YOUR WORLD ───
         </div>
         <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 2, fontFamily: "ui-monospace, monospace" }}>
-          Define a fictional society · populate it with agents<br />
+          Define a fictional society · populate it with characters<br />
           inject a starting event · watch society evolve
         </div>
       </div>
@@ -122,7 +122,7 @@ export function WorldSetup({ onCreated }: { onCreated: (wid: string, world: Worl
       {/* Footer hint */}
       <div style={{ textAlign: "center", marginTop: 16 }}>
         <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", letterSpacing: "0.1em" }}>
-          ALL CHARACTERS ARE FICTIONAL · POWERED BY LLM AGENT REASONING
+          ALL CHARACTERS ARE FICTIONAL · POWERED BY LLM CHARACTER REASONING
         </span>
       </div>
     </div>

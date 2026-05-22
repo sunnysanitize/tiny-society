@@ -11,7 +11,7 @@ const pixelFont = Press_Start_2P({
 
 export const metadata: Metadata = {
   title: "Tiny Society AI",
-  description: "Multi-agent social simulation with AI agent reasoning.",
+  description: "Multi-character social simulation with AI character reasoning.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

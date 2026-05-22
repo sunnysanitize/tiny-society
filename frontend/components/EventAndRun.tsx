@@ -86,7 +86,7 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun }: {
         {/* AI per day */}
         <div>
           <div className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", marginBottom: 8, letterSpacing: "0.1em" }}>
-            AI AGENTS / DAY
+            AI CHARACTERS / DAY
           </div>
           <input
             type="number" min={1} max={20} value={perDay}
@@ -98,7 +98,7 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun }: {
         {/* Agent count indicator */}
         <div style={{ marginLeft: "auto", textAlign: "right" }}>
           <div className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", marginBottom: 4, letterSpacing: "0.1em" }}>
-            AGENTS LOADED
+            CHARACTERS LOADED
           </div>
           <div className="font-pixel" style={{
             fontSize: 18, color: world.agents.length > 0 ? "var(--accent)" : "var(--red)",
@@ -116,7 +116,7 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun }: {
           padding: "8px 12px", border: "1px solid rgba(255,68,68,0.3)",
           background: "rgba(255,68,68,0.05)", letterSpacing: "0.06em",
         }}>
-          ✖ ADD AGENTS TO ROSTER BEFORE LAUNCHING
+          ✖ ADD CHARACTERS TO ROSTER BEFORE LAUNCHING
         </div>
       )}
 

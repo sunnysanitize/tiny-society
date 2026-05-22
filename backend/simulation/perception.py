@@ -60,7 +60,7 @@ def perceive_event(
 
     user_prompt = _build_prompt(perceiver, actor, raw_delta, rel_type, action_summary)
     try:
-        raw = call_llm(PERCEPTION_SYSTEM, user_prompt, json_mode=True, max_tokens=200)
+        raw = call_llm(PERCEPTION_SYSTEM, user_prompt, json_mode=True, max_tokens=400)
     except Exception as e:
         logging.warning(f"Perception LLM failed ({perceiver.name} ← {actor.name}): {e}")
         return raw_delta, None
@@ -117,7 +117,7 @@ def _is_significant(perceiver: Agent, actor: Agent, raw_delta: float) -> bool:
     # Actor appears in perceiver's memory: personal history exists
     actor_lower = actor.name.lower()
     for mem in perceiver.short_term_memory + perceiver.long_term_memory:
-        if actor_lower in mem.lower():
+        if actor_lower in mem.text.lower():
             return True
     return False
 
@@ -138,10 +138,12 @@ def _build_prompt(
     # Memories that mention the actor are most relevant; fall back to recent general memory
     actor_lower = actor.name.lower()
     actor_memories = [
-        m for m in (perceiver.short_term_memory + perceiver.long_term_memory)
-        if actor_lower in m.lower()
+        m.text for m in (perceiver.short_term_memory + perceiver.long_term_memory)
+        if actor_lower in m.text.lower()
     ][-4:]
-    context_memories = actor_memories or (perceiver.long_term_memory[-3:] + perceiver.short_term_memory[-2:])
+    context_memories = actor_memories or [
+        m.text for m in (perceiver.long_term_memory[-3:] + perceiver.short_term_memory[-2:])
+    ]
 
     direction = "positive" if raw_delta >= 0 else "negative"
     signal_desc = f"{direction}, magnitude {abs(raw_delta):.2f} — relationship type: {rel_type}"

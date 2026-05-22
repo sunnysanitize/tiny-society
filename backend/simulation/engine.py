@@ -13,10 +13,16 @@ from models import (
 )
 from .selector import select_reasoning_agents
 from .reasoner import reason_for_agent
+from .reflector import reflect
 from .deterministic import apply_background_rules
 from .applicator import apply_action
+from .observation import distribute_observation
 from .metrics import compute_metrics, snapshot_influence
 from .reporter import generate_final_report
+
+# Run a reflection pass (Stanford "Generative Agents" style) every N sim days for
+# the agents reasoning that day, so the day's reasoning can use fresh reflections.
+REFLECT_EVERY_DAYS = 4
 
 
 def run_simulation(
@@ -66,9 +72,10 @@ def run_simulation(
             if abs_day > 1:
                 if a.short_term_memory:
                     promoted = a.short_term_memory[-1]
-                    if promoted and promoted not in a.long_term_memory:
+                    existing_texts = {m.text for m in a.long_term_memory}
+                    if promoted.text and promoted.text not in existing_texts:
                         a.long_term_memory.append(promoted)
-                        a.long_term_memory = a.long_term_memory[-20:]
+                        a.long_term_memory = a.long_term_memory[-40:]
                 a.short_term_memory = []
 
         # AFTERNOON: select agents, run AI reasoning + deterministic rules
@@ -79,6 +86,18 @@ def run_simulation(
         )
         selected_ids = {a.id for a in selected}
         background = [a for a in agents if a.id not in selected_ids]
+
+        # REFLECTION: every N days, the day's selected agents synthesize high-level
+        # insights from their recent memories into high-importance long-term memories
+        # (which then surface in this same day's relevance-based retrieval).
+        if abs_day > 1 and abs_day % REFLECT_EVERY_DAYS == 0:
+            for actor in selected:
+                new_reflections = reflect(actor, current_day=abs_day)
+                if new_reflections:
+                    logging.info(
+                        f"Day {abs_day}: {actor.name} reflected, "
+                        f"{len(new_reflections)} new insight(s)"
+                    )
 
         _llm_delay = float(os.getenv("LLM_CALL_DELAY_SECS", "2.0"))
 
@@ -92,12 +111,16 @@ def run_simulation(
                 actor,
                 agents,
                 event=active_event,
-                recent_log=full_event_log[-10:],
+                current_day=abs_day,
             )
             if action is None:
                 continue
-            log_line, notes = apply_action(actor, action, agents)
+            log_line, notes = apply_action(actor, action, agents, day=abs_day)
             day_log.append(log_line)
+            # PER-AGENT OBSERVATION LOCALITY: route this action only to the agents
+            # who could plausibly witness it (actor, targets, group-mates, or
+            # everyone if the actor is a high-influence public figure).
+            distribute_observation(log_line, actor, action.target_agents, agents)
             day_perception_notes.extend(notes)
             day_highlights.append(DayHighlight(
                 agent=actor.name,

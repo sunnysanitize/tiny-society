@@ -438,7 +438,7 @@ export function RelationshipGraph({
         zIndex: 10, flexShrink: 0,
       }}>
         <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", letterSpacing: "0.08em" }}>
-          {agents.length} AGENTS · {graphLinks.length} LINKS
+          {agents.length} CHARACTERS · {graphLinks.length} LINKS
         </span>
         <div style={{ flex: 1 }} />
         <button

@@ -23,6 +23,7 @@ from models import (
 from state import store
 from simulation.engine import run_simulation
 from simulation.generator import generate_fillers
+from simulation.memory import make_memory
 
 app = FastAPI(title="Tiny Society AI")
 
@@ -70,8 +71,8 @@ def add_character(wid: str, body: CharacterInput):
         goals=body.goals,
         mood=body.mood,
         groups=body.groups,
-        short_term_memory=list(body.starting_memories),
-        long_term_memory=list(body.starting_memories),
+        short_term_memory=[make_memory(m, day=0) for m in body.starting_memories],
+        long_term_memory=[make_memory(m, day=0) for m in body.starting_memories],
         relationships=dict(body.starting_relationships),
         is_custom=True,
     )
@@ -245,7 +246,7 @@ def agent_chat(wid: str, agent_id: str, body: ChatRequest):
     ) or "  (none yet)"
 
     memories = "\n".join(
-        f"  - {m}" for m in (agent.long_term_memory[-6:] + agent.short_term_memory[-4:])
+        f"  - {m.text}" for m in (agent.long_term_memory[-6:] + agent.short_term_memory[-4:])
     ) or "  (none)"
 
     user_prompt = (

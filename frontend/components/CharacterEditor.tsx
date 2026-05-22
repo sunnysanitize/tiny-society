@@ -104,13 +104,13 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
 
       {/* Recruit form */}
       <div className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", letterSpacing: "0.1em", marginBottom: 12 }}>
-        ▸ RECRUIT NEW AGENT
+        ▸ RECRUIT NEW CHARACTER
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
         <div>
           <FieldLabel>NAME</FieldLabel>
-          <input placeholder="agent name" value={name} onChange={e => setName(e.target.value)} />
+          <input placeholder="character name" value={name} onChange={e => setName(e.target.value)} />
         </div>
         <div>
           <FieldLabel>ROLE</FieldLabel>
@@ -137,16 +137,16 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
         </div>
         <div style={{ gridColumn: "span 2" }}>
           <FieldLabel>STARTING MEMORY (OPTIONAL)</FieldLabel>
-          <input placeholder="a memory this agent starts with..." value={memory} onChange={e => setMemory(e.target.value)} />
+          <input placeholder="a memory this character starts with..." value={memory} onChange={e => setMemory(e.target.value)} />
         </div>
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button className="btn" onClick={addCharacter} disabled={busy || !name.trim()}>
-          {busy ? "ADDING..." : "▶ ADD AGENT"}
+          {busy ? "ADDING..." : "▶ ADD CHARACTER"}
         </button>
         <button className="btn-ghost" onClick={generateFillers} disabled={genBusy || needed === 0}>
-          {genBusy ? "GENERATING..." : `AUTO-FILL ${needed} AGENT${needed === 1 ? "" : "S"}`}
+          {genBusy ? "GENERATING..." : `AUTO-FILL ${needed} CHARACTER${needed === 1 ? "" : "S"}`}
         </button>
       </div>
 

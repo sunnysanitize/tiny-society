@@ -148,7 +148,7 @@ export function SavesScreen({ onNewGame, onLoad }: Props) {
                     {save.day_count > 0 ? `DAY ${save.day_count}` : "NOT RUN"}
                   </div>
                   <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>
-                    {save.agent_count} agents
+                    {save.agent_count} characters
                   </div>
                 </div>
               </div>

@@ -462,7 +462,7 @@ export function Inspector({ selection, snap, initialMetrics, worldId }: {
   worldId: string | null;
 }) {
   const selectedAgent = selection?.kind === "node" ? snap.agents.find(a => a.id === selection.id) ?? null : null;
-  const title = selection?.kind === "node" ? selectedAgent?.name ?? "AGENT" : selection?.kind === "edge" ? "RELATIONSHIP" : `DAY ${snap.day}`;
+  const title = selection?.kind === "node" ? selectedAgent?.name ?? "CHARACTER" : selection?.kind === "edge" ? "RELATIONSHIP" : `DAY ${snap.day}`;
   const subtitle = selection?.kind === "node" ? "CHARACTER" : selection?.kind === "edge" ? "EDGE" : "OVERVIEW";
 
   return (
@@ -485,7 +485,7 @@ export function Inspector({ selection, snap, initialMetrics, worldId }: {
         {!selection && (
           <>
             <div style={{ fontSize: 9, color: "var(--text-dim)", marginBottom: 14, lineHeight: 1.7, fontFamily: "ui-monospace" }}>
-              Click a node to inspect an agent, or click an edge to read about a relationship.
+              Click a node to inspect a character, or click an edge to read about a relationship.
             </div>
             <MetricsSummary initial={initialMetrics} current={snap.metrics} day={snap.day} />
 

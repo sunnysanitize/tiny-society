@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from models import Agent, AgentAction, PerceptionNote, Relationship
 from .perception import perceive_event
+from .memory import make_memory
 
 
 def apply_action(
     actor: Agent,
     action: AgentAction,
     all_agents: list[Agent],
+    day: int = 0,
 ) -> tuple[str, list[PerceptionNote]]:
     """Validate the structured action against the world and apply state updates.
 
@@ -23,9 +25,9 @@ def apply_action(
     # Mood update
     actor.mood = action.emotional_reaction
 
-    # Memory
+    # Memory — heuristic importance assigned at creation
     if action.new_memory:
-        actor.short_term_memory.append(action.new_memory)
+        actor.short_term_memory.append(make_memory(action.new_memory, day=day))
 
     # Influence
     for target_name, delta in action.influence_effects.items():

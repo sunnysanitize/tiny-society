@@ -84,7 +84,7 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
 
           {/* stats */}
           <div style={{ display: "flex", gap: 18, alignItems: "center", flexShrink: 0 }}>
-            <StatBox value={snap.agents.length} label="AGENTS" color="var(--cyan)" />
+            <StatBox value={snap.agents.length} label="CHARACTERS" color="var(--cyan)" />
             <StatBox value={isLive ? `${snap.day}/${totalDays}` : `${totalDays}`} label={isLive ? "RUNNING" : "DAYS"} color="var(--accent)" />
             <StatBox value={snap.metrics.friendship_count} label="FRIENDS" color="#22c55e" />
             <StatBox value={snap.metrics.romance_count} label="ROMANCES" color="var(--pink)" />

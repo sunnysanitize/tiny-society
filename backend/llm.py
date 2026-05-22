@@ -49,13 +49,16 @@ def _call_anthropic(system: str, user: str, max_tokens: int) -> str:
 
 
 def _call_openai_compat(system: str, user: str, json_mode: bool, max_tokens: int) -> str:
+    import re as _re
     import time as _time
+    import logging as _logging
 
     base = os.getenv("OPENAI_COMPAT_BASE_URL", "").rstrip("/")
     key = os.getenv("OPENAI_COMPAT_API_KEY")
-    model = os.getenv("OPENAI_COMPAT_MODEL", "minimax/minimax-m2.5:free")
+    model = os.getenv("OPENAI_COMPAT_MODEL", "google/gemini-2.0-flash-001")
     if not base or not key:
         raise LLMError("OPENAI_COMPAT_BASE_URL or OPENAI_COMPAT_API_KEY not set")
+
     payload: dict = {
         "model": model,
         "messages": [
@@ -65,8 +68,7 @@ def _call_openai_compat(system: str, user: str, json_mode: bool, max_tokens: int
         "max_tokens": max_tokens,
         "temperature": 0.8,
     }
-    # Only send response_format if explicitly enabled — not all models support it
-    if json_mode and os.getenv("OPENAI_COMPAT_JSON_MODE", "").lower() == "true":
+    if json_mode:
         payload["response_format"] = {"type": "json_object"}
 
     headers = {
@@ -75,54 +77,66 @@ def _call_openai_compat(system: str, user: str, json_mode: bool, max_tokens: int
         "X-Title": "Tiny Society AI",
     }
 
-    import logging as _logging
-
-    for attempt in range(4):
+    for attempt in range(5):
         try:
-            with httpx.Client(timeout=90) as c:
+            with httpx.Client(timeout=120) as c:
                 r = c.post(f"{base}/chat/completions", json=payload, headers=headers)
 
                 if r.status_code == 429:
                     wait = float(r.headers.get("Retry-After", 10 * (attempt + 1)))
-                    wait = min(wait, 60)
-                    _logging.warning(f"Rate limited (attempt {attempt+1}/4), retrying in {wait:.0f}s")
+                    wait = min(wait, 90)
+                    _logging.warning(f"Rate limited (attempt {attempt+1}/5), retrying in {wait:.0f}s")
                     _time.sleep(wait)
                     continue
 
                 r.raise_for_status()
                 data = r.json()
 
-                # Some providers embed errors in 200 responses
+                # Some providers embed errors inside 200 responses
                 if not data.get("choices") and "error" in data:
                     err_msg = data["error"].get("message", str(data["error"]))
-                    _logging.warning(f"Provider error in 200 response (attempt {attempt+1}/4): {err_msg[:120]}")
-                    if attempt < 3:
+                    _logging.warning(f"Provider error in 200 response (attempt {attempt+1}/5): {err_msg[:200]}")
+                    if attempt < 4:
                         _time.sleep(5 * (attempt + 1))
                         continue
                     raise LLMError(f"Provider error: {err_msg}")
 
-                content = data["choices"][0]["message"]["content"]
+                msg = data["choices"][0]["message"]
+                content = msg.get("content") or ""
+
+                # Strip <think>...</think> blocks (DeepSeek-R1, QwQ, trinity-thinking, etc.)
+                content = _re.sub(r"<think>.*?</think>", "", content, flags=_re.DOTALL).strip()
+
+                # Some providers put the answer in reasoning_content when content is empty
                 if not content:
-                    _logging.warning("LLM returned empty content")
-                    return ""
-                return content.strip()
+                    content = (msg.get("reasoning_content") or msg.get("reasoning") or "").strip()
+                    content = _re.sub(r"<think>.*?</think>", "", content, flags=_re.DOTALL).strip()
+
+                if not content:
+                    _logging.warning(f"LLM returned empty content (attempt {attempt+1}/5), retrying")
+                    if attempt < 4:
+                        _time.sleep(3 * (attempt + 1))
+                        continue
+                    raise LLMError("LLM returned empty content after all retries")
+
+                return content
 
         except LLMError:
             raise
         except (httpx.TimeoutException, httpx.ConnectError) as e:
-            _logging.warning(f"Network error (attempt {attempt+1}/4): {e}")
-            if attempt < 3:
+            _logging.warning(f"Network error (attempt {attempt+1}/5): {e}")
+            if attempt < 4:
                 _time.sleep(5 * (attempt + 1))
             else:
-                raise LLMError(f"Network failed after 4 attempts: {e}")
+                raise LLMError(f"Network failed after 5 attempts: {e}")
         except httpx.HTTPStatusError as e:
-            if attempt < 3 and e.response.status_code >= 500:
-                _logging.warning(f"HTTP {e.response.status_code} (attempt {attempt+1}/4), retrying")
+            if attempt < 4 and e.response.status_code >= 500:
+                _logging.warning(f"HTTP {e.response.status_code} (attempt {attempt+1}/5), retrying")
                 _time.sleep(5 * (attempt + 1))
                 continue
-            raise LLMError(f"HTTP {e.response.status_code}: {e.response.text[:300]}")
+            raise LLMError(f"HTTP {e.response.status_code}: {e.response.text[:400]}")
 
-    raise LLMError("All 4 retry attempts exhausted (persistent rate limit or provider outage)")
+    raise LLMError("All 5 retry attempts exhausted")
 
 
 # ── trait / mood action templates ──────────────────────────────────────────────
@@ -235,29 +249,275 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
 
     # ── filler agent generation ────────────────────────────────────────────────
     if "FILLER_AGENT_GENERATION" in system:
-        first = ["Mika", "Leo", "Aria", "Sage", "Jun", "Theo", "Noa", "Ines",
-                 "Kai", "Rumi", "Eli", "Ada", "Reza", "Yuki", "Cleo", "Otto",
-                 "Maya", "Asa", "Nico", "Wren", "Pax", "Vera", "Iris", "Tomo"]
-        roles = ["student", "professor", "club president", "researcher",
-                 "dorm RA", "barista", "intern", "athlete"]
-        traits_pool = ["ambitious", "social", "introverted", "competitive",
-                       "loyal", "anxious", "charismatic", "thoughtful",
-                       "stubborn", "creative", "easily annoyed", "patient"]
-        groups_pool = ["Dorm A", "Dorm B", "Cooking Club", "Robotics Club",
-                       "Debate Team", "Music Society", "Sailing Club"]
-        moods = ["calm", "excited", "ambitious", "anxious", "content", "hopeful"]
+        ctx = user.lower()
+        is_fantasy  = any(w in ctx for w in ("kingdom", "magic", "medieval", "realm", "wizard", "elf", "sword", "throne", "castle", "knight"))
+        is_scifi    = any(w in ctx for w in ("space", "colony", "starship", "android", "station", "planet", "galaxy", "crew", "mission"))
+        is_corp     = any(w in ctx for w in ("office", "company", "startup", "corporate", "workplace", "firm", "ceo", "employee"))
+        is_school   = any(w in ctx for w in ("school", "university", "college", "campus", "student", "class", "dorm", "professor"))
+
+        if is_fantasy:
+            first_names = ["Aldric", "Mira", "Theron", "Seren", "Cael", "Lyra", "Davan", "Nia",
+                           "Oswin", "Fen", "Talia", "Bran", "Isolde", "Corvin", "Willa", "Emrys",
+                           "Rowan", "Vesper", "Cormac", "Aelys", "Dorin", "Fenna", "Hadrik", "Sable"]
+            last_names  = ["Ashveil", "Dawnbrook", "Ironwood", "Stormcrest", "Nighthollow",
+                           "Goldthorn", "Ravenmoor", "Cinderpeak", "Saltmarsh", "Greywood"]
+            roles_pool  = ["disgraced knight", "village healer with a secret", "ambitious court scholar",
+                           "exiled noble", "wandering mercenary", "reluctant heir", "temple acolyte",
+                           "guild enforcer", "traveling bard hiding their past", "former spy"]
+            groups_pool = ["The Iron Accord", "Merchants' Syndicate", "Temple of the Seven",
+                           "King's Council", "The Unseen Hand", "Blackwood Company",
+                           "Rebel Faction", "City Guard"]
+        elif is_scifi:
+            first_names = ["Kael", "Zara", "Mox", "Lyra", "Dex", "Nova", "Cid", "Sable",
+                           "Orion", "Vex", "Aria", "Juno", "Rael", "Pell", "Siv", "Tane"]
+            last_names  = ["Voss", "Kaine", "Orin", "Mercer", "Vale", "Cross", "Hale",
+                           "Stroud", "Nyx", "Callum", "Dray", "Fell"]
+            roles_pool  = ["burned-out navigation officer", "black-market medic", "propaganda analyst",
+                           "rogue engineer", "colony overseer with divided loyalties",
+                           "trauma surgeon turned soldier", "communications specialist hiding a signal",
+                           "retired admiral adjusting to civilian life", "cargo runner who's seen too much"]
+            groups_pool = ["Command Deck", "Engineering Bay", "Medical Corps",
+                           "Civilian Sector", "Security Division", "The Resistance",
+                           "Colonial Authority", "Dock Workers Union"]
+        elif is_corp:
+            first_names = ["Marcus", "Priya", "Derek", "Yuki", "Aisha", "Connor", "Zoe",
+                           "Reza", "Nadia", "Sam", "Elena", "Omar", "Jin", "Clara", "Felix"]
+            last_names  = ["Chen", "Vasquez", "Park", "Okafor", "Reyes", "Nakamura",
+                           "Ibrahim", "Petrov", "Santos", "Johansson", "Mbeki", "Walsh"]
+            roles_pool  = ["middle manager who knows where the bodies are buried",
+                           "new hire with too much ambition", "HR director with a personal agenda",
+                           "burned-out senior engineer", "VP who peaked five years ago",
+                           "junior analyst gunning for a promotion", "external consultant no one trusts",
+                           "long-timer who's seen three regimes", "finance director with a leak problem"]
+            groups_pool = ["Executive Team", "Product Division", "Engineering", "Sales",
+                           "Legal & Compliance", "HR", "The Old Guard", "The New Cohort"]
+        else:  # school / generic default
+            first_names = ["Marcus", "Yuki", "Aisha", "Leo", "Priya", "Finn", "Zoe", "Reza",
+                           "Nadia", "Sam", "Ines", "Theo", "Mara", "Jin", "Clara", "Omar",
+                           "Vera", "Eli", "Leila", "Noah", "Cleo", "Dani", "Ren", "Skye"]
+            last_names  = ["Chen", "Vasquez", "Park", "Okafor", "Reyes", "Nakamura",
+                           "Ibrahim", "Petrov", "Santos", "Johansson", "Mbeki", "Walsh",
+                           "Kowalski", "Diallo", "Russo", "Kim"]
+            roles_pool  = ["second-year student on academic probation",
+                           "overachieving freshman quietly falling apart",
+                           "TA who knows everyone's secrets",
+                           "mature student who left a career to come here",
+                           "scholarship student from a different world than their peers",
+                           "former high school star adjusting to being average",
+                           "campus activist burning out on causes",
+                           "thesis student who hasn't slept properly in months",
+                           "transfer student still figuring out who they are here",
+                           "student athlete hiding an injury"]
+            groups_pool = ["Dorm Council", "Debate Society", "Student Research Lab",
+                           "Varsity Team", "The Late-Night Crew", "Campus Politics",
+                           "Study Group A", "Off-Campus Clique", "Arts Collective",
+                           "Graduate Lounge"]
+
+        # ── Rich psychological archetypes ──────────────────────────────────────
+        archetypes = [
+            {
+                "traits": ["relentlessly hardworking", "terrified of failure", "struggles to accept help"],
+                "goals": ["outperform everyone without showing the effort it costs"],
+                "memories": [
+                    "I got the top score in the last evaluation. I couldn't enjoy it — I spent the next day waiting for someone to find a mistake.",
+                    "A mentor once called me 'naturally gifted.' I've been working twice as hard ever since to prove that wrong, and to prove them right.",
+                    "I turned down three social invitations this week to prepare. I don't know if that makes me disciplined or just scared of being found out.",
+                    "Someone cried in the hallway after the results were posted. I felt guilty — not because I did something wrong, but because I wasn't surprised by my score.",
+                ],
+                "mood": "ambitious",
+            },
+            {
+                "traits": ["socially magnetic", "emotionally unavailable", "expert at deflection"],
+                "goals": ["stay connected to everyone without letting anyone too close"],
+                "memories": [
+                    "People call me the glue of the group. What they don't know is that I feel most alone in a crowd.",
+                    "I made everyone laugh at the gathering last week. Walked home alone and didn't speak to anyone for two days.",
+                    "Someone once said I was the person they'd call in a crisis but not someone they really knew. I've been thinking about that since.",
+                    "I ended a close friendship last year because they started to see through my deflections. I told myself they were the problem.",
+                ],
+                "mood": "content",
+            },
+            {
+                "traits": ["deeply principled", "uncompromising", "privately exhausted by their own standards"],
+                "goals": ["hold the line on what's right even when it costs them"],
+                "memories": [
+                    "I reported a superior for cutting corners. The process took eight months, nothing changed, and I'm still the one people look at sideways.",
+                    "I gave honest feedback that wasn't asked for and it ended a working relationship I valued. I don't regret it. I also haven't recovered from it.",
+                    "Someone asked me why I bother. I said 'because someone has to.' I meant it. I also didn't sleep that night.",
+                    "I've started to wonder if integrity without power is just self-punishment. I hate that I'm wondering that.",
+                ],
+                "mood": "frustrated",
+            },
+            {
+                "traits": ["quietly observant", "loyal to a fault", "slow to trust but immovable once they do"],
+                "goals": ["find one person who actually means what they say"],
+                "memories": [
+                    "I watched two people I thought were close friends talk about a third behind their back. I didn't say anything. I started watching everyone differently after that.",
+                    "I helped someone through a crisis that nobody else knew about. They've barely spoken to me since. I've learned to expect that.",
+                    "There's one person here who's never once performed for my approval. I think about that more than I should.",
+                    "I keep a short list of people I'd actually call if things went badly. Right now it has two names on it.",
+                ],
+                "mood": "calm",
+            },
+            {
+                "traits": ["charismatic", "strategically generous", "territorial about status"],
+                "goals": ["consolidate influence before anyone realizes how hard I'm working at it"],
+                "memories": [
+                    "I introduced two people specifically because I thought they'd like each other less than they liked me individually. It worked.",
+                    "Someone called me a natural leader last month. I've been carefully managing their perception of me for the last six months.",
+                    "I did a genuine favor for someone last week, and I'm irritated that I can't tell whether it was actually genuine.",
+                    "There's a person here who doesn't respond to my usual moves. I find myself thinking about them constantly.",
+                ],
+                "mood": "confident",
+            },
+            {
+                "traits": ["idealistic", "prone to disappointment", "still trying despite everything"],
+                "goals": ["find evidence that people are better than their worst moments"],
+                "memories": [
+                    "I organized something I really believed in. Three people showed up. I told myself it was a start.",
+                    "I trusted someone with something real and they used it in an argument a month later. I forgave them. I don't know why.",
+                    "I keep starting conversations about things that matter and watching people's eyes glaze over. I haven't stopped starting them.",
+                    "Someone told me I was naive. They were probably right. I'd rather be that than the alternative.",
+                ],
+                "mood": "hopeful",
+            },
+            {
+                "traits": ["cynical on the surface", "desperate for connection underneath", "pushes people away then resents them for leaving"],
+                "goals": ["stop sabotaging relationships long enough to see if one works"],
+                "memories": [
+                    "I said something cruel to someone I cared about because they were getting too close. They gave me exactly the distance I asked for and I've been miserable since.",
+                    "I dismissed a genuine offer of friendship by making a joke. The person laughed. Then didn't try again.",
+                    "I've been telling myself I prefer being alone. I'm not sure that's true anymore.",
+                    "Someone called me 'a lot to deal with.' They said it kindly. That somehow made it worse.",
+                ],
+                "mood": "lonely",
+            },
+            {
+                "traits": ["volatile under pressure", "intensely perceptive", "capable of great warmth in rare moments"],
+                "goals": ["prove that the anger comes from somewhere real, not just from being difficult"],
+                "memories": [
+                    "I said something I meant but said it wrong, and now the thing I meant is buried under the way I said it.",
+                    "Someone flinched at my tone last week. I noticed. I didn't apologize. I haven't stopped thinking about it.",
+                    "There are exactly two people who don't treat my anger like a liability. I'd do anything for either of them.",
+                    "I was passed over for something I earned. I reacted badly. The reaction became the story.",
+                ],
+                "mood": "angry",
+            },
+            {
+                "traits": ["pragmatic", "quietly carrying more than they show", "underestimated by everyone"],
+                "goals": ["make it through without anyone figuring out how close to the edge they are"],
+                "memories": [
+                    "I solved a problem last month that three other people had given up on. Nobody asked how I did it. I'm not sure I could explain.",
+                    "I've been running on four hours of sleep for two weeks. I keep telling people I'm fine. They keep believing me.",
+                    "Someone described me as 'reliable' and 'low-maintenance' in the same sentence. I smiled. Later I sat with how hollow that felt.",
+                    "I have a plan for getting through this period. It depends on nothing going wrong. Things keep going wrong.",
+                ],
+                "mood": "anxious",
+            },
+            {
+                "traits": ["intellectually restless", "easily bored", "searches for meaning in everything"],
+                "goals": ["find something worth being genuinely interested in"],
+                "memories": [
+                    "I got deeply interested in something and then couldn't figure out what to do with that interest, so I let it fade. That's happened four times now.",
+                    "I had a conversation that changed how I see something fundamental. The other person doesn't know that. I've been looking for an excuse to talk to them again.",
+                    "I read three things this week that contradicted each other. Instead of resolving it, I've been sitting with all three.",
+                    "Someone asked what I care about and I couldn't answer. That scared me more than I expected.",
+                ],
+                "mood": "calm",
+            },
+            {
+                "traits": ["competitive", "generous to allies", "ruthless about perceived threats"],
+                "goals": ["win — but only if the winning means something"],
+                "memories": [
+                    "I lost to someone I'd underestimated. Instead of congratulating them, I immediately started planning how to beat them next time.",
+                    "I shared something that gave a rival an advantage because it was the right thing to do. I've been angrier about that than I expected.",
+                    "There's someone here who competes with me and actually makes me better. I haven't told them because I don't want them to know I need it.",
+                    "I was asked to mentor someone who might one day surpass me. I said yes. I'm still not sure why.",
+                ],
+                "mood": "ambitious",
+            },
+            {
+                "traits": ["warmhearted", "avoids conflict at personal cost", "takes on others' problems to ignore their own"],
+                "goals": ["help everyone around them until it becomes impossible to avoid themselves"],
+                "memories": [
+                    "I talked someone through a breakdown last month. They're doing better now. I haven't told anyone what it cost me to hold that.",
+                    "I avoided a difficult conversation for six weeks by staying busy with other people's problems. The conversation still happened. It was worse for the delay.",
+                    "Someone told me I was the most caring person they knew. I wanted to ask if they'd noticed I've been falling apart.",
+                    "I apologized for something that wasn't my fault because the tension was unbearable. They accepted it. The thing they'd done never got addressed.",
+                ],
+                "mood": "content",
+            },
+            {
+                "traits": ["adaptable", "uncertain who they are without an audience", "genuinely good at becoming what others need"],
+                "goals": ["figure out which version of themselves is actually real"],
+                "memories": [
+                    "I was different people in three different conversations yesterday. All of them were technically honest. None of them felt like me.",
+                    "Someone said 'you're always so easy to be around' and I didn't know whether to feel seen or erased.",
+                    "I caught myself performing an emotion I actually felt, and couldn't tell where the feeling stopped and the performance began.",
+                    "I agreed with someone I completely disagreed with because the room was reading it as the right answer. I've been unsettled since.",
+                ],
+                "mood": "anxious",
+            },
+            {
+                "traits": ["grieving something they haven't named", "still functional", "changed in ways others haven't noticed"],
+                "goals": ["get to the other side of whatever this is"],
+                "memories": [
+                    "Something ended recently that I haven't processed. I keep acting like it didn't happen. It works until it doesn't.",
+                    "A person I relied on is no longer in my life in the way they used to be. The gap is in everything.",
+                    "I went through the motions of a normal week and felt nothing. Then one small thing happened and I felt too much.",
+                    "Someone asked if I was okay. I said yes. There's no shorter version of the truth.",
+                ],
+                "mood": "heartbroken",
+            },
+            {
+                "traits": ["quietly ambitious", "reads people with unsettling accuracy", "plays a longer game than anyone realizes"],
+                "goals": ["position themselves without anyone realizing they've been positioned"],
+                "memories": [
+                    "I've been watching the dynamics in this group for weeks. I know who defers to whom, who resents whom, and who's pretending not to care.",
+                    "I did something helpful that cost me nothing but built significant goodwill. I'm not ashamed of that math.",
+                    "Someone outmaneuvered me last month. I was impressed. I'm also not going to let it happen again.",
+                    "I have a clear picture of where I'll be in a year. Nobody else in this room does. That asymmetry is an advantage.",
+                ],
+                "mood": "confident",
+            },
+        ]
+
+        # Extract world-informed groups from prompt if possible
+        extracted_groups: list[str] = []
+        for line in user.splitlines():
+            if any(g.lower() in line.lower() for g in groups_pool):
+                extracted_groups = groups_pool
+                break
+        active_groups = extracted_groups or groups_pool
+
+        used_names: set[str] = set()
         agents = []
         n = 25
+        archetype_order = rng.sample(archetypes, min(len(archetypes), n))
+        archetype_cycle = archetype_order + [rng.choice(archetypes) for _ in range(max(0, n - len(archetypes)))]
+
         for i in range(n):
+            arch = archetype_cycle[i]
+            first = rng.choice(first_names)
+            last  = rng.choice(last_names)
+            name  = f"{first} {last}"
+            # Avoid duplicates
+            attempt = 0
+            while name in used_names and attempt < 10:
+                first = rng.choice(first_names)
+                last  = rng.choice(last_names)
+                name  = f"{first} {last}"
+                attempt += 1
+            used_names.add(name)
+
             agents.append({
-                "name": f"{rng.choice(first)}-{i}",
-                "role": rng.choice(roles),
-                "traits": rng.sample(traits_pool, 3),
-                "goals": [rng.choice([
-                    "make close friends", "join a club", "lead a project",
-                    "find romance", "win a competition", "stay neutral"])],
-                "mood": rng.choice(moods),
-                "groups": rng.sample(groups_pool, rng.randint(1, 2)),
+                "name": name,
+                "role": rng.choice(roles_pool),
+                "traits": arch["traits"],
+                "goals": arch["goals"],
+                "mood": arch["mood"],
+                "groups": rng.sample(active_groups, min(rng.randint(1, 2), len(active_groups))),
+                "memories": arch["memories"],
             })
         return json.dumps({"agents": agents})
 
@@ -347,6 +607,69 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
             "narrative": rng.choice(narratives),
             "revealed_trait": trait,
         })
+
+    # ── reflection synthesis ───────────────────────────────────────────────────
+    if "REFLECTION_SYNTHESIS" in system:
+        agent_name = ""
+        agent_traits: list[str] = []
+        agent_goals: list[str] = []
+        rel_names: list[str] = []
+        recent_mems: list[str] = []
+        section = ""
+        for line in user.splitlines():
+            stripped = line.strip()
+            if stripped == "YOUR RELATIONSHIPS":
+                section = "rels"
+            elif stripped == "YOUR RECENT MEMORIES":
+                section = "mems"
+            elif stripped in ("YOUR CHARACTER", ""):
+                if stripped == "YOUR CHARACTER":
+                    section = "char"
+            elif line.startswith("Name: "):
+                agent_name = line[6:].strip()
+            elif line.startswith("Traits: "):
+                agent_traits = [t.strip() for t in line[8:].split(",") if t.strip() and t.strip() != "(none)"]
+            elif line.startswith("Goals: "):
+                agent_goals = [g.strip() for g in line[7:].split(",") if g.strip() and g.strip() != "(none)"]
+            elif section == "rels" and stripped.startswith("- "):
+                nm = stripped[2:].split(":", 1)[0].strip()
+                if nm:
+                    rel_names.append(nm)
+            elif section == "mems" and stripped.startswith("- "):
+                recent_mems.append(stripped[2:].strip())
+
+        # Detect the dominant theme of the recent memories to ground the insight.
+        joined = " ".join(recent_mems).lower()
+        person = rel_names[0] if rel_names else None
+        goal = agent_goals[0] if agent_goals else "find my place here"
+
+        insight_pool: list[str] = []
+        if any(w in joined for w in ("conflict", "fight", "fought", "confront", "tension", "argument", "rival")):
+            insight_pool.append(
+                "I keep ending up in conflict, and I'm starting to think I provoke it more than I admit."
+            )
+            insight_pool.append("When something matters to me, I'd rather avoid confrontation than risk losing it.")
+        if any(w in joined for w in ("trust", "friend", "alliance", "steady", "confide")):
+            insight_pool.append("The people who stay steady with me are the ones I should be investing in.")
+        if any(w in joined for w in ("alone", "lonely", "distance", "pull away", "withdraw")):
+            insight_pool.append("I pull away when I'm scared of being close, and it leaves me lonelier than before.")
+        if any(w in joined for w in ("win", "won", "lost", "lose", "compete", "ambition", "prove")):
+            insight_pool.append("My need to come out ahead is shaping every relationship I have here.")
+        if person:
+            insight_pool.append(f"My history with {person} is changing who I'm becoming, whether I like it or not.")
+        # Always have at least one grounded fallback.
+        insight_pool.append(f"What I really want is to {goal}, and my recent choices haven't all served that.")
+
+        # Deterministically pick 1-3 distinct insights for this agent/memory set.
+        k = 1 + (seed % 3)
+        chosen: list[str] = []
+        for ins in insight_pool:
+            if ins not in chosen:
+                chosen.append(ins)
+            if len(chosen) >= k:
+                break
+
+        return json.dumps({"insights": chosen})
 
     # ── agent daily reasoning ──────────────────────────────────────────────────
     if "AGENT_REASONING" in system:

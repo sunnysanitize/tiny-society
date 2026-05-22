@@ -122,7 +122,7 @@ export function SaveModal({ world, result, onClose, onSaved }: Props) {
                   <div>
                     <div className="font-pixel" style={{ fontSize: 9, color: "var(--text)" }}>{s.name}</div>
                     <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
-                      {s.day_count > 0 ? `Day ${s.day_count}` : "not run"} · {s.agent_count} agents
+                      {s.day_count > 0 ? `Day ${s.day_count}` : "not run"} · {s.agent_count} characters
                     </div>
                   </div>
                   <button
