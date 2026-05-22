@@ -93,6 +93,35 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
         </div>
       </div>
 
+      {/* ── Day dialogue / event feed (persists after the run completes) ── */}
+      {snap.event_log.length > 0 && (
+        <div style={{
+          background: "var(--surface)", border: "1px solid var(--border)",
+          padding: "10px 14px",
+        }}>
+          <div className="font-pixel" style={{
+            fontSize: 7, color: "var(--accent)", letterSpacing: "0.1em", marginBottom: 8,
+            display: "flex", alignItems: "center", gap: 8,
+          }}>
+            ◆ DAY {snap.day} — DIALOGUE
+            <span style={{ color: "var(--text-dim)" }}>{snap.event_log.length} ENTRIES</span>
+          </div>
+          <div style={{
+            display: "flex", flexDirection: "column", gap: 3,
+            maxHeight: 150, overflowY: "auto",
+          }}>
+            {snap.event_log.map((line, i) => (
+              <div key={i} style={{
+                fontSize: 10, color: "var(--text-dim)", lineHeight: 1.5,
+                fontFamily: "ui-monospace, monospace",
+              }}>
+                <span style={{ color: "var(--accent-dim)", marginRight: 6 }}>›</span>{line}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Graph + Inspector ──────────────────────────────────────────── */}
       <div style={{
         display: "flex", height: "calc(100vh - 290px)", minHeight: 480,

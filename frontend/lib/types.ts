@@ -11,6 +11,21 @@ export interface Relationship {
   strength: number;
 }
 
+export interface Memory {
+  text: string;
+  importance: number;
+  day: number;
+  last_accessed_day: number;
+}
+
+/** Memories are rich objects now, but legacy saves may hold plain strings. */
+export type MemoryEntry = Memory | string;
+
+/** Safely read a memory's text whether it's a Memory object or a legacy string. */
+export function memText(m: MemoryEntry): string {
+  return typeof m === "string" ? m : m?.text ?? "";
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -21,8 +36,8 @@ export interface Agent {
   influence_score: number;
   groups: string[];
   relationships: Record<string, Relationship>;
-  short_term_memory: string[];
-  long_term_memory: string[];
+  short_term_memory: MemoryEntry[];
+  long_term_memory: MemoryEntry[];
   is_custom: boolean;
 }
 

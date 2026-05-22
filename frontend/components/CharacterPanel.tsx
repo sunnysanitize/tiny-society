@@ -1,5 +1,6 @@
 "use client";
 import type { Agent } from "@/lib/types";
+import { memText } from "@/lib/types";
 
 export function CharacterPanel({ agent }: { agent: Agent | null }) {
   if (!agent) {
@@ -60,14 +61,14 @@ export function CharacterPanel({ agent }: { agent: Agent | null }) {
         <div className="text-xs text-muted mb-1">Short-term memory</div>
         <ul className="text-xs space-y-1 max-h-32 overflow-auto pr-1">
           {agent.short_term_memory.length === 0 && <li className="text-muted">(empty)</li>}
-          {agent.short_term_memory.map((m, i) => <li key={i} className="text-gray-300">· {m}</li>)}
+          {agent.short_term_memory.map((m, i) => <li key={i} className="text-gray-300">· {memText(m)}</li>)}
         </ul>
       </div>
       <div>
         <div className="text-xs text-muted mb-1">Long-term memory</div>
         <ul className="text-xs space-y-1 max-h-40 overflow-auto pr-1">
           {agent.long_term_memory.length === 0 && <li className="text-muted">(empty)</li>}
-          {agent.long_term_memory.map((m, i) => <li key={i} className="text-gray-300">· {m}</li>)}
+          {agent.long_term_memory.map((m, i) => <li key={i} className="text-gray-300">· {memText(m)}</li>)}
         </ul>
       </div>
     </div>

@@ -115,9 +115,92 @@ place, most of the perceived gap should be closed; ④–⑥ are incremental pol
 
 ---
 
+## Phase 2 — the Prediction Engine (what most makes it "MiroFish")
+
+The biggest difference isn't a feature, it's **purpose**: MiroFish is a *prediction
+engine*; this project is a *sandbox observer*. MiroFish's pipeline is seed doc + a
+**prediction question** → simulate → **aggregate agent beliefs into a population
+distribution** → forecast *with quantified uncertainty* (variance across agents), tracing
+the causal chain of which events moved sentiment. This project has no question, no belief
+state, and no aggregation. Adding them reuses existing machinery (`metrics.py`,
+`reporter.py`).
+
+New levers, ranked by "MiroFish-ness" (these are *beyond* ④–⑥ above):
+
+1. **Prediction question + per-agent belief/stance.** A world carries a question; each
+   `Agent` gets `stance: dict[topic -> float]` that shifts through interaction (same
+   mechanic as relationship deltas). Foundation for everything else.
+2. **Belief aggregation + uncertainty (upgrade `metrics.py`).** Each day aggregate stances
+   into a distribution; report the mean as the forecast and the **variance as confidence**.
+3. **Causal-chain reporting (upgrade `reporter.py`).** Find the days the distribution moved
+   most, attribute them to specific interactions, emit forecast + causal trace. Mirrors
+   MiroFish's ReportAgent.
+4. **Recommendation-style feed (upgrade ③).** OASIS uses a RecSys (TwHIN-BERT, interest +
+   "hot score"), not a global log. Ranking what each agent sees by interest-match + recency/
+   engagement produces echo chambers, virality, and cascades.
+5. **Real action space.** OASIS agents take **21 actions** (post, repost, comment, like,
+   follow…). This project collapses everything into one verb + a relationship delta.
+   Distinguishing broadcast vs. private vs. amplify is what makes influence emerge.
+6. **Probabilistic, time-based activation (upgrade `selector.py`).** OASIS activates agents
+   by hourly probability; this project deterministically picks top-N (same agents repeat).
+7. **GraphRAG with power structures (⑥, richer).** Also extract hierarchy/who-controls-what.
+8. **Scale + tiered models.** Batch LLM calls; cheap model for routine actions, strong model
+   for pivotal ones. More *active* agents = richer dynamics.
+
+Sequence: **#1 → #2 → #3** is one coherent vertical slice that turns the sandbox into a
+predictor. **#4 + #5** are the OASIS social-media realism upgrade. **#6–#8** are scaling.
+
+---
+
+## Phase 3 — Engagement (the actual goal): MiroFish depth × Tomodachi Life charm
+
+Realism is a *means*; the original goal is an engaging game. The synthesis:
+**MiroFish makes agents deep and believable; Tomodachi Life makes the *player* attached and
+delighted.** This project's LLM depth (rich memories, reflection, perception) is actually a
+superpower *over* Tomodachi — its vignettes are scripted; ours can be genuinely novel and
+personal. The job is to *surface* that depth as bite-sized, charming, surprising moments the
+player cares about and can nudge.
+
+Tomodachi's engagement DNA (and how to fuse it with the realism work):
+
+- **Identity injection (its #1 hook).** Players make Miis of real people — themselves,
+  friends. Seeing "your friend" fall in love or melt down is the hook. Add: create
+  characters from real people (name + avatar + a few traits); the LLM depth makes them
+  behave believably. *Builds on the existing custom-character flow.*
+- **The check-in / notification loop.** Reframe the 30-day batch run into a **daily digest**:
+  3–5 punchy vignettes ("Maya confessed to Theo", "Sam is spiraling about the scholarship").
+  Bite-sized, ritual, notification-driven. *Builds on `DayHighlight` / the new dialogue feed.*
+- **Player intervention as gameplay.** Let the player nudge — matchmake, drop an event/gift,
+  whisper advice, take sides. Each nudge writes to agent memory/stance (ties to Phase 2
+  belief state). Low-effort, high-meaning. *The `chat` endpoint is already a seed of this.*
+- **Surprise & humor via the LLM.** Agents occasionally generate dreams, catchphrases, hot
+  takes, dramatic announcements — theatrical vignette cards, not just relationship deltas.
+  *The reflection step (②) can emit these.*
+- **Prediction as a player-facing hook (the killer fusion).** Turn the Phase 2 prediction
+  question into a **bet/prophecy** the player makes ("Will Maya and Theo end up together?").
+  The swarm forecast + the actual outcome creates suspense and payoff. This fuses MiroFish's
+  belief-aggregation with Tomodachi's emergent-drama investment.
+- **Emotional stakes & attachment.** Relationship milestones; "someone you care about is in
+  crisis" alerts; the social graph as a living thing you're invested in.
+- **Charm & presentation.** Mood-driven expressions/avatars, the graph as a "town", vignette
+  cards. *Builds on the existing D3 graph + pixel aesthetic.*
+- **Progression / collection.** Milestones unlocked, memorable quotes saved, a "history book"
+  of the town's saga.
+
+**The unifying loop:** *check in → get delighted/surprised → nudge → make a prophecy →
+watch the payoff.* Depth (MiroFish) feeds surprise; surprise feeds attachment; attachment
+makes the prophecy matter; the nudge gives agency. That loop — not raw realism — is the
+engagement engine.
+
+---
+
 ## Sources
 
 - [Generative Agents: Interactive Simulacra of Human Behavior (Park et al., 2023)](https://arxiv.org/abs/2304.03442)
 - [MiroFish — GitHub (666ghj/MiroFish)](https://github.com/666ghj/MiroFish)
 - [MiroFish: The Open-Source AI Engine That Builds Digital Worlds to Predict the Future (DEV)](https://dev.to/arshtechpro/mirofish-the-open-source-ai-engine-that-builds-digital-worlds-to-predict-the-future-ki8)
 - [What is MiroFish? (blocmates)](https://www.blocmates.com/articles/what-is-mirofish-the-agent-engine-that-can-predict-anything-and-everything)
+- [OASIS — CAMEL-AI (GitHub)](https://github.com/camel-ai/oasis) · [OASIS docs](https://docs.oasis.camel-ai.org/introduction)
+- [CAMEL-AI Open-Sources OASIS — 1M-agent social simulator (MarkTechPost)](https://www.marktechpost.com/2024/12/27/camel-ai-open-sourced-oasis-a-next-generation-simulator-for-realistic-social-media-dynamics-with-one-million-agents/)
+- [MiroFish: Multi-Agent Swarm Intelligence for Predictive Simulation (Medium)](https://medium.com/@balajibal/mirofish-multi-agent-swarm-intelligence-for-predictive-simulation-09771e60b188)
+- [Tomodachi Life review — emergent storytelling & player investment (Eneba)](https://www.eneba.com/hub/games/tomodachi-life-review/)

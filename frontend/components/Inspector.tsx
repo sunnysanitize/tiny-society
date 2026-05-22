@@ -2,6 +2,7 @@
 import { useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { Agent, MacroMetrics, RelationshipType, Mood } from "@/lib/types";
+import { memText } from "@/lib/types";
 
 const REL_COLOR: Record<RelationshipType, string> = {
   friendship: "#22c55e", romance: "#f472b6", rivalry: "#ef4444",
@@ -32,7 +33,7 @@ function buildNarrative(agent: Agent): string {
   let s = `${agent.name} is a ${agent.role} — ${traitStr}. Right now they're ${moodLine}.`;
   if (agent.goals.length) s += ` Their drive: to ${agent.goals[0]}.`;
   if (topRel) s += ` Key connection: ${topRel[0]} (${topRel[1].type}).`;
-  if (agent.long_term_memory.length) s += ` "${agent.long_term_memory[agent.long_term_memory.length - 1]}"`;
+  if (agent.long_term_memory.length) s += ` "${memText(agent.long_term_memory[agent.long_term_memory.length - 1])}"`;
   return s;
 }
 
@@ -296,7 +297,7 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
                 background: "var(--surface-2)", borderLeft: "2px solid var(--accent-dim)", fontFamily: "ui-monospace",
               }}>
                 <span className="font-pixel" style={{ fontSize: 6, color: "var(--accent-dim)", display: "block", marginBottom: 2 }}>TODAY</span>
-                {m}
+                {memText(m)}
               </div>
             ))}
             {agent.long_term_memory.slice(-4).map((m, i) => (
@@ -305,7 +306,7 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
                 background: "var(--surface-2)", borderLeft: "2px solid var(--border)", fontFamily: "ui-monospace",
               }}>
                 <span className="font-pixel" style={{ fontSize: 6, color: "var(--text-muted)", display: "block", marginBottom: 2 }}>PAST</span>
-                {m}
+                {memText(m)}
               </div>
             ))}
           </div>
