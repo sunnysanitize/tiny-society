@@ -1,13 +1,27 @@
 import type {
-  World, Agent, CharacterInput, SimulationResult, StreamEvent,
+  World, Agent, CharacterInput, SimulationResult, StreamEvent, SaveMeta,
 } from "./types";
+import { getToken } from "./supabase";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+export function setAuthToken(_token: string | null) {
+  // kept for backwards compat — token is now fetched fresh per-request
+}
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeaders()),
+      ...(init?.headers || {}),
+    },
   });
   if (!res.ok) {
     const text = await res.text();
@@ -19,7 +33,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 async function* streamReq(path: string, body: unknown): AsyncGenerator<StreamEvent> {
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -103,4 +117,30 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ message, day }),
     }),
+
+  // ── Save files ────────────────────────────────────────────────────────────
+
+  listSaves: () =>
+    req<SaveMeta[]>("/saves"),
+
+  createSave: (name: string, world: World, result: SimulationResult | null) =>
+    req<SaveMeta>("/saves", {
+      method: "POST",
+      body: JSON.stringify({ name, world_data: world, result_data: result ?? undefined }),
+    }),
+
+  overwriteSave: (saveId: string, name: string, world: World, result: SimulationResult | null) =>
+    req<SaveMeta>(`/saves/${saveId}`, {
+      method: "PUT",
+      body: JSON.stringify({ name, world_data: world, result_data: result ?? undefined }),
+    }),
+
+  deleteSave: (saveId: string) =>
+    req<{ ok: boolean }>(`/saves/${saveId}`, { method: "DELETE" }),
+
+  loadSave: (saveId: string) =>
+    req<{ world_id: string; world: World; result: SimulationResult | null }>(
+      `/saves/${saveId}/load`,
+      { method: "POST" },
+    ),
 };

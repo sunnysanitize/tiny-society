@@ -83,6 +83,16 @@ export interface CharacterInput {
   starting_relationships: Record<string, Relationship>;
 }
 
+export interface SaveMeta {
+  id: string;
+  name: string;
+  day_count: number;
+  agent_count: number;
+  world_prompt: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type StreamEvent =
   | { type: "day"; snapshot: DaySnapshot }
   | { type: "done"; result: SimulationResult }

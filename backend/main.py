@@ -271,6 +271,77 @@ def agent_chat(wid: str, agent_id: str, body: ChatRequest):
     return ChatResponse(reply=reply, agent_name=agent.name)
 
 
+# ─── save files ───────────────────────────────────────────────────────────────
+
+import supabase_db
+from auth import UserIdDep
+
+
+class SaveMeta(BaseModel):
+    id: str
+    name: str
+    day_count: int
+    agent_count: int
+    world_prompt: str = ""
+    created_at: str
+    updated_at: str
+
+
+class SaveRequest(BaseModel):
+    name: str
+    world_data: dict
+    result_data: Optional[dict] = None
+
+
+class LoadSaveResponse(BaseModel):
+    world_id: str
+    world: World
+    result: Optional[SimulationResult] = None
+
+
+@app.get("/saves", response_model=list[SaveMeta])
+def list_saves(user_id: UserIdDep):
+    return supabase_db.list_saves(user_id)
+
+
+@app.post("/saves", response_model=SaveMeta)
+def create_save(body: SaveRequest, user_id: UserIdDep):
+    world = World(**body.world_data)
+    result = SimulationResult(**body.result_data) if body.result_data else None
+    return supabase_db.create_save(user_id, body.name, world, result)
+
+
+@app.put("/saves/{save_id}", response_model=SaveMeta)
+def overwrite_save(save_id: str, body: SaveRequest, user_id: UserIdDep):
+    world = World(**body.world_data)
+    result = SimulationResult(**body.result_data) if body.result_data else None
+    save = supabase_db.update_save(save_id, user_id, body.name, world, result)
+    if not save:
+        raise HTTPException(404, "save not found")
+    return save
+
+
+@app.delete("/saves/{save_id}")
+def delete_save(save_id: str, user_id: UserIdDep):
+    ok = supabase_db.delete_save(save_id, user_id)
+    if not ok:
+        raise HTTPException(404, "save not found")
+    return {"ok": True}
+
+
+@app.post("/saves/{save_id}/load", response_model=LoadSaveResponse)
+def load_save(save_id: str, user_id: UserIdDep):
+    save = supabase_db.get_save(save_id, user_id)
+    if not save:
+        raise HTTPException(404, "save not found")
+    world = World(**save["world_data"])
+    result = SimulationResult(**save["result_data"]) if save.get("result_data") else None
+    wid = store.create(world)
+    if result:
+        store.save_result(wid, result)
+    return LoadSaveResponse(world_id=wid, world=world, result=result)
+
+
 # ─── helpers ──────────────────────────────────────────────────────────────────
 
 def _require(wid: str) -> World:
