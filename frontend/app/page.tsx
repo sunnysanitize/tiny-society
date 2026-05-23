@@ -61,6 +61,13 @@ export default function Page() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Lighter background scrim on the loading / auth entry screens.
+  useEffect(() => {
+    const isEntry = session === undefined || phase === "auth";
+    document.body.classList.toggle("entry-bg", isEntry);
+    return () => document.body.classList.remove("entry-bg");
+  }, [session, phase]);
+
   function reset() {
     setWorldId(null); setWorld(null); setResult(null);
     setPhase(session ? "saves" : "auth");
@@ -161,12 +168,13 @@ export default function Page() {
         />
       )}
 
-      <main className="page-enter" style={{ maxWidth: 1400, margin: "0 auto", padding: "20px 24px" }}>
+      <main className="page-enter" style={{ maxWidth: 1400, margin: "0 auto", padding: "clamp(12px, 3vw, 20px) clamp(10px, 3vw, 24px)" }}>
 
         {/* ── Title Bar ─────────────────────────────────────────────────── */}
         <header style={{ marginBottom: 28 }}>
           <div style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
+            flexWrap: "wrap", gap: 10,
             padding: "14px 20px",
             background: "var(--surface)",
             border: "1px solid var(--accent-dim)",
@@ -176,8 +184,8 @@ export default function Page() {
             <div style={{ position: "absolute", top: -2, left: -2, width: 14, height: 14, borderTop: "2px solid var(--accent)", borderLeft: "2px solid var(--accent)" }} />
             <div style={{ position: "absolute", bottom: -2, right: -2, width: 14, height: 14, borderBottom: "2px solid var(--accent)", borderRight: "2px solid var(--accent)" }} />
 
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4, flexWrap: "wrap" }}>
                 <div style={{
                   width: 8, height: 8, borderRadius: "50%", background: "var(--accent)",
                   boxShadow: "0 0 10px var(--accent)",

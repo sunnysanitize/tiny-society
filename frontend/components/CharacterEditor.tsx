@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import type { World, Mood } from "@/lib/types";
+import { PixelAvatar, isEmojiAvatar, pixelVariant } from "./PixelAvatar";
 
 const MOODS: Mood[] = ["calm","excited","frustrated","ambitious","anxious","content","hopeful","confident","lonely","angry","heartbroken"];
 
@@ -118,7 +119,7 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
         ▸ RECRUIT NEW CHARACTER
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 10 }}>
         <div>
           <FieldLabel>NAME</FieldLabel>
           <input placeholder="character name" value={name} onChange={e => setName(e.target.value)} />
@@ -151,7 +152,31 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
           <input placeholder="a memory this character starts with..." value={memory} onChange={e => setMemory(e.target.value)} />
         </div>
         <div style={{ gridColumn: "span 2" }}>
-          <FieldLabel>AVATAR (OPTIONAL)</FieldLabel>
+          <FieldLabel>PIXEL LOOK (OPTIONAL — DEFAULT IS AUTO-GENERATED)</FieldLabel>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
+            {Array.from({ length: 8 }).map((_, i) => {
+              const tag = `pixel:${i}`;
+              const sel = pixelVariant(avatar) === i;
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => setAvatar(sel ? null : tag)}
+                  title={sel ? "click to use auto look" : "use this look"}
+                  style={{
+                    width: 34, height: 34, cursor: "pointer", padding: 2,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: sel ? "rgba(78,197,240,0.12)" : "var(--surface-2)",
+                    border: `1px solid ${sel ? "var(--cyan)" : "var(--border)"}`,
+                    boxShadow: sel ? "0 0 6px rgba(78,197,240,0.4)" : "none",
+                  }}
+                >
+                  <PixelAvatar seed={name.trim() || "preview"} variant={i} mood={mood} size={28} />
+                </button>
+              );
+            })}
+          </div>
+          <FieldLabel>OR PICK AN EMOJI</FieldLabel>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
             {AVATARS.map(emo => {
               const sel = avatar === emo;
@@ -212,15 +237,13 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
                   border: "1px solid var(--border)",
                   transition: "border-color 0.1s",
                 }}>
-                  {/* avatar or mood dot */}
-                  {a.avatar ? (
+                  {/* avatar — pixel sprite by default; explicit emoji pick overrides */}
+                  {isEmojiAvatar(a.avatar) ? (
                     <span style={{ fontSize: 16, lineHeight: "20px", flexShrink: 0, marginTop: 2 }}>{a.avatar}</span>
                   ) : (
-                    <div style={{
-                      width: 8, height: 8, borderRadius: "50%",
-                      background: moodColor, flexShrink: 0, marginTop: 4,
-                      boxShadow: `0 0 4px ${moodColor}`,
-                    }} />
+                    <div style={{ flexShrink: 0, marginTop: 2 }}>
+                      <PixelAvatar seed={a.id} avatar={a.avatar} mood={a.mood} size={22} title={a.name} />
+                    </div>
                   )}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>

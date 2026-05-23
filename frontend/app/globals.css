@@ -28,11 +28,55 @@ html {
 }
 
 body {
+  /* base fallback while the town image loads; the town + scrim layers
+     (body::before / body::after) render the actual immersive background. */
   background: linear-gradient(160deg, #dff0ff 0%, #eef0ff 45%, #fce8ff 100%);
   background-attachment: fixed;
   color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   min-height: 100vh;
+  position: relative;
+  /* Never allow a horizontal scrollbar on small screens — vertical only. */
+  overflow-x: hidden;
+}
+
+/* Guard: media (svg/img) inside layout must not force the page wider. */
+img, svg { max-width: 100%; }
+
+/* ── Immersive town background + readability scrim ────────────────────────── */
+/* Layer 1: the pixel-art town, full-viewport, fixed, behind everything. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background-image: url("/town-bg.png");
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+/* Layer 2: a soft light wash so dark text/panels stay legible over the
+   busy, light image. Slightly stronger toward the center where most UI
+   sits; lets the town read through the page gutters/margins. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(238,240,255,0.55) 0%, rgba(238,240,255,0.40) 45%, rgba(238,240,255,0.30) 100%),
+    linear-gradient(180deg, rgba(255,255,255,0.30) 0%, rgba(238,240,255,0.42) 100%);
+}
+
+/* Lighter scrim for the loading / auth entry screens — less text there,
+   so let the town breathe a bit more. */
+body.entry-bg::after {
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(238,240,255,0.34) 0%, rgba(238,240,255,0.24) 50%, rgba(238,240,255,0.16) 100%),
+    linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(238,240,255,0.30) 100%);
 }
 
 /* ── Panel / card ─────────────────────────────────────────────────────────── */

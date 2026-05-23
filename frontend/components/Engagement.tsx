@@ -220,7 +220,7 @@ export function ForecastPanel({ forecast, topicMeans, topicUncertainty, beliefCo
 
       {forecast?.narrative && (
         <div style={{
-          fontSize: 10, color: "var(--text)", lineHeight: 1.7, fontFamily: "ui-monospace",
+          fontSize: 12.5, color: "var(--text)", lineHeight: 1.7, fontFamily: "ui-monospace",
           padding: "8px 10px", background: "var(--surface-2)", borderLeft: "2px solid var(--accent)",
         }}>
           {forecast.narrative}
@@ -271,7 +271,7 @@ export function VerdictCard({ verdict }: { verdict?: ProphecyVerdict | null }) {
       </div>
 
       {verdict.explanation && (
-        <div style={{ fontSize: 11, color: "var(--text)", lineHeight: 1.8, fontFamily: "ui-monospace" }}>
+        <div style={{ fontSize: 12.5, color: "var(--text)", lineHeight: 1.8, fontFamily: "ui-monospace" }}>
           {verdict.explanation}
         </div>
       )}

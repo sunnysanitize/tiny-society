@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { Agent, MacroMetrics, RelationshipType, Mood } from "@/lib/types";
 import { memText } from "@/lib/types";
+import { PixelAvatar, isEmojiAvatar } from "./PixelAvatar";
 
 const REL_COLOR: Record<RelationshipType, string> = {
   friendship: "#22c55e", romance: "#f472b6", rivalry: "#ef4444",
@@ -241,12 +242,10 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
           boxShadow: `0 0 14px ${moodColor}50`,
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>
-          {agent.avatar ? (
+          {isEmojiAvatar(agent.avatar) ? (
             <span style={{ fontSize: 26, lineHeight: 1 }}>{agent.avatar}</span>
           ) : (
-            <span className="font-pixel" style={{ fontSize: 10, color: "var(--text)", letterSpacing: 0 }}>
-              {agent.name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase()}
-            </span>
+            <PixelAvatar seed={agent.id} avatar={agent.avatar} mood={agent.mood} size={40} title={agent.name} />
           )}
         </div>
         <div>
@@ -274,7 +273,7 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
 
       {/* narrative */}
       <div style={{
-        fontSize: 10, color: "var(--text-dim)", lineHeight: 1.7,
+        fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7,
         padding: "8px 10px", background: "var(--surface-2)",
         border: "1px solid var(--border)", marginBottom: 14, fontFamily: "ui-monospace",
       }}>
@@ -324,12 +323,16 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
                         display: "flex", alignItems: "center", justifyContent: "center",
                         flexShrink: 0,
                       }}>
-                        {other?.avatar ? (
+                        {other && isEmojiAvatar(other.avatar) ? (
                           <span style={{ fontSize: 12, lineHeight: 1 }}>{other.avatar}</span>
                         ) : (
-                          <span style={{ fontSize: 7, color: "var(--text-dim)", fontFamily: "var(--font-pixel)" }}>
-                            {name.slice(0, 2).toUpperCase()}
-                          </span>
+                          <PixelAvatar
+                            seed={other?.id ?? name}
+                            avatar={other?.avatar}
+                            mood={other?.mood}
+                            size={20}
+                            title={name}
+                          />
                         )}
                       </div>
                       <span style={{ fontSize: 10, color: "var(--text)", fontFamily: "ui-monospace" }}>{name}</span>
@@ -521,11 +524,12 @@ function MetricsSummary({ initial, current, day }: { initial: MacroMetrics; curr
 
 type Selection = { kind: "node"; id: string } | { kind: "edge"; key: string } | null;
 
-export function Inspector({ selection, snap, initialMetrics, worldId }: {
+export function Inspector({ selection, snap, initialMetrics, worldId, stacked = false }: {
   selection: Selection;
   snap: { agents: Agent[]; metrics: MacroMetrics; day: number; highlights: any[] };
   initialMetrics: MacroMetrics;
   worldId: string | null;
+  stacked?: boolean;
 }) {
   const selectedAgent = selection?.kind === "node" ? snap.agents.find(a => a.id === selection.id) ?? null : null;
   const title = selection?.kind === "node" ? selectedAgent?.name ?? "CHARACTER" : selection?.kind === "edge" ? "RELATIONSHIP" : `DAY ${snap.day}`;
@@ -533,8 +537,11 @@ export function Inspector({ selection, snap, initialMetrics, worldId }: {
 
   return (
     <div style={{
-      width: 300, flexShrink: 0, display: "flex", flexDirection: "column",
-      background: "var(--surface-2)", borderLeft: "1px solid var(--border)", height: "100%",
+      width: stacked ? "100%" : 300, flexShrink: 0, display: "flex", flexDirection: "column",
+      background: "var(--surface-2)",
+      borderLeft: stacked ? "none" : "1px solid var(--border)",
+      borderTop: stacked ? "1px solid var(--border)" : "none",
+      height: "100%",
     }}>
       {/* header */}
       <div style={{
@@ -568,7 +575,7 @@ export function Inspector({ selection, snap, initialMetrics, worldId }: {
                       <div className="font-pixel" style={{ fontSize: 7, color: "var(--gold)", marginBottom: 3, letterSpacing: "0.05em" }}>
                         {h.agent}
                       </div>
-                      <div style={{ fontSize: 9, color: "var(--text-dim)", lineHeight: 1.5, fontFamily: "ui-monospace" }}>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, fontFamily: "ui-monospace" }}>
                         {h.summary}
                       </div>
                     </div>

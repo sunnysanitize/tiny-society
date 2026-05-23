@@ -3,7 +3,9 @@ import { useMemo, useState } from "react";
 import type { SimulationResult, World } from "@/lib/types";
 import { RelationshipGraph } from "./RelationshipGraph";
 import { Inspector } from "./Inspector";
-import { ForecastPanel, VerdictCard, VignetteFeed, InjectEvent } from "./Engagement";
+import { ForecastPanel, VerdictCard, InjectEvent } from "./Engagement";
+import { StoryChapter } from "./StoryChapter";
+import { useViewport } from "@/lib/useViewport";
 
 type Selection = { kind: "node"; id: string } | { kind: "edge"; key: string } | null;
 
@@ -31,6 +33,7 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
   const [continueDays, setContinueDays] = useState(7);
   const [continuePerDay, setContinuePerDay] = useState(8);
   const [showContinueMenu, setShowContinueMenu] = useState(false);
+  const { isNarrow } = useViewport();
 
   const effectiveDay = isLive ? (lastSnap?.day ?? day) : day;
   const snap = useMemo(
@@ -62,7 +65,7 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
             <div className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", letterSpacing: "0.12em", marginBottom: 5 }}>
               ◆ WORLD
             </div>
-            <div style={{ fontSize: 11, color: "var(--text)", lineHeight: 1.6, fontFamily: "ui-monospace, monospace" }}>
+            <div style={{ fontSize: 12.5, color: "var(--text)", lineHeight: 1.7, fontFamily: "ui-monospace, monospace" }}>
               {world.prompt}
             </div>
           </div>
@@ -77,7 +80,7 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
                 {snap.active_event && snap.active_event !== world.starting_event
                   ? `DAY ${snap.day} EVENT` : "STARTING EVENT"}
               </div>
-              <div style={{ fontSize: 11, color: "var(--gold)", lineHeight: 1.5, fontFamily: "ui-monospace" }}>
+              <div style={{ fontSize: 12.5, color: "var(--gold)", lineHeight: 1.6, fontFamily: "ui-monospace" }}>
                 {activeEvent}
               </div>
             </div>
@@ -94,46 +97,41 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
         </div>
       </div>
 
-      {/* ── Day dialogue / event feed (persists after the run completes) ── */}
-      {snap.event_log.length > 0 && (
-        <div style={{
-          background: "var(--surface)", border: "1px solid var(--border)",
-          padding: "10px 14px",
-        }}>
-          <div className="font-pixel" style={{
-            fontSize: 7, color: "var(--accent)", letterSpacing: "0.1em", marginBottom: 8,
-            display: "flex", alignItems: "center", gap: 8,
-          }}>
-            ◆ DAY {snap.day} — DIALOGUE
-            <span style={{ color: "var(--text-dim)" }}>{snap.event_log.length} ENTRIES</span>
-          </div>
-          <div style={{
-            display: "flex", flexDirection: "column", gap: 3,
-            maxHeight: 150, overflowY: "auto",
-          }}>
-            {snap.event_log.map((line, i) => (
-              <div key={i} style={{
-                fontSize: 10, color: "var(--text-dim)", lineHeight: 1.5,
-                fontFamily: "ui-monospace, monospace",
-              }}>
-                <span style={{ color: "var(--accent-dim)", marginRight: 6 }}>›</span>{line}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Vignette / "what happened" digest ──────────────────────────── */}
-      <VignetteFeed vignettes={snap.vignettes} day={snap.day} />
+      {/* ── The day as a story chapter (merges highlights + vignettes +
+          event_log into one followable "what happened" narrative) ────── */}
+      <StoryChapter
+        agents={snap.agents}
+        highlights={snap.highlights}
+        vignettes={snap.vignettes}
+        eventLog={snap.event_log}
+        day={snap.day}
+        totalDays={totalDays}
+        activeEvent={activeEvent}
+        isStartEvent={!snap.active_event || snap.active_event === world.starting_event}
+        forecast={result.forecast}
+      />
 
       {/* ── Graph + Inspector ──────────────────────────────────────────── */}
+      {/* Desktop: side-by-side, full-height panel. Narrow (phone/tablet):
+          stack the graph above the inspector so neither gets squeezed. The
+          graph uses a dynamic-viewport height (dvh) so mobile browser chrome
+          doesn't clip it; the inspector flows below with its own scroll. */}
       <div style={{
-        display: "flex", height: "calc(100vh - 290px)", minHeight: 480,
+        display: "flex",
+        flexDirection: isNarrow ? "column" : "row",
+        height: isNarrow ? "auto" : "min(calc(100dvh - 290px), 900px)",
+        minHeight: isNarrow ? 0 : 480,
         overflow: "hidden",
         border: "1px solid var(--accent-dim)",
         boxShadow: "0 4px 16px rgba(100,80,200,0.08)",
       }}>
-        <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
+        <div style={{
+          flex: isNarrow ? "none" : 1,
+          minWidth: 0,
+          position: "relative",
+          height: isNarrow ? "60dvh" : "auto",
+          minHeight: isNarrow ? 320 : 0,
+        }}>
           <RelationshipGraph agents={snap.agents} selection={selection} onSelect={setSelection} />
           {isLive && (
             <div style={{
@@ -153,7 +151,13 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
             </div>
           )}
         </div>
-        <Inspector selection={selection} snap={snap} initialMetrics={result.initial_metrics} worldId={worldId} />
+        {isNarrow ? (
+          <div style={{ height: "50dvh", minHeight: 280, display: "flex", flexDirection: "column" }}>
+            <Inspector selection={selection} snap={snap} initialMetrics={result.initial_metrics} worldId={worldId} stacked />
+          </div>
+        ) : (
+          <Inspector selection={selection} snap={snap} initialMetrics={result.initial_metrics} worldId={worldId} />
+        )}
       </div>
 
       {/* ── Timeline ──────────────────────────────────────────────────── */}

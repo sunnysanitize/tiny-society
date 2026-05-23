@@ -8,6 +8,7 @@ import {
   type SimulationNodeDatum, type SimulationLinkDatum,
 } from "d3-force";
 import type { Agent, RelationshipType, Mood } from "@/lib/types";
+import { PixelAvatar, isEmojiAvatar } from "./PixelAvatar";
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
@@ -347,6 +348,33 @@ export function RelationshipGraph({
     });
   }
 
+  // ── re-fit when the container resizes (stack/unstack, window resize, rotate) ──
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let raf = 0;
+    let lastW = el.clientWidth;
+    let lastH = el.clientHeight;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w === lastW && h === lastH) return;
+      lastW = w; lastH = h;
+      // Debounce to a frame; nudge the sim's center force toward the new size
+      // and re-fit so the graph fills the resized container.
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const sim = simRef.current;
+        if (sim) {
+          sim.force("center", forceCenter<GraphNode>(w / 2, h / 2).strength(0.02));
+        }
+        fitToView();
+      });
+    });
+    ro.observe(el);
+    return () => { ro.disconnect(); cancelAnimationFrame(raf); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── zoom / pan ───────────────────────────────────────────────────────────────
   // Must use a native listener with { passive: false } — React registers wheel
   // listeners as passive, which silently ignores preventDefault().
@@ -616,8 +644,8 @@ export function RelationshipGraph({
                 {/* inner specular highlight */}
                 <circle r={r * 0.55} cx={-r * 0.22} cy={-r * 0.22} fill="white" opacity={0.25} />
 
-                {/* avatar (emoji) or initials */}
-                {n.avatar ? (
+                {/* avatar — pixel sprite by default; explicit emoji pick overrides */}
+                {isEmojiAvatar(n.avatar) ? (
                   <text
                     y={1}
                     textAnchor="middle"
@@ -628,18 +656,9 @@ export function RelationshipGraph({
                     {n.avatar}
                   </text>
                 ) : (
-                  <text
-                    y={-1}
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    fontSize={r * 0.58}
-                    fontWeight="700"
-                    fontFamily="ui-monospace, 'Courier New', monospace"
-                    fill={selected ? "#7950f2" : "#2d3a50"}
-                    style={{ pointerEvents: "none", letterSpacing: "0.06em" }}
-                  >
-                    {initials(n.name)}
-                  </text>
+                  <g transform={`translate(${-r * 0.82}, ${-r * 0.82})`} style={{ pointerEvents: "none" }}>
+                    <PixelAvatar seed={n.id} avatar={n.avatar} mood={n.mood} size={r * 1.64} />
+                  </g>
                 )}
 
                 {/* mood badge — top right */}
