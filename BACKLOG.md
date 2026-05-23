@@ -5,7 +5,13 @@ exercise via FastAPI TestClient + frontend `tsc`). The system runs end-to-end wi
 no crashes; everything below is a **quality gap, wiring gap, or enhancement** — not a
 blocker. Each item says *what it means*, *why it matters*, and *roughly how to do it*.
 
-Status legend: 🔴 bug · 🟡 gap · 🟢 enhancement · ⏳ deferred
+Status legend: 🔴 bug · 🟡 gap · 🟢 enhancement · ⏳ deferred · ✅ done
+
+> **Update.** The performance & live-editing roadmap (concurrent LLM inference, tiered models,
+> and mid-run character injection) has since been **implemented** — see
+> [PERFORMANCE_AND_LIVE_EDITING.md](./PERFORMANCE_AND_LIVE_EDITING.md). This resolves the
+> tiered-models half of §⑤ below (concurrency replaced the serial-with-sleep loop; a cheap/strong
+> tier split is live). Items ①–④ and ⑥–⑬ remain open.
 
 ---
 
@@ -59,16 +65,19 @@ avatars replaced initial-tiles on graph nodes.
 
 ## Part 2 — Cost & scale
 
-### ⏳ ⑤ Tiered models + batching (the deferred Phase 2 #8)
-**What it means.** Every realism layer added this cycle (planning, multi-turn exchanges,
-vignettes, perception, reflection, world-graph, prophecy grading) issues its own LLM call, so
-calls-per-run multiplied well beyond the README's old "~241 for 30 days." With the default
-`LLM_CALL_DELAY_SECS=2` and a paid provider, long runs are now slow and costly.
-**Why it matters.** Cost/latency is the practical ceiling on run length and population size.
-**How to fix.** Route routine work (background `post`/`comment` turns) to a cheap model and
-reserve a strong model for pivotal/charged turns; **batch** independent LLM calls within a day
-instead of serial-with-sleep; expose per-feature toggles (planning / vignettes / multi-turn /
-perception) in `SimulationConfig` so users can trade depth for cost.
+### ✅ ⑤ Tiered models + concurrency (was the deferred Phase 2 #8) — DONE
+**What it was.** Every realism layer added (planning, multi-turn exchanges, vignettes,
+perception, reflection, world-graph, prophecy grading) issues its own LLM call, so calls-per-run
+multiplied well beyond the README's old "~241 for 30 days." With the old serial-with-sleep loop
+(`LLM_CALL_DELAY_SECS=2`) and a paid provider, long runs were slow and costly.
+**What shipped.** (a) **Concurrency** — the day's plan+reason fan-out now runs via
+`asyncio.gather` bounded by `LLM_MAX_CONCURRENCY` (default 6), applied sequentially for
+determinism; the `time.sleep` delay was removed. (b) **Tiered models** — `tier="cheap"|"strong"`
+on the LLM adapter, routing routine turns to a cheap model and pivotal/structural/player-facing
+work to a strong one, via `*_MODEL_CHEAP`/`*_MODEL_STRONG` env vars (fall back to the single
+model var). See [PERFORMANCE_AND_LIVE_EDITING.md](./PERFORMANCE_AND_LIVE_EDITING.md).
+**Still open (nice-to-have).** Per-feature depth toggles (planning / vignettes / multi-turn /
+perception) in `SimulationConfig` so users can trade depth for cost — not yet built.
 
 ### 🟢 ⑥ Embedding-based memory retrieval
 **What it means.** `simulation/memory.py` `retrieve()` scores relevance by stopword-filtered
@@ -159,6 +168,6 @@ forecast, prophecy_verdict, avatar) round-trip.
 
 1. **Part 1 ①–④** — quick, makes demo runs coherent and finishes the prediction feature.
 2. **Part 4 ⑩** — a test suite, before building more on top.
-3. **Part 2 ⑤** — cost/scale, so longer/bigger runs become practical.
+3. ~~**Part 2 ⑤** — cost/scale~~ ✅ done (concurrency + tiered models). Embedding retrieval (⑥) remains.
 4. **Part 3 ⑦–⑨** — engagement depth (the actual product goal).
 5. **Part 4 ⑪–⑬** — validation/hardening, ongoing.

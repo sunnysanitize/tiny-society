@@ -45,7 +45,7 @@ def grade_prophecy(
 
     user = _build_prompt(prediction, final_metrics, forecast, final_report, notable_highlights or [])
     try:
-        raw = call_llm(PROPHECY_SYSTEM, user, json_mode=True, max_tokens=400)
+        raw = call_llm(PROPHECY_SYSTEM, user, json_mode=True, max_tokens=400, tier="strong")
     except Exception as e:
         logging.warning(f"Prophecy grading LLM call failed: {e}")
         return ProphecyVerdict(

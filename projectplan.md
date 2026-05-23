@@ -4,6 +4,28 @@
 
 ---
 
+> ## ⚠️ Status: this is the original MVP design doc (historical)
+>
+> The project has since shipped **well beyond** this MVP scope. Several things listed below as
+> *"future"* or *"MVP does not include"* are now built: persistent **Supabase** saves + **auth**,
+> **mid-simulation injected events** *and* **mid-run character injection**, a **scrubbable
+> timeline**, **per-agent/per-day LLM narration** (vignettes + story chapters), and a full
+> **prediction engine** (per-agent belief stances → population forecast with swarm confidence →
+> prophecy grading) that didn't exist in this plan at all. The engine also added
+> **relevance-based memory retrieval, reflection, observation locality, goal-driven planning,
+> multi-turn exchanges, a world knowledge graph, concurrent LLM inference, and tiered models.**
+>
+> For the **current state**, read:
+> - **[README.md](./README.md)** — what the project is and does today.
+> - **[REALISM_ANALYSIS.md](./REALISM_ANALYSIS.md)** — the realism roadmap and what's implemented.
+> - **[CALCULATIONS.md](./CALCULATIONS.md)** — every metric and formula.
+> - **[PERFORMANCE_AND_LIVE_EDITING.md](./PERFORMANCE_AND_LIVE_EDITING.md)** — concurrency, tiered models, mid-run injection.
+> - **[BACKLOG.md](./BACKLOG.md)** — what's still open.
+>
+> The text below is preserved as the original design intent.
+
+---
+
 ## Project Overview
 
 Tiny Society AI is an agent-based social simulation platform. The user defines a fictional world, populates it with characters, injects a starting event, and runs a multi-day simulation. Each day, agents reason about their situation and choose actions. Relationships shift — friendships form, rivalries emerge, romances develop. After the simulation ends, a macro report summarizes how the society changed over the full period.

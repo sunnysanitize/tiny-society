@@ -5,7 +5,7 @@ import re
 from typing import Optional
 
 from models import Agent, AgentAction, RelationshipEffect, WorldGraph, normalize_action_kind
-from llm import call_llm
+from llm import call_llm, acall_llm
 from .memory import retrieve
 from .observation import rank_feed
 
@@ -71,10 +71,32 @@ def reason_for_agent(
     import logging
     user = _build_prompt(agent, roster, event, current_day, world_graph)
     try:
-        raw = call_llm(REASONER_SYSTEM, user, json_mode=True, max_tokens=1024)
+        raw = call_llm(REASONER_SYSTEM, user, json_mode=True, max_tokens=1024, tier="cheap")
     except Exception as e:
         logging.warning(f"LLM call failed for agent {agent.name}: {e}")
         return None
+    return _parse_action(agent, raw)
+
+
+async def areason_for_agent(
+    agent: Agent,
+    roster: list[Agent],
+    event: Optional[str],
+    current_day: int = 1,
+    world_graph: Optional[WorldGraph] = None,
+) -> Optional[AgentAction]:
+    import logging
+    user = _build_prompt(agent, roster, event, current_day, world_graph)
+    try:
+        raw = await acall_llm(REASONER_SYSTEM, user, json_mode=True, max_tokens=1024, tier="cheap")
+    except Exception as e:
+        logging.warning(f"LLM call failed for agent {agent.name}: {e}")
+        return None
+    return _parse_action(agent, raw)
+
+
+def _parse_action(agent: Agent, raw: str) -> Optional[AgentAction]:
+    import logging
     data = _safe_json(raw)
     if not data:
         logging.warning(f"Empty/invalid JSON from LLM for agent {agent.name}: {raw[:100]!r}")

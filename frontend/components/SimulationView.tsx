@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import type { SimulationResult, World } from "@/lib/types";
 import { RelationshipGraph } from "./RelationshipGraph";
 import { Inspector } from "./Inspector";
-import { ForecastPanel, VerdictCard, InjectEvent } from "./Engagement";
+import { ForecastPanel, VerdictCard, InjectEvent, InjectCharacter } from "./Engagement";
 import { StoryChapter } from "./StoryChapter";
 import { useViewport } from "@/lib/useViewport";
 
@@ -294,6 +294,11 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
       {/* ── Inject event for the next continued day (not while live) ────── */}
       {onContinue && !isLive && (
         <InjectEvent worldId={worldId} pending={world.pending_event} />
+      )}
+
+      {/* ── Add a character mid-run (joins on continue; not while live) ──── */}
+      {onContinue && !isLive && (
+        <InjectCharacter worldId={worldId} currentDay={lastSnap.day} />
       )}
 
       {/* final report */}

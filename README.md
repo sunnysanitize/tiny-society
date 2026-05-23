@@ -47,9 +47,16 @@ end an LLM writes the town's story and grades the player's **prophecy**. No two 
 **Engagement**
 - **Pixel-character avatars** (seeded, mood-driven expressions) + "based on a real person."
 - **Story view** — each day reads as a "chapter" with narrative beats.
-- **Nudges** — whisper advice to a character, or inject an event mid-run.
+- **Nudges** — whisper advice to a character, inject an event, or **add a new character mid-run**
+  (a newcomer initialized for the current day whose arrival can move the forecast).
 - **Prophecy** — write a free-text prediction; the AI grades it against the outcome.
 - Responsive UI with an immersive pixel-town background.
+
+**Performance**
+- **Concurrent inference** — each day's agent reasoning fans out in parallel (`asyncio.gather`,
+  bounded by `LLM_MAX_CONCURRENCY`) and is applied sequentially for deterministic ordering.
+- **Tiered models** — routine turns route to a cheap model, pivotal/player-facing turns to a
+  strong one (`*_MODEL_CHEAP` / `*_MODEL_STRONG`).
 
 ---
 
@@ -148,6 +155,18 @@ ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
 LLM_PROVIDER=mock
 ```
 
+**Optional — performance & cost tuning** (all backward compatible; unset = previous behavior):
+
+```env
+LLM_MAX_CONCURRENCY=6                 # max simultaneous LLM calls in the day fan-out
+# Tiered models — cheap for routine turns, strong for pivotal/player-facing ones.
+# Each falls back to the single *_MODEL var above if unset.
+ANTHROPIC_MODEL_STRONG=claude-sonnet-4-5-20250929
+ANTHROPIC_MODEL_CHEAP=claude-haiku-4-5-20251001
+OPENAI_COMPAT_MODEL_STRONG=llama-3.3-70b-versatile
+OPENAI_COMPAT_MODEL_CHEAP=llama-3.1-8b-instant
+```
+
 **Optional — Supabase (auth + saved worlds).** Without these, the core simulation works fully;
 only the save/load feature is disabled.
 
@@ -192,7 +211,7 @@ npm run dev          # http://localhost:3000
 | 4 | Set a starting event, and optionally write a **prophecy** (free-text prediction). |
 | 5 | Pick simulation length (7-day quick or 30-day default) and run — streams day-by-day via SSE. |
 | 6 | Follow the **story** — each day is a chapter of beats; scrub the timeline, click characters, read the **feed**, watch the **forecast** + swarm confidence move. |
-| 7 | **Nudge** — whisper advice to a character or inject an event mid-run. |
+| 7 | **Nudge** — whisper advice to a character, inject an event, or add a new character mid-run. |
 | 8 | **Chat** with any character in-character. |
 | 9 | Read the final narrative report and the AI's **verdict** on your prophecy. |
 | 10 | **Continue** a finished run for more days, or **save/load** worlds (Supabase). |
@@ -207,13 +226,14 @@ npm run dev          # http://localhost:3000
 | `POST` | `/world` | Create a world |
 | `GET` | `/world/{id}` | Get world state |
 | `POST` | `/world/{id}/character` | Add a custom character (incl. avatar / based_on) |
+| `POST` | `/world/{id}/inject-character` | Add a character mid-run — initialized for the current day, joins on continue |
 | `DELETE` | `/world/{id}/character/{agent_id}` | Remove a character |
 | `POST` | `/world/{id}/generate-fillers` | LLM-generate filler characters |
 | `POST` | `/world/{id}/event` | Set the starting event |
 | `POST` | `/world/{id}/inject-event` | Queue a player-authored event for the next day |
 | `POST` | `/world/{id}/prophecy` | Set the player's free-text prediction |
-| `POST` | `/world/{id}/simulate`(`/stream`) | Run simulation (blocking / SSE) |
-| `POST` | `/world/{id}/simulate/continue`(`/stream`) | Continue from last day (blocking / SSE) |
+| `POST` | `/world/{id}/simulate`(`/stream`) | Run simulation (blocking / SSE). Optional `pause_on_days` stops the stream on chosen days. |
+| `POST` | `/world/{id}/simulate/continue`(`/stream`) | Continue from last day (blocking / SSE). Also honors `pause_on_days`. |
 | `GET` | `/world/{id}/result` | Fetch latest result (incl. forecast + prophecy verdict) |
 | `POST` | `/world/{id}/agent/{agent_id}/chat` | Chat with a character |
 | `POST` | `/world/{id}/agent/{agent_id}/advise` | Whisper advice (enters the character's memory) |
@@ -228,9 +248,14 @@ Interactive docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 The realism layers (planning, multi-turn exchanges, perception, reflection, vignettes,
 world-graph, forecasting, prophecy) add LLM calls well beyond a one-call-per-agent baseline, so
 runs are richer but heavier than earlier versions. On the **mock** provider everything is free
-and runs end-to-end with no key. For paid providers, set `LLM_CALL_DELAY_SECS` and
-`reasoning_agents_per_day` to taste; tiered/cheaper models for routine turns are on the roadmap
-(see [BACKLOG.md](./BACKLOG.md) §⑤).
+and runs end-to-end with no key. Two levers keep paid runs fast and cheap (see
+[PERFORMANCE_AND_LIVE_EDITING.md](./PERFORMANCE_AND_LIVE_EDITING.md)):
+- **Concurrent inference** — each day's reasoning fans out in parallel (tune `LLM_MAX_CONCURRENCY`),
+  so a day takes ≈ one call's latency instead of N × (latency + delay).
+- **Tiered models** — route routine turns to a cheap model (`*_MODEL_CHEAP`) and reserve a strong
+  model for pivotal/player-facing ones (`*_MODEL_STRONG`).
+
+Also tune `reasoning_agents_per_day` to trade depth for cost.
 
 ---
 
@@ -240,7 +265,9 @@ and runs end-to-end with no key. For paid providers, set `LLM_CALL_DELAY_SECS` a
 - **Mock-verified** — the engine is verified end-to-end on the mock provider; a real-LLM quality
   pass and an automated test suite are still open (see [BACKLOG.md](./BACKLOG.md)).
 - **Prediction `question` not yet wired to the UI** — `prophecy` is; see [BACKLOG.md](./BACKLOG.md) §③.
-- **Scale** — designed for tens of characters, not OASIS-scale millions (tiered models / batching: roadmap).
+- **Scale** — designed for tens of characters, not OASIS-scale millions. Concurrent inference and
+  tiered models are implemented; the distributed Environment Server / clustered inferencer for
+  true 1M-agent scale is intentionally out of scope.
 
 ---
 

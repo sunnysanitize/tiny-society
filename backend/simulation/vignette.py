@@ -52,7 +52,7 @@ def generate_vignette_struct(
     """One LLM call → (kind, text) or None on failure. kind ∈ dream|catchphrase|announcement."""
     user = _build_prompt(agent, world_event, current_day)
     try:
-        raw = call_llm(VIGNETTE_SYSTEM, user, json_mode=True, max_tokens=160)
+        raw = call_llm(VIGNETTE_SYSTEM, user, json_mode=True, max_tokens=160, tier="cheap")
     except Exception as e:
         logging.warning(f"Vignette LLM call failed for agent {agent.name}: {e}")
         return None

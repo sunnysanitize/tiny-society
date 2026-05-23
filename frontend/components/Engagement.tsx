@@ -1,13 +1,22 @@
 "use client";
 import { useState } from "react";
 import { api } from "@/lib/api";
-import type { Forecast, ProphecyVerdict, Vignette, VignetteKind, Verdict } from "@/lib/types";
+import type { Forecast, ProphecyVerdict, Vignette, VignetteKind, Verdict, Mood, Agent } from "@/lib/types";
+import { PixelAvatar } from "./PixelAvatar";
 
 // ── shared bits ───────────────────────────────────────────────────────────────
 
 function PanelLabel({ children, color = "var(--accent)" }: { children: React.ReactNode; color?: string }) {
   return (
     <div className="font-pixel" style={{ fontSize: 8, color, letterSpacing: "0.1em", marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+      {children}
+    </div>
+  );
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", letterSpacing: "0.1em", marginBottom: 5 }}>
       {children}
     </div>
   );
@@ -112,6 +121,160 @@ export function InjectEvent({ worldId, pending, onInjected }: {
       {queued && (
         <div style={{ fontSize: 9, color: "var(--gold)", fontFamily: "ui-monospace", marginTop: 8, fontStyle: "italic" }}>
           ⚡ Queued for the next day: &ldquo;{queued}&rdquo;
+        </div>
+      )}
+      {err && <div style={{ fontSize: 9, color: "var(--red)", fontFamily: "ui-monospace", marginTop: 6 }}>✖ {err}</div>}
+    </div>
+  );
+}
+
+// ── Inject character (mid-run) ──────────────────────────────────────────────
+// Adds a brand-new character into the world's CURRENT state, so when the player
+// continues, the newcomer joins from the next day and can change the outcome.
+
+const IC_MOODS: Mood[] = [
+  "calm","excited","frustrated","ambitious","anxious","content",
+  "hopeful","confident","lonely","angry","heartbroken",
+];
+
+export function InjectCharacter({ worldId, currentDay, onInjected }: {
+  worldId: string; currentDay: number; onInjected?: (agent: Agent) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("newcomer");
+  const [traits, setTraits] = useState("curious, bold");
+  const [goals, setGoals] = useState("make their mark");
+  const [mood, setMood] = useState<Mood>("hopeful");
+  const [groups, setGroups] = useState("");
+  const [memory, setMemory] = useState("");
+  const [avatar, setAvatar] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [arrived, setArrived] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  function splitCsv(s: string): string[] {
+    return s.split(",").map(x => x.trim()).filter(Boolean);
+  }
+
+  async function inject() {
+    if (!name.trim() || busy) return;
+    setBusy(true); setErr(null);
+    try {
+      const agent = await api.injectCharacter(worldId, {
+        name: name.trim(), role: role.trim() || "newcomer",
+        traits: splitCsv(traits), goals: splitCsv(goals),
+        mood, groups: splitCsv(groups),
+        starting_memories: memory.trim() ? [memory.trim()] : [],
+        starting_relationships: {},
+        ...(avatar ? { avatar } : {}),
+      });
+      setArrived(agent.name);
+      setName(""); setMemory(""); setAvatar(null);
+      onInjected?.(agent);
+    } catch (e: any) { setErr(e?.message ?? "Failed to inject character."); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div style={{
+      background: "var(--surface)", border: "1px solid rgba(78,197,240,0.3)",
+      padding: "10px 14px",
+    }}>
+      <PanelLabel color="var(--cyan)">
+        <button
+          type="button"
+          onClick={() => setOpen(v => !v)}
+          className="font-pixel"
+          style={{
+            fontSize: 8, color: "var(--cyan)", letterSpacing: "0.1em",
+            background: "transparent", border: "none", padding: 0, cursor: "pointer",
+          }}
+        >
+          ◈ ADD A CHARACTER {open ? "▾" : "▸"}
+        </button>
+      </PanelLabel>
+      <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace", marginBottom: open ? 12 : 0, lineHeight: 1.5 }}>
+        Drop a new character into the world. They join on day {currentDay} and start acting when you continue — their arrival can change the outcome.
+      </div>
+
+      {open && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginBottom: 10 }}>
+            <div>
+              <FieldLabel>NAME</FieldLabel>
+              <input placeholder="character name" value={name} onChange={e => setName(e.target.value)}
+                style={{ fontSize: 11, color: "var(--cyan)", borderColor: "rgba(78,197,240,0.3)" }} />
+            </div>
+            <div>
+              <FieldLabel>ROLE</FieldLabel>
+              <input placeholder="student / drifter..." value={role} onChange={e => setRole(e.target.value)}
+                style={{ fontSize: 11 }} />
+            </div>
+            <div>
+              <FieldLabel>TRAITS</FieldLabel>
+              <input placeholder="curious, bold, ..." value={traits} onChange={e => setTraits(e.target.value)}
+                style={{ fontSize: 11 }} />
+            </div>
+            <div>
+              <FieldLabel>GOALS</FieldLabel>
+              <input placeholder="make their mark, ..." value={goals} onChange={e => setGoals(e.target.value)}
+                style={{ fontSize: 11 }} />
+            </div>
+            <div>
+              <FieldLabel>MOOD</FieldLabel>
+              <select value={mood} onChange={e => setMood(e.target.value as Mood)} style={{ fontSize: 11 }}>
+                {IC_MOODS.map(m => <option key={m} value={m}>{m.toUpperCase()}</option>)}
+              </select>
+            </div>
+            <div>
+              <FieldLabel>GROUPS</FieldLabel>
+              <input placeholder="Dorm A, Cooking Club, ..." value={groups} onChange={e => setGroups(e.target.value)}
+                style={{ fontSize: 11 }} />
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <FieldLabel>STARTING MEMORY (OPTIONAL)</FieldLabel>
+              <input placeholder="a memory this character arrives with..." value={memory} onChange={e => setMemory(e.target.value)}
+                style={{ fontSize: 11 }} />
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <FieldLabel>PIXEL LOOK (OPTIONAL — DEFAULT IS AUTO-GENERATED)</FieldLabel>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {Array.from({ length: 8 }).map((_, i) => {
+                  const tag = `pixel:${i}`;
+                  const sel = avatar === tag;
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setAvatar(sel ? null : tag)}
+                      title={sel ? "click to use auto look" : "use this look"}
+                      style={{
+                        width: 34, height: 34, cursor: "pointer", padding: 2,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        background: sel ? "rgba(78,197,240,0.12)" : "var(--surface-2)",
+                        border: `1px solid ${sel ? "var(--cyan)" : "var(--border)"}`,
+                        boxShadow: sel ? "0 0 6px rgba(78,197,240,0.4)" : "none",
+                      }}
+                    >
+                      <PixelAvatar seed={name.trim() || "preview"} variant={i} mood={mood} size={28} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <button onClick={inject} disabled={busy || !name.trim()} className="btn"
+            style={{ padding: "6px 16px", fontSize: 8 }}>
+            {busy ? "ADDING..." : "◈ ADD CHARACTER"}
+          </button>
+        </>
+      )}
+
+      {arrived && (
+        <div style={{ fontSize: 9, color: "var(--cyan)", fontFamily: "ui-monospace", marginTop: 8, fontStyle: "italic" }}>
+          ◈ {arrived} will arrive on day {currentDay} when you continue.
         </div>
       )}
       {err && <div style={{ fontSize: 9, color: "var(--red)", fontFamily: "ui-monospace", marginTop: 6 }}>✖ {err}</div>}

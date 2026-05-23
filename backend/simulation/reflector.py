@@ -52,7 +52,7 @@ def reflect(agent: Agent, current_day: int) -> list[Memory]:
 
     user = _build_prompt(agent, memories)
     try:
-        raw = call_llm(REFLECTOR_SYSTEM, user, json_mode=True, max_tokens=512)
+        raw = call_llm(REFLECTOR_SYSTEM, user, json_mode=True, max_tokens=512, tier="strong")
     except Exception as e:
         logging.warning(f"Reflection LLM call failed for agent {agent.name}: {e}")
         return []

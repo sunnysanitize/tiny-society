@@ -80,6 +80,12 @@ export const api = {
       body: JSON.stringify(c),
     }),
 
+  injectCharacter: (wid: string, c: CharacterInput) =>
+    req<Agent>(`/world/${wid}/inject-character`, {
+      method: "POST",
+      body: JSON.stringify(c),
+    }),
+
   removeCharacter: (wid: string, agentId: string) =>
     req<{ ok: boolean }>(`/world/${wid}/character/${agentId}`, {
       method: "DELETE",

@@ -198,12 +198,28 @@ only shift topics it actually engaged with, magnitudes **−0.3..0.3**.
 | `SOFTMAX_TEMPERATURE` | 1.0 | `selector.py` | Selection randomness (↑ = more variety) |
 | `RECENCY_DECAY` | 0.85 | `memory.py`, `observation.py` | Per-day recency decay |
 | Reflection / advice importance | 9.0 / 10.0 | `reflector.py`, `main.py` | Forced high importance so they dominate recall |
-| `BATCH_SIZE` | 5 | `generator.py` | Filler agents generated per LLM call |
+| `BATCH_SIZE` | 3 | `generator.py` | Filler agents generated per LLM call (small batches avoid output-token truncation) |
 | `MAX_PIVOTAL_DAYS` | 3 | `reporter.py` | Pivotal days surfaced in the forecast |
+| `LLM_MAX_CONCURRENCY` | 6 (env) | `llm.py` | Max simultaneous LLM calls in the day's reasoning fan-out |
 
 ---
 
-## 12. Quick glossary
+## 12. Execution model (performance)
+Not a "calculation," but it affects how the per-day numbers above are produced.
+- **Concurrent reasoning.** Each day, the selected agents' plan+reason LLM calls fan out
+  concurrently (`asyncio.gather`, bounded by `LLM_MAX_CONCURRENCY`), then results are **applied
+  sequentially in selection order** so relationship/influence/stance mutations stay deterministic.
+  Multi-turn exchanges remain serial (each turn depends on the prior turn's applied state). The
+  old per-agent `LLM_CALL_DELAY_SECS` sleep was retired — the semaphore bounds the rate instead.
+- **Tiered models.** Each call site requests a `tier`: routine reasoning, vignettes, fillers,
+  planning, and dynamic events use `cheap`; reflection, world-graph extraction, prophecy grading,
+  the final report, and player chat use `strong`. Model names resolve from `*_MODEL_CHEAP` /
+  `*_MODEL_STRONG`, falling back to the single `*_MODEL` var. None of this changes the formulas
+  above — only which model produces the structured output they consume.
+
+---
+
+## 13. Quick glossary
 - **Stance** — an agent's opinion on a topic axis, [−1, 1].
 - **Topic** — a stance axis the society divides on, extracted from the world prompt/question.
 - **Belief mean / uncertainty** — population average / disagreement on a topic.

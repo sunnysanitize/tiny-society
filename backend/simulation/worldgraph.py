@@ -47,7 +47,7 @@ def extract_world_graph(world: World) -> WorldGraph:
     user = "\n".join(user_parts)
 
     try:
-        raw = call_llm(WORLD_GRAPH_SYSTEM, user, json_mode=True, max_tokens=1024)
+        raw = call_llm(WORLD_GRAPH_SYSTEM, user, json_mode=True, max_tokens=1024, tier="strong")
     except Exception as e:
         logging.warning(f"World graph extraction failed: {e}")
         return WorldGraph()

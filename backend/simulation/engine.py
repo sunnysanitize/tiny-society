@@ -1,10 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 import logging
-import os
 import random
-import time
 from typing import Callable, Optional
 
 from models import (
@@ -12,7 +11,7 @@ from models import (
     DaySnapshot, DayHighlight, Vignette,
 )
 from .selector import select_reasoning_agents
-from .reasoner import reason_for_agent
+from .reasoner import reason_for_agent, areason_for_agent
 from .reflector import reflect
 from .planner import form_plan
 from .deterministic import apply_background_rules
@@ -56,6 +55,7 @@ def run_simulation(
     on_day: Optional[Callable[[DaySnapshot], None]] = None,
     initial_agents: Optional[list[Agent]] = None,
     day_offset: int = 0,
+    pause_on_days: Optional[list[int]] = None,
 ) -> SimulationResult:
     rng = random.Random(seed)
     agents = [copy.deepcopy(a) for a in (initial_agents or world.agents)]
@@ -147,8 +147,6 @@ def run_simulation(
                         f"{len(new_reflections)} new insight(s)"
                     )
 
-        _llm_delay = float(os.getenv("LLM_CALL_DELAY_SECS", "2.0"))
-
         day_perception_notes: list = []
         by_name = {a.name: a for a in agents}
         exchanges_today = 0
@@ -180,26 +178,36 @@ def run_simulation(
             type_changes += changed
             return log_line
 
-        for i, actor in enumerate(selected):
-            if i > 0 and _llm_delay > 0:
-                time.sleep(_llm_delay)
-
+        # PARALLEL PASS: form plans + reason for every selected actor concurrently.
+        # Reasoning is read-only on shared state, so it's safe to fan out; results
+        # are applied sequentially below for determinism.
+        async def _plan_and_reason(actor: Agent):
             # PLANNING (④): refresh this selected agent's short-term intention if it's
             # missing or stale, BEFORE reasoning, so today's action can pursue it.
             if actor.plan is None or (abs_day - actor.plan_day) >= PLAN_REFRESH_DAYS:
-                new_plan = form_plan(actor, active_event, abs_day)
+                new_plan = await asyncio.to_thread(form_plan, actor, active_event, abs_day)
                 if new_plan:
                     actor.plan = new_plan
                     actor.plan_day = abs_day
-
-            logging.info(f"Day {abs_day}: reasoning for {actor.name} ({i+1}/{len(selected)})")
-            action = reason_for_agent(
+            logging.info(f"Day {abs_day}: reasoning for {actor.name}")
+            return await areason_for_agent(
                 actor,
                 agents,
                 event=active_event,
                 current_day=abs_day,
                 world_graph=world.world_graph,
             )
+
+        async def _gather_day_actions(actors):
+            return await asyncio.gather(*[_plan_and_reason(a) for a in actors])
+
+        # run_simulation stays sync; the calling thread has no running loop in both
+        # the sync-endpoint and streaming-thread cases, so asyncio.run is safe here.
+        actions = asyncio.run(_gather_day_actions(selected))
+
+        # SEQUENTIAL PASS: apply in selection order for determinism, then run any
+        # multi-turn exchanges (which depend on prior applied state — kept serial).
+        for actor, action in zip(selected, actions):
             if action is None:
                 continue
             log_line = _commit_action(actor, action)
@@ -214,8 +222,6 @@ def run_simulation(
                 for _turn in range(MAX_EXCHANGE_TURNS):
                     if responder is None or responder.id == speaker.id:
                         break
-                    if _llm_delay > 0:
-                        time.sleep(_llm_delay)
                     resp_event = f"In direct response to you: {prior_line}"
                     logging.info(
                         f"Day {abs_day}: exchange turn — {responder.name} responds to {speaker.name}"
@@ -272,6 +278,14 @@ def run_simulation(
 
         if on_day:
             on_day(snap)
+
+        # MID-RUN PAUSE (Part C, Level 2): stop exactly on a requested pause day, after
+        # the snapshot is built/appended and on_day fired. Treated as a natural early end —
+        # the partial result is finalized and returned normally so the player can inject a
+        # character (or other nudge) and resume via the continue flow.
+        if abs_day in (pause_on_days or []):
+            logging.info(f"Pausing simulation on day {abs_day} (pause_on_days)")
+            break
 
     final_metrics = snapshots[-1].metrics if snapshots else initial_metrics
     report, forecast = generate_final_report(
@@ -330,6 +344,7 @@ def _generate_dynamic_event(recent_log: list[str], agents: list[Agent]) -> Optio
             "Generate a single-sentence world event for a social simulation. No quotes, no prefix, under 20 words.",
             prompt,
             max_tokens=60,
+            tier="cheap",
         )
         ev = raw.strip().strip('"').strip("'").strip()
         if ev and len(ev) > 10:

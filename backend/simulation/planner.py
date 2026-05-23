@@ -41,7 +41,7 @@ def form_plan(agent: Agent, world_event: Optional[str], current_day: int) -> Opt
     """
     user = _build_prompt(agent, world_event, current_day)
     try:
-        raw = call_llm(PLANNER_SYSTEM, user, json_mode=True, max_tokens=256)
+        raw = call_llm(PLANNER_SYSTEM, user, json_mode=True, max_tokens=256, tier="cheap")
     except Exception as e:
         logging.warning(f"Plan LLM call failed for agent {agent.name}: {e}")
         return None

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -49,23 +50,23 @@ def _provider() -> str:
     return os.getenv("LLM_PROVIDER", "mock").lower()
 
 
-def call_llm(system: str, user: str, *, json_mode: bool = False, max_tokens: int = 1024) -> str:
+def call_llm(system: str, user: str, *, json_mode: bool = False, max_tokens: int = 1024, tier: str = "strong") -> str:
     """Single text completion. Returns raw string output."""
     provider = _provider()
     if provider == "anthropic":
-        return _call_anthropic(system, user, max_tokens=max_tokens)
+        return _call_anthropic(system, user, max_tokens=max_tokens, tier=tier)
     if provider == "openai_compat":
-        return _call_openai_compat(system, user, json_mode=json_mode, max_tokens=max_tokens)
+        return _call_openai_compat(system, user, json_mode=json_mode, max_tokens=max_tokens, tier=tier)
     return _mock(system, user, json_mode=json_mode)
 
 
-def _call_anthropic(system: str, user: str, max_tokens: int) -> str:
+def _call_anthropic(system: str, user: str, max_tokens: int, tier: str = "strong") -> str:
     from anthropic import Anthropic
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise LLMError("ANTHROPIC_API_KEY not set")
-    model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+    model = os.getenv(f"ANTHROPIC_MODEL_{tier.upper()}") or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
     client = Anthropic(api_key=api_key)
     msg = client.messages.create(
         model=model,
@@ -80,14 +81,14 @@ def _call_anthropic(system: str, user: str, max_tokens: int) -> str:
     return "".join(parts).strip()
 
 
-def _call_openai_compat(system: str, user: str, json_mode: bool, max_tokens: int) -> str:
+def _call_openai_compat(system: str, user: str, json_mode: bool, max_tokens: int, tier: str = "strong") -> str:
     import re as _re
     import time as _time
     import logging as _logging
 
     base = os.getenv("OPENAI_COMPAT_BASE_URL", "").rstrip("/")
     key = os.getenv("OPENAI_COMPAT_API_KEY")
-    model = os.getenv("OPENAI_COMPAT_MODEL", "google/gemini-2.0-flash-001")
+    model = os.getenv(f"OPENAI_COMPAT_MODEL_{tier.upper()}") or os.getenv("OPENAI_COMPAT_MODEL", "google/gemini-2.0-flash-001")
     if not base or not key:
         raise LLMError("OPENAI_COMPAT_BASE_URL or OPENAI_COMPAT_API_KEY not set")
 
@@ -165,6 +166,143 @@ def _call_openai_compat(system: str, user: str, json_mode: bool, max_tokens: int
             if attempt < 4 and e.response.status_code >= 500:
                 _logging.warning(f"HTTP {e.response.status_code} (attempt {attempt+1}/5), retrying")
                 _time.sleep(5 * (attempt + 1))
+                continue
+            raise LLMError(f"HTTP {e.response.status_code}: {e.response.text[:400]}")
+
+    raise LLMError("All 5 retry attempts exhausted")
+
+
+# ── async path (concurrent fan-out) ─────────────────────────────────────────────
+
+_sem: Optional[asyncio.Semaphore] = None
+
+
+def _get_sem() -> asyncio.Semaphore:
+    """Lazily create the concurrency semaphore on first async call so it binds to
+    the running loop (and the env var is read at first use)."""
+    global _sem
+    if _sem is None:
+        _sem = asyncio.Semaphore(int(os.getenv("LLM_MAX_CONCURRENCY", "6")))
+    return _sem
+
+
+async def acall_llm(system: str, user: str, *, json_mode: bool = False, max_tokens: int = 1024, tier: str = "strong") -> str:
+    """Async counterpart to call_llm, bounded by a concurrency semaphore."""
+    sem = _get_sem()
+    async with sem:
+        provider = _provider()
+        if provider == "anthropic":
+            return await _call_anthropic_async(system, user, max_tokens=max_tokens, tier=tier)
+        if provider == "openai_compat":
+            return await _call_openai_compat_async(system, user, json_mode=json_mode, max_tokens=max_tokens, tier=tier)
+        return await asyncio.to_thread(_mock, system, user, json_mode)
+
+
+async def _call_anthropic_async(system: str, user: str, max_tokens: int, tier: str = "strong") -> str:
+    from anthropic import AsyncAnthropic
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise LLMError("ANTHROPIC_API_KEY not set")
+    model = os.getenv(f"ANTHROPIC_MODEL_{tier.upper()}") or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+    client = AsyncAnthropic(api_key=api_key)
+    msg = await client.messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": user}],
+    )
+    parts = []
+    for block in msg.content:
+        if getattr(block, "type", None) == "text":
+            parts.append(block.text)
+    return "".join(parts).strip()
+
+
+async def _call_openai_compat_async(system: str, user: str, json_mode: bool, max_tokens: int, tier: str = "strong") -> str:
+    import re as _re
+    import logging as _logging
+
+    base = os.getenv("OPENAI_COMPAT_BASE_URL", "").rstrip("/")
+    key = os.getenv("OPENAI_COMPAT_API_KEY")
+    model = os.getenv(f"OPENAI_COMPAT_MODEL_{tier.upper()}") or os.getenv("OPENAI_COMPAT_MODEL", "google/gemini-2.0-flash-001")
+    if not base or not key:
+        raise LLMError("OPENAI_COMPAT_BASE_URL or OPENAI_COMPAT_API_KEY not set")
+
+    payload: dict = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "max_tokens": max_tokens,
+        "temperature": 0.8,
+    }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "HTTP-Referer": "http://localhost:3000",
+        "X-Title": "Tiny Society AI",
+    }
+
+    for attempt in range(5):
+        try:
+            async with httpx.AsyncClient(timeout=120) as c:
+                r = await c.post(f"{base}/chat/completions", json=payload, headers=headers)
+
+                if r.status_code == 429:
+                    wait = float(r.headers.get("Retry-After", 10 * (attempt + 1)))
+                    wait = min(wait, 90)
+                    _logging.warning(f"Rate limited (attempt {attempt+1}/5), retrying in {wait:.0f}s")
+                    await asyncio.sleep(wait)
+                    continue
+
+                r.raise_for_status()
+                data = r.json()
+
+                # Some providers embed errors inside 200 responses
+                if not data.get("choices") and "error" in data:
+                    err_msg = data["error"].get("message", str(data["error"]))
+                    _logging.warning(f"Provider error in 200 response (attempt {attempt+1}/5): {err_msg[:200]}")
+                    if attempt < 4:
+                        await asyncio.sleep(5 * (attempt + 1))
+                        continue
+                    raise LLMError(f"Provider error: {err_msg}")
+
+                msg = data["choices"][0]["message"]
+                content = msg.get("content") or ""
+
+                # Strip <think>...</think> blocks (DeepSeek-R1, QwQ, trinity-thinking, etc.)
+                content = _re.sub(r"<think>.*?</think>", "", content, flags=_re.DOTALL).strip()
+
+                # Some providers put the answer in reasoning_content when content is empty
+                if not content:
+                    content = (msg.get("reasoning_content") or msg.get("reasoning") or "").strip()
+                    content = _re.sub(r"<think>.*?</think>", "", content, flags=_re.DOTALL).strip()
+
+                if not content:
+                    _logging.warning(f"LLM returned empty content (attempt {attempt+1}/5), retrying")
+                    if attempt < 4:
+                        await asyncio.sleep(3 * (attempt + 1))
+                        continue
+                    raise LLMError("LLM returned empty content after all retries")
+
+                return content
+
+        except LLMError:
+            raise
+        except (httpx.TimeoutException, httpx.ConnectError) as e:
+            _logging.warning(f"Network error (attempt {attempt+1}/5): {e}")
+            if attempt < 4:
+                await asyncio.sleep(5 * (attempt + 1))
+            else:
+                raise LLMError(f"Network failed after 5 attempts: {e}")
+        except httpx.HTTPStatusError as e:
+            if attempt < 4 and e.response.status_code >= 500:
+                _logging.warning(f"HTTP {e.response.status_code} (attempt {attempt+1}/5), retrying")
+                await asyncio.sleep(5 * (attempt + 1))
                 continue
             raise LLMError(f"HTTP {e.response.status_code}: {e.response.text[:400]}")
 

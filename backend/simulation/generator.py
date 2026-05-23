@@ -122,7 +122,7 @@ def _fetch_batch(world: World, count: int, existing_names: set[str]) -> list[dic
         f"Avoid these existing names: {sorted(existing_names) or 'none'}."
     )
     try:
-        raw = call_llm(FILLER_SYSTEM, user, json_mode=True, max_tokens=4096)
+        raw = call_llm(FILLER_SYSTEM, user, json_mode=True, max_tokens=4096, tier="cheap")
         logging.info(f"Filler batch LLM raw ({len(raw)} chars): {raw[:120]!r}")
         data = _safe_json(raw)
         if not data.get("agents"):
@@ -157,7 +157,7 @@ def _seed_relationships(agents: list[Agent], world_prompt: str) -> None:
     name_map = {a.name: a for a in agents}
 
     try:
-        raw = call_llm(RELATIONSHIP_SEED_SYSTEM, user, json_mode=True, max_tokens=1024)
+        raw = call_llm(RELATIONSHIP_SEED_SYSTEM, user, json_mode=True, max_tokens=1024, tier="cheap")
         data = _safe_json(raw)
         for rel in (data.get("relationships") or []):
             a_name = rel.get("agent_a", "")

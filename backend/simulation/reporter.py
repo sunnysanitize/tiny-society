@@ -178,7 +178,7 @@ def generate_final_report(
         )
 
     try:
-        narrative = call_llm(REPORT_SYSTEM, user, max_tokens=1500)
+        narrative = call_llm(REPORT_SYSTEM, user, max_tokens=1500, tier="strong")
     except Exception as e:
         narrative = f"(Report generation failed: {e})"
 

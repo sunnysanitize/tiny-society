@@ -60,10 +60,11 @@ def get_world(wid: str):
     return w
 
 
-@app.post("/world/{wid}/character", response_model=Agent)
-def add_character(wid: str, body: CharacterInput):
-    w = _require(wid)
-    agent = Agent(
+def _build_agent_from_input(body: CharacterInput, *, day: int = 0) -> Agent:
+    """Construct an Agent from a CharacterInput. Shared by add_character (day-0) and
+    inject_character (mid-run). Memories are stamped at `day` so retrieval recency is
+    correct; inject_character passes the current sim day."""
+    return Agent(
         id=f"a_{uuid.uuid4().hex[:8]}",
         name=body.name,
         role=body.role,
@@ -71,15 +72,78 @@ def add_character(wid: str, body: CharacterInput):
         goals=body.goals,
         mood=body.mood,
         groups=body.groups,
-        short_term_memory=[make_memory(m, day=0) for m in body.starting_memories],
-        long_term_memory=[make_memory(m, day=0) for m in body.starting_memories],
+        short_term_memory=[make_memory(m, day=day) for m in body.starting_memories],
+        long_term_memory=[make_memory(m, day=day) for m in body.starting_memories],
         relationships=dict(body.starting_relationships),
         is_custom=True,
         avatar=body.avatar,
         based_on=body.based_on,
     )
+
+
+@app.post("/world/{wid}/character", response_model=Agent)
+def add_character(wid: str, body: CharacterInput):
+    w = _require(wid)
+    agent = _build_agent_from_input(body, day=0)
     w.agents.append(agent)
     store.update(wid, w)
+    return agent
+
+
+@app.post("/world/{wid}/inject-character", response_model=Agent)
+def inject_character(wid: str, body: CharacterInput):
+    """MID-RUN CHARACTER INJECTION (Part C): add a newcomer initialized FOR THE CURRENT
+    DAY (not day 0), so a paused/finished run can resume via the continue flow with the
+    newcomer participating immediately. If no prior run exists, behaves like a day-0 add.
+    Mirrors advise_agent: persists onto BOTH w.agents and the latest snapshot (which the
+    continue flow seeds from). Mock-safe."""
+    from simulation.stance import initialize_stances
+    from simulation.generator import _seed_relationships
+
+    w = _require(wid)
+    prev = store.get_result(wid)
+    day = prev.snapshots[-1].day if (prev and prev.snapshots) else 0
+
+    agent = _build_agent_from_input(body, day=day)
+
+    # Name de-dup against the existing roster (match generator's `-suffix` style).
+    existing_names = {a.name for a in w.agents}
+    if agent.name in existing_names:
+        agent.name = f"{agent.name}-{uuid.uuid4().hex[:3]}"
+
+    # Initialize belief stance on the EXISTING world topics (guard for empty graph).
+    if w.world_graph is not None and w.world_graph.topics:
+        initialize_stances([agent], w.world_graph.topics)
+
+    # Fresh mid-run state: witnessed nothing yet, no plan formed.
+    agent.short_term_memory = []
+    agent.long_term_memory = [make_memory(m, day) for m in body.starting_memories]
+    agent.feed = []
+    agent.observations = []
+    agent.plan = None
+    agent.plan_day = 0
+
+    # Best-effort: seed a few relationships so the newcomer isn't an island. Makes an LLM
+    # call (mock-safe), so guard + swallow errors — injection correctness matters more.
+    if w.agents:
+        try:
+            _seed_relationships([agent] + list(w.agents), w.prompt)
+        except Exception:
+            pass
+
+    # Persist to the persistent roster (used as initial_agents for a fresh simulate run).
+    w.agents.append(agent)
+    store.update(wid, w)
+
+    # Persist to the latest snapshot (used as initial_agents for a continue run) + an
+    # arrival beat in the event log so the story can surface it and the forecast can move.
+    if prev and prev.snapshots:
+        prev.snapshots[-1].agents.append(agent)
+        prev.snapshots[-1].event_log.append(
+            f"[{agent.name}] arrived in the world on day {day}."
+        )
+        store.save_result(wid, prev)
+
     return agent
 
 
@@ -126,6 +190,10 @@ class SimulateRequest(BaseModel):
     days: int = Field(default=30, ge=1, le=365)
     reasoning_agents_per_day: int = Field(default=8, ge=1, le=30)
     seed: int = 42
+    # MID-RUN PAUSE (Part C, Level 2): absolute days on which the stream stops early
+    # (after saving that day's snapshot), so the player can inject a character/event and
+    # resume via continue. None = run to completion (backward compatible).
+    pause_on_days: Optional[list[int]] = None
 
 
 @app.post("/world/{wid}/simulate", response_model=SimulationResult)
@@ -151,13 +219,19 @@ async def simulate_stream(wid: str, body: SimulateRequest):
         days=body.days,
         reasoning_agents_per_day=body.reasoning_agents_per_day,
     )
-    return _make_stream_response(wid, w, config, body.seed, day_offset=0, initial_agents=None)
+    return _make_stream_response(
+        wid, w, config, body.seed,
+        day_offset=0, initial_agents=None,
+        pause_on_days=body.pause_on_days,
+    )
 
 
 class ContinueRequest(BaseModel):
     days: int = Field(default=7, ge=1, le=365)
     reasoning_agents_per_day: int = Field(default=8, ge=1, le=30)
     seed: int = 42
+    # See SimulateRequest.pause_on_days.
+    pause_on_days: Optional[list[int]] = None
 
 
 @app.post("/world/{wid}/simulate/continue", response_model=SimulationResult)
@@ -198,6 +272,7 @@ async def simulate_continue_stream(wid: str, body: ContinueRequest):
         day_offset=last_snap.day,
         initial_agents=last_snap.agents,
         prev_result=prev,
+        pause_on_days=body.pause_on_days,
     )
 
 
@@ -267,7 +342,7 @@ def agent_chat(wid: str, agent_id: str, body: ChatRequest):
     )
 
     try:
-        reply = call_llm(CHAT_SYSTEM, user_prompt, max_tokens=300)
+        reply = call_llm(CHAT_SYSTEM, user_prompt, max_tokens=300, tier="strong")
     except Exception as e:
         reply = f"(Chat unavailable — check LLM_PROVIDER setting. Error: {e})"
 
@@ -462,6 +537,7 @@ def _make_stream_response(
     day_offset: int,
     initial_agents,
     prev_result: Optional[SimulationResult] = None,
+    pause_on_days: Optional[list[int]] = None,
 ) -> StreamingResponse:
     q: _queue.Queue = _queue.Queue()
     DONE = object()
@@ -477,11 +553,18 @@ def _make_stream_response(
                 on_day=on_day,
                 initial_agents=initial_agents,
                 day_offset=day_offset,
+                pause_on_days=pause_on_days,
             )
             if prev_result is not None:
                 result = _merge_results(prev_result, result)
             store.save_result(wid, result)
-            q.put(("done", result))
+            # Detect a mid-run pause: the run stopped early on a requested pause day.
+            paused_on = None
+            if pause_on_days and result.snapshots:
+                last_day = result.snapshots[-1].day
+                if last_day in pause_on_days:
+                    paused_on = last_day
+            q.put(("done", (result, paused_on)))
         except Exception as exc:
             q.put(("error", str(exc)))
 
@@ -495,8 +578,12 @@ def _make_stream_response(
                 data = _json.dumps({"type": "day", "snapshot": payload.model_dump()})
                 yield f"data: {data}\n\n"
             elif kind == "done":
-                data = _json.dumps({"type": "done", "result": payload.model_dump()})
-                yield f"data: {data}\n\n"
+                result, paused_on = payload
+                done_payload = {"type": "done", "result": result.model_dump()}
+                if paused_on is not None:
+                    done_payload["paused"] = True
+                    done_payload["paused_on"] = paused_on
+                yield f"data: {_json.dumps(done_payload)}\n\n"
                 break
             elif kind == "error":
                 data = _json.dumps({"type": "error", "message": payload})

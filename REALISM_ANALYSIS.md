@@ -152,11 +152,17 @@ New levers, ranked by "MiroFish-ness" (these are *beyond* ④–⑥ above):
 7. **✅ DONE — GraphRAG with power structures (⑥, richer).** `simulation/worldgraph.py`
    (`extract_world_graph`, marker `WORLD_GRAPH_EXTRACTION`) extracts entities, relationships,
    `power_structures`, and `topics`.
-8. **⏳ DEFERRED — Scale + tiered models.** Batch LLM calls; cheap model for routine actions,
-   strong model for pivotal ones; true 1M-agent scale. A separate infra project — not built.
+8. **◧ MOSTLY DONE — Scale + tiered models.** Built: **concurrent LLM inference** (the day's
+   reasoning fan-out runs via `asyncio.gather` bounded by `LLM_MAX_CONCURRENCY`, applied
+   sequentially for determinism — replacing the old serial-with-sleep loop) and **tiered models**
+   (`tier="cheap"|"strong"` routing routine turns to a cheap model, pivotal/structural/player-facing
+   turns to a strong one). *Not built:* true 1M-agent distributed scale (Environment Server +
+   clustered inferencer) — premature at tens of characters. See
+   [PERFORMANCE_AND_LIVE_EDITING.md](./PERFORMANCE_AND_LIVE_EDITING.md).
 
 Sequence (as executed): **#1 → #2 → #3** turned the sandbox into a predictor; **#4 + #5**
-added OASIS-style social mechanics; **#6/#7** done; **#8** deferred.
+added OASIS-style social mechanics; **#6/#7** done; **#8** concurrency + tiered models done,
+distributed 1M-scale intentionally skipped.
 
 ---
 
@@ -178,9 +184,14 @@ Tomodachi's engagement DNA (and how to fuse it with the realism work):
   (`build_digest`) surface punchy day cards; the frontend renders a vignette/digest feed
   beside the persistent dialogue feed.
 - **◧ PARTIAL — Player intervention as gameplay.** Built: **whisper advice**
-  (`POST /agent/{id}/advise` → high-importance memory) and **inject event**
-  (`POST /inject-event` → `World.pending_event`, consumed next day). *Not built:* matchmake,
-  take-sides/gift (deliberately out of scope per design choice).
+  (`POST /agent/{id}/advise` → high-importance memory), **inject event**
+  (`POST /inject-event` → `World.pending_event`, consumed next day), and **mid-run character
+  injection** — `POST /world/{id}/inject-character` adds a newcomer initialized for the *current*
+  day (stance on existing topics, day-stamped memories, arrival beat), surfaced as an "Add
+  character" panel in the continue controls; the newcomer's stance + new graph node shift the
+  belief aggregation, so an arrival can move the forecast and the prophecy verdict. A Level-2
+  `pause_on_days` lets a run stop on a chosen day to inject before resuming. *Not built:*
+  matchmake, take-sides/gift (deliberately out of scope per design choice).
 - **✅ DONE — Surprise & humor via the LLM.** `simulation/vignette.py` (marker
   `VIGNETTE_GENERATION`) emits dreams / catchphrases / dramatic announcements, capped at
   `MAX_VIGNETTES_PER_DAY=2`.

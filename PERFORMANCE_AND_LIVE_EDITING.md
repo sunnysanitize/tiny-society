@@ -1,10 +1,14 @@
 # Performance & Live Editing — Implementation Guide
 
-Detailed, build-ready specs for three features:
-- **A. Concurrent (async/batched) LLM inference** — the OASIS-inspired speed win.
-- **B. Tiered models** — cheap model for routine turns, strong model for pivotal ones.
+**Status: ✅ all three features implemented and verified on the mock provider.** This document
+was the build spec; it now also records what shipped. See the **"What shipped"** note under each
+section for the actual code locations.
+
+Three features:
+- **A. Concurrent (async/batched) LLM inference** — the OASIS-inspired speed win. ✅ **Done.**
+- **B. Tiered models** — cheap model for routine turns, strong model for pivotal ones. ✅ **Done.**
 - **C. Mid-run character injection** — pause on a chosen day and add a character whose
-  arrival can change the outcome.
+  arrival can change the outcome. ✅ **Done** (Level 1 endpoint + UI, and Level 2 `pause_on_days`).
 
 > Context: OASIS reaches a million agents via sparse activation + asynchronous batched
 > inference + a distributed environment server. At this project's scale (tens of characters)
@@ -15,6 +19,17 @@ Detailed, build-ready specs for three features:
 ---
 
 ## A. Concurrent LLM inference (the big speed win)
+
+> **✅ What shipped.** `llm.py` gained `acall_llm(...)` (async paths for anthropic via
+> `AsyncAnthropic`, openai_compat via `httpx.AsyncClient` mirroring the full retry/backoff/429
+> logic, and mock via `asyncio.to_thread`), bounded by a lazily-created semaphore
+> `LLM_MAX_CONCURRENCY` (default 6). `reasoner.py` gained `areason_for_agent(...)` sharing a new
+> `_parse_action` helper with the sync path. `engine.py`'s day loop now fans out plan+reason
+> concurrently via `asyncio.gather` (run with `asyncio.run` per day — `run_simulation` stays
+> sync, safe under both the sync endpoint and the streaming thread) and applies results
+> **sequentially in selection order** for determinism. Multi-turn exchanges stay serial. The
+> per-agent `time.sleep(LLM_CALL_DELAY_SECS)` in the fan-out was retired (the semaphore replaces
+> it). *Verified: 4-day + continue mock run, no crash.*
 
 ### The problem
 `engine.py`'s day loop calls the LLM **serially**, with a sleep between agents:
@@ -83,6 +98,14 @@ At 8 agents that's roughly an **8×+ wall-clock reduction** per day. No new mode
 
 ## B. Tiered models (cost control)
 
+> **✅ What shipped.** `call_llm`/`acall_llm` (and the anthropic/openai_compat helpers) take a
+> keyword-only `tier: str = "strong"`. Model resolution prefers `ANTHROPIC_MODEL_{TIER}` /
+> `OPENAI_COMPAT_MODEL_{TIER}` and falls back to the existing single `*_MODEL` var (fully
+> backward compatible — with no new env vars, behavior is identical to before). Mock ignores
+> tier. Call sites routed: routine reasoning, vignettes, fillers, relationship seeding, planning,
+> and dynamic events → `cheap`; reflection, world-graph extraction, prophecy grading, the final
+> report, and player-facing chat → `strong`. `backend/.env.example` documents the new vars.
+
 ### Idea
 Route routine work to a cheap/fast model and reserve a strong model for moments that matter.
 
@@ -109,6 +132,20 @@ Route routine work to a cheap/fast model and reserve a strong model for moments 
 ---
 
 ## C. Mid-run character injection ("pause on a day, add a character")
+
+> **✅ What shipped.** **Level 1:** `POST /world/{wid}/inject-character` (`main.py`, body
+> `CharacterInput`) builds the newcomer via a shared `_build_agent_from_input` helper (also used
+> by `add_character`), initialized **for the current day** — stance seeded on the existing world
+> topics, memories day-stamped at the current day (not day 0), feed/observations/plan cleared,
+> best-effort relationship seeding, name de-dup. It writes the agent into both `w.agents` and the
+> latest result snapshot and appends an arrival line to that snapshot's `event_log`, so the
+> existing **continue** flow picks it up with no further changes. **Level 2:** `pause_on_days:
+> list[int]` on `SimulateRequest`/`ContinueRequest` threads into `run_simulation`, which breaks
+> the day loop after saving the snapshot on a pause day; the stream's `done` event carries a
+> `paused`/`paused_on` flag. **Frontend:** `api.injectCharacter` + an "Add character" panel in the
+> CONTINUE controls (in `Engagement.tsx`, surfaced from `SimulationView.tsx`), with a confirmation
+> that the character will arrive on the current day when the run continues. *Verified end-to-end
+> via TestClient (inject → continue → newcomer present) and `tsc --noEmit`.*
 
 ### Goal
 Let the player **stop the simulation on a chosen day, add a new character, and resume** — a
@@ -196,12 +233,19 @@ Two UX levels — ship #1 first, #2 is polish:
 
 ---
 
-## Suggested build order
-1. **A. Concurrent inference** — biggest immediate quality-of-life win; unblocks longer runs.
-2. **C. Level 1 mid-run injection** — new gameplay, reuses the continue flow, small surface area.
-3. **B. Tiered models** — cost control once runs are concurrent (concurrency makes a cheap tier
+## Build order (as executed — all complete)
+1. ✅ **A. Concurrent inference** — biggest immediate quality-of-life win; unblocks longer runs.
+2. ✅ **B. Tiered models** — cost control once runs are concurrent (concurrency makes a cheap tier
    even more valuable).
-4. **C. Level 2 in-stream pause** — UX polish on top of Level 1.
+3. ✅ **C. Level 1 mid-run injection** — new gameplay, reuses the continue flow, small surface area.
+4. ✅ **C. Level 2 in-stream pause** — `pause_on_days`, on top of Level 1.
+
+### New env vars (all optional, backward compatible)
+| Var | Default | Effect |
+|---|---|---|
+| `LLM_MAX_CONCURRENCY` | 6 | Max simultaneous in-flight LLM calls in the day fan-out |
+| `ANTHROPIC_MODEL_STRONG` / `_CHEAP` | falls back to `ANTHROPIC_MODEL` | Per-tier Anthropic model |
+| `OPENAI_COMPAT_MODEL_STRONG` / `_CHEAP` | falls back to `OPENAI_COMPAT_MODEL` | Per-tier OpenAI-compat model |
 
 ## Explicitly skip (for now)
 - A distributed **Environment Server** (separate DB service for agent state) and a clustered
