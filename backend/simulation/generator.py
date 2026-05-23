@@ -73,7 +73,8 @@ Rules:
 """
 
 
-BATCH_SIZE = 5  # agents per LLM call — keeps output well under token limits
+BATCH_SIZE = 3  # agents per LLM call — smaller batches keep each response well within
+                # the model's output budget (rich memories make 5 agents overflow / truncate)
 
 
 def generate_fillers(world: World, count: int) -> list[Agent]:
@@ -215,5 +216,47 @@ def _safe_json(raw: str) -> dict:
         except json.JSONDecodeError:
             pass
 
-    logging.warning(f"_safe_json could not parse: {raw[:200]!r}")
+    # Salvage: the response was truncated mid-JSON (common with small/free models or
+    # reasoning models). Recover every COMPLETE agent object that arrived before the
+    # cutoff so we still get usable characters instead of falling back to mock.
+    salvaged = _salvage_objects(raw)
+    if salvaged:
+        logging.warning(f"_safe_json salvaged {len(salvaged)} complete object(s) from truncated JSON")
+        return {"agents": salvaged}
+
+    logging.warning(f"_safe_json could not parse ({len(raw)} chars): {raw[:200]!r}")
     return {}
+
+
+def _salvage_objects(raw: str) -> list[dict]:
+    """Extract every balanced {...} that parses as a dict with a 'name' field.
+
+    A truncated array like `{"agents":[{...},{...},{partial...` leaves the complete
+    agent objects intact (they closed) while the outer object never closes — so we
+    recover the finished agents and drop the partial tail.
+    """
+    objs: list[dict] = []
+    stack: list[int] = []
+    in_str = esc = False
+    for i, ch in enumerate(raw):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            stack.append(i)
+        elif ch == "}" and stack:
+            frag = raw[stack.pop():i + 1]
+            try:
+                d = json.loads(frag)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(d, dict) and "name" in d:
+                objs.append(d)
+    return objs

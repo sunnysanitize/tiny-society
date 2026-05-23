@@ -24,14 +24,17 @@
 
 /* ── Base ─────────────────────────────────────────────────────────────────── */
 html {
-  background: var(--bg);
+  /* Fallback gradient lives on <html> so it paints at the very back — behind the
+     town image. (If it sits on <body>, body's own background paints OVER the
+     negative-z-index town pseudo-element and hides it.) */
+  background: linear-gradient(160deg, #dff0ff 0%, #eef0ff 45%, #fce8ff 100%);
+  background-attachment: fixed;
 }
 
 body {
-  /* base fallback while the town image loads; the town + scrim layers
-     (body::before / body::after) render the actual immersive background. */
-  background: linear-gradient(160deg, #dff0ff 0%, #eef0ff 45%, #fce8ff 100%);
-  background-attachment: fixed;
+  /* Transparent so the town image (body::before) + scrim (body::after) show
+     through. The fallback gradient now lives on <html>, behind everything. */
+  background: transparent;
   color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   min-height: 100vh;

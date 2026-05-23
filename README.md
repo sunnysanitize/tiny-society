@@ -3,7 +3,7 @@
 A multi-agent AI social simulation **and prediction engine**. Build a world, populate it with
 pixel characters (some based on real people), fire off an event, and watch a cast of LLM-driven
 agents reason, remember, reflect, form relationships, and shift opinions over 7–30 simulated days
-— then read the swarm's forecast of where it's all heading. Part Tomodachi-style living town,
+— then read the swarm's forecast of where it's all heading. Part living town,
 part MiroFish-style prediction engine.
 
 ![Stack](https://img.shields.io/badge/backend-FastAPI-009688?style=flat-square) ![Stack](https://img.shields.io/badge/frontend-Next.js%2014-000000?style=flat-square) ![Stack](https://img.shields.io/badge/LLM-Anthropic%20%7C%20Groq%20%7C%20Mock-5A4FCF?style=flat-square) ![Stack](https://img.shields.io/badge/auth%2Bsaves-Supabase-3FCF8E?style=flat-square)
@@ -23,9 +23,7 @@ beliefs and **plan** toward goals. Background agents evolve via deterministic ru
 engine aggregates agent stances into a **population forecast with a confidence score**, and at the
 end an LLM writes the town's story and grades the player's **prophecy**. No two runs are alike.
 
-> Deep-dive docs: **[REALISM_ANALYSIS.md](./REALISM_ANALYSIS.md)** (design roadmap & status) ·
-> **[CALCULATIONS.md](./CALCULATIONS.md)** (every metric & formula) ·
-> **[BACKLOG.md](./BACKLOG.md)** (known issues & future work).
+> Deep-dive docs: **[CALCULATIONS.md](./CALCULATIONS.md)** (every metric & formula).
 
 ---
 
@@ -46,7 +44,7 @@ end an LLM writes the town's story and grades the player's **prophecy**. No two 
 - Per-agent **belief/stance** on auto-derived topics, aggregated daily into a population distribution.
 - **Forecast** with **swarm confidence** (consensus vs. disagreement) and **pivotal-day** causal tracing.
 
-**Engagement (Tomodachi style)**
+**Engagement**
 - **Pixel-character avatars** (seeded, mood-driven expressions) + "based on a real person."
 - **Story view** — each day reads as a "chapter" with narrative beats.
 - **Nudges** — whisper advice to a character, or inject an event mid-run.
