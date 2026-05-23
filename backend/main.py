@@ -75,6 +75,8 @@ def add_character(wid: str, body: CharacterInput):
         long_term_memory=[make_memory(m, day=0) for m in body.starting_memories],
         relationships=dict(body.starting_relationships),
         is_custom=True,
+        avatar=body.avatar,
+        based_on=body.based_on,
     )
     w.agents.append(agent)
     store.update(wid, w)
@@ -272,6 +274,91 @@ def agent_chat(wid: str, agent_id: str, body: ChatRequest):
     return ChatResponse(reply=reply, agent_name=agent.name)
 
 
+# ─── engagement nudges & prophecy (Slice E) ────────────────────────────────────
+
+
+class AdviceRequest(BaseModel):
+    advice: str
+
+
+@app.post("/world/{wid}/agent/{agent_id}/advise", response_model=Agent)
+def advise_agent(wid: str, agent_id: str, body: AdviceRequest):
+    """WHISPER ADVICE nudge: write the player's advice into an agent's memory as a
+    HIGH-importance, guidance-tagged memory at the world's current/last simulated day,
+    so it surfaces in future relevance-based retrieval and biases reasoning. Mock-safe
+    (no LLM). Persists onto the world's agent AND the latest result snapshot (so a
+    continue run, which seeds from the last snapshot, also sees it)."""
+    w = _require(wid)
+    advice = (body.advice or "").strip()
+    if not advice:
+        raise HTTPException(400, "advice is empty")
+
+    result = store.get_result(wid)
+    current_day = result.snapshots[-1].day if (result and result.snapshots) else 0
+
+    text = f"A trusted voice advised me: {advice}"
+    mem = make_memory(text, day=current_day)
+    mem.importance = 10.0  # max — guidance should dominate retrieval
+
+    updated: Optional[Agent] = None
+
+    # World roster (used as initial_agents for a fresh simulate run).
+    for a in w.agents:
+        if a.id == agent_id:
+            a.long_term_memory.append(mem)
+            a.short_term_memory.append(mem)
+            updated = a
+            break
+
+    # Latest snapshot agents (used as initial_agents for a continue run).
+    if result and result.snapshots:
+        for a in result.snapshots[-1].agents:
+            if a.id == agent_id:
+                a.long_term_memory.append(mem)
+                a.short_term_memory.append(mem)
+                if updated is None:
+                    updated = a
+        store.save_result(wid, result)
+
+    if updated is None:
+        raise HTTPException(404, "agent not found")
+    store.update(wid, w)
+    return updated
+
+
+class InjectEventRequest(BaseModel):
+    event: str
+
+
+@app.post("/world/{wid}/inject-event", response_model=World)
+def inject_event(wid: str, body: InjectEventRequest):
+    """INJECT-AN-EVENT nudge: queue a player-authored event so the NEXT simulated day
+    (via simulate / continue / their stream variants) uses it as the active_event,
+    taking priority over auto-generated dynamic events. Consumed once by the engine.
+    Mock-safe (no LLM)."""
+    w = _require(wid)
+    event = (body.event or "").strip()
+    if not event:
+        raise HTTPException(400, "event is empty")
+    w.pending_event = event
+    store.update(wid, w)
+    return w
+
+
+class ProphecyRequest(BaseModel):
+    prediction: str
+
+
+@app.post("/world/{wid}/prophecy", response_model=World)
+def set_prophecy(wid: str, body: ProphecyRequest):
+    """Set the player's free-text prophecy. Graded by the AI at the end of the run
+    against the actual outcome (see SimulationResult.prophecy_verdict)."""
+    w = _require(wid)
+    w.prophecy = (body.prediction or "").strip() or None
+    store.update(wid, w)
+    return w
+
+
 # ─── save files ───────────────────────────────────────────────────────────────
 
 import supabase_db
@@ -361,6 +448,8 @@ def _merge_results(prev: SimulationResult, new: SimulationResult) -> SimulationR
         final_metrics=new.final_metrics,
         final_report=new.final_report,
         dynamic_events={**prev.dynamic_events, **new.dynamic_events},
+        forecast=new.forecast,
+        prophecy_verdict=new.prophecy_verdict or prev.prophecy_verdict,
     )
 
 

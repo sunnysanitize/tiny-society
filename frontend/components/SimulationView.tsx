@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import type { SimulationResult, World } from "@/lib/types";
 import { RelationshipGraph } from "./RelationshipGraph";
 import { Inspector } from "./Inspector";
+import { ForecastPanel, VerdictCard, VignetteFeed, InjectEvent } from "./Engagement";
 
 type Selection = { kind: "node"; id: string } | { kind: "edge"; key: string } | null;
 
@@ -121,6 +122,9 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
           </div>
         </div>
       )}
+
+      {/* ── Vignette / "what happened" digest ──────────────────────────── */}
+      <VignetteFeed vignettes={snap.vignettes} day={snap.day} />
 
       {/* ── Graph + Inspector ──────────────────────────────────────────── */}
       <div style={{
@@ -270,6 +274,22 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
             </div>
           ))}
         </div>
+      )}
+
+      {/* ── Prophecy + forecast (Slice F) ──────────────────────────────── */}
+      <ForecastPanel
+        forecast={result.forecast}
+        topicMeans={snap.metrics.topic_means}
+        topicUncertainty={snap.metrics.topic_uncertainty}
+        beliefConfidence={snap.metrics.belief_confidence}
+      />
+
+      {/* Player's prophecy verdict — the payoff card (after a finished run) */}
+      {!isLive && <VerdictCard verdict={result.prophecy_verdict} />}
+
+      {/* ── Inject event for the next continued day (not while live) ────── */}
+      {onContinue && !isLive && (
+        <InjectEvent worldId={worldId} pending={world.pending_event} />
       )}
 
       {/* final report */}

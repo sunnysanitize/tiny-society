@@ -12,6 +12,13 @@ const MOOD_COLOR: Record<Mood, string> = {
   lonely: "#475569", confident: "#2563eb",
 };
 
+// Tomodachi-style pixel/emoji avatar set — faces + a few animals/symbols.
+const AVATARS = [
+  "😀","😎","🥰","😈","🤓","😭","😡","🤔",
+  "🐱","🐶","🦊","🐼","🐸","🦄","🐙","🦉",
+  "👑","🎭","🌟","🔥","💀","🌸",
+];
+
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", letterSpacing: "0.1em", marginBottom: 5 }}>
@@ -30,6 +37,8 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
   const [mood, setMood] = useState<Mood>("calm");
   const [groups, setGroups] = useState("Cooking Club");
   const [memory, setMemory] = useState("");
+  const [avatar, setAvatar] = useState<string | null>(null);
+  const [basedOn, setBasedOn] = useState("");
   const [busy, setBusy] = useState(false);
   const [genBusy, setGenBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -48,10 +57,12 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
         mood, groups: splitCsv(groups),
         starting_memories: memory.trim() ? [memory.trim()] : [],
         starting_relationships: {},
+        ...(avatar ? { avatar } : {}),
+        ...(basedOn.trim() ? { based_on: basedOn.trim() } : {}),
       });
       const w = await api.getWorld(worldId);
       onWorldChange(w);
-      setName(""); setMemory("");
+      setName(""); setMemory(""); setAvatar(null); setBasedOn("");
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   }
@@ -139,6 +150,33 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
           <FieldLabel>STARTING MEMORY (OPTIONAL)</FieldLabel>
           <input placeholder="a memory this character starts with..." value={memory} onChange={e => setMemory(e.target.value)} />
         </div>
+        <div style={{ gridColumn: "span 2" }}>
+          <FieldLabel>AVATAR (OPTIONAL)</FieldLabel>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {AVATARS.map(emo => {
+              const sel = avatar === emo;
+              return (
+                <button
+                  key={emo}
+                  type="button"
+                  onClick={() => setAvatar(sel ? null : emo)}
+                  title={sel ? "click to clear" : "pick avatar"}
+                  style={{
+                    width: 28, height: 28, fontSize: 15, lineHeight: "26px",
+                    cursor: "pointer", textAlign: "center", padding: 0,
+                    background: sel ? "rgba(78,197,240,0.12)" : "var(--surface-2)",
+                    border: `1px solid ${sel ? "var(--cyan)" : "var(--border)"}`,
+                    boxShadow: sel ? "0 0 6px rgba(78,197,240,0.4)" : "none",
+                  }}
+                >{emo}</button>
+              );
+            })}
+          </div>
+        </div>
+        <div style={{ gridColumn: "span 2" }}>
+          <FieldLabel>BASED ON A REAL PERSON (OPTIONAL)</FieldLabel>
+          <input placeholder="e.g. my friend Maya, a coworker..." value={basedOn} onChange={e => setBasedOn(e.target.value)} />
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
@@ -174,12 +212,16 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
                   border: "1px solid var(--border)",
                   transition: "border-color 0.1s",
                 }}>
-                  {/* mood dot */}
-                  <div style={{
-                    width: 8, height: 8, borderRadius: "50%",
-                    background: moodColor, flexShrink: 0, marginTop: 4,
-                    boxShadow: `0 0 4px ${moodColor}`,
-                  }} />
+                  {/* avatar or mood dot */}
+                  {a.avatar ? (
+                    <span style={{ fontSize: 16, lineHeight: "20px", flexShrink: 0, marginTop: 2 }}>{a.avatar}</span>
+                  ) : (
+                    <div style={{
+                      width: 8, height: 8, borderRadius: "50%",
+                      background: moodColor, flexShrink: 0, marginTop: 4,
+                      boxShadow: `0 0 4px ${moodColor}`,
+                    }} />
+                  )}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                       <span className="font-pixel" style={{ fontSize: 8, color: "var(--text)" }}>{a.name}</span>
@@ -196,6 +238,7 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
                     <div style={{ fontSize: 8, color: "var(--text-dim)", marginTop: 2, fontFamily: "ui-monospace" }}>
                       {a.groups.join(" · ") || "no groups"} &nbsp;|&nbsp; mood:{" "}
                       <span style={{ color: moodColor }}>{a.mood}</span>
+                      {a.based_on && <> &nbsp;|&nbsp; based on <span style={{ color: "var(--gold)" }}>{a.based_on}</span></>}
                     </div>
                   </div>
                   <button

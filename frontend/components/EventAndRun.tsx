@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import type { World } from "@/lib/types";
+import { ProphecyInput } from "./Engagement";
 
 const DAY_OPTIONS = [7, 14, 30, 60];
 
@@ -57,6 +58,9 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun }: {
           />
         </div>
       </div>
+
+      {/* Prophecy */}
+      <ProphecyInput worldId={worldId} initial={world.prophecy} />
 
       {/* Options row */}
       <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 20 }}>

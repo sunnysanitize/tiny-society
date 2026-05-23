@@ -118,6 +118,26 @@ export const api = {
       body: JSON.stringify({ message, day }),
     }),
 
+  // ── Engagement (Slice F) ────────────────────────────────────────────────────
+
+  advise: (wid: string, agentId: string, advice: string) =>
+    req<Agent>(`/world/${wid}/agent/${agentId}/advise`, {
+      method: "POST",
+      body: JSON.stringify({ advice }),
+    }),
+
+  injectEvent: (wid: string, event: string) =>
+    req<World>(`/world/${wid}/inject-event`, {
+      method: "POST",
+      body: JSON.stringify({ event }),
+    }),
+
+  setProphecy: (wid: string, prediction: string) =>
+    req<World>(`/world/${wid}/prophecy`, {
+      method: "POST",
+      body: JSON.stringify({ prediction }),
+    }),
+
   // ── Save files ────────────────────────────────────────────────────────────
 
   listSaves: () =>

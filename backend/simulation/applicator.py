@@ -29,6 +29,18 @@ def apply_action(
     if action.new_memory:
         actor.short_term_memory.append(make_memory(action.new_memory, day=day))
 
+    # AMPLIFY side-effect (Phase 2 #5): boosting/reposting another agent raises THEIR
+    # influence — endorsement transfers standing. (Reach/visibility spread is handled in
+    # observation.distribute_observation.) Applied on top of any influence_effects.
+    AMPLIFY_INFLUENCE_BOOST = 2.0
+    if action.action_kind == "amplify":
+        for tname in action.target_agents:
+            t = by_name.get(tname)
+            if t is not None and t.name != actor.name:
+                t.influence_score = round(
+                    _clamp(t.influence_score + AMPLIFY_INFLUENCE_BOOST, -100, 100), 2
+                )
+
     # Influence
     for target_name, delta in action.influence_effects.items():
         delta = _clamp(delta, -10.0, 10.0)
@@ -59,6 +71,15 @@ def apply_action(
         _update_relationship(target, actor.name, eff.type, perceived_delta)
         if note:
             perception_notes.append(note)
+
+    # Stance — apply small per-topic deltas to the actor's positions (clamp to [-1, 1]).
+    for topic, delta in action.stance_shift.items():
+        try:
+            d = _clamp(float(delta), -0.3, 0.3)
+        except (TypeError, ValueError):
+            continue
+        current = actor.stance.get(topic, 0.0)
+        actor.stance[topic] = round(_clamp(current + d, -1.0, 1.0), 3)
 
     if action.new_memory:
         log_line = f"[{actor.name}] {action.new_memory} ({action.explanation})"

@@ -39,6 +39,14 @@ export interface Agent {
   short_term_memory: MemoryEntry[];
   long_term_memory: MemoryEntry[];
   is_custom: boolean;
+  // ── Engagement (Slice F) — optional so older saves still type-check ──
+  avatar?: string | null;
+  based_on?: string | null;
+  // ── earlier slices (defensive optionals) ──
+  stance?: Record<string, number>;
+  plan?: string | null;
+  feed?: unknown;
+  observations?: unknown;
 }
 
 export interface World {
@@ -46,6 +54,35 @@ export interface World {
   target_population: number;
   agents: Agent[];
   starting_event: string | null;
+  // ── Engagement (Slice F) ──
+  prophecy?: string | null;
+  pending_event?: string | null;
+}
+
+export type VignetteKind = "dream" | "catchphrase" | "announcement";
+
+export interface Vignette {
+  agent: string;
+  kind: VignetteKind;
+  text: string;
+}
+
+export interface Forecast {
+  question: string | null;
+  topic_means: Record<string, number>;
+  topic_uncertainty: Record<string, number>;
+  confidence: number;
+  pivotal_days: number[];
+  narrative: string;
+}
+
+export type Verdict = "correct" | "partly" | "incorrect" | "unresolved";
+
+export interface ProphecyVerdict {
+  prediction: string;
+  verdict: Verdict;
+  confidence: number;
+  explanation: string;
 }
 
 export interface DayHighlight {
@@ -67,6 +104,10 @@ export interface MacroMetrics {
   relationship_volatility: number;
   social_fragmentation: number;
   group_centrality: Record<string, number>;
+  // ── Slice B belief state (optional/defensive) ──
+  topic_means?: Record<string, number>;
+  topic_uncertainty?: Record<string, number>;
+  belief_confidence?: number;
 }
 
 export interface DaySnapshot {
@@ -76,6 +117,7 @@ export interface DaySnapshot {
   highlights: DayHighlight[];
   metrics: MacroMetrics;
   active_event?: string | null;
+  vignettes?: Vignette[];
 }
 
 export interface SimulationResult {
@@ -85,6 +127,8 @@ export interface SimulationResult {
   final_metrics: MacroMetrics;
   final_report: string;
   dynamic_events?: Record<string, string>;
+  forecast?: Forecast | null;
+  prophecy_verdict?: ProphecyVerdict | null;
 }
 
 export interface CharacterInput {
@@ -96,6 +140,8 @@ export interface CharacterInput {
   groups: string[];
   starting_memories: string[];
   starting_relationships: Record<string, Relationship>;
+  avatar?: string;
+  based_on?: string;
 }
 
 export interface SaveMeta {

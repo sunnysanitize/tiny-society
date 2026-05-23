@@ -83,6 +83,7 @@ interface GraphNode extends SimulationNodeDatum {
   role: string;
   traits: string[];
   goals: string[];
+  avatar?: string | null;
 }
 
 interface GraphLink extends SimulationLinkDatum<GraphNode> {
@@ -133,6 +134,7 @@ function buildGraphData(agents: Agent[]) {
     id: a.id, name: a.name, mood: a.mood,
     influence: a.influence_score, groups: a.groups,
     role: a.role, traits: a.traits, goals: a.goals,
+    avatar: a.avatar ?? null,
     x: undefined, y: undefined,
   }));
   const byName = new Map(agents.map((a) => [a.name, a.id]));
@@ -614,19 +616,31 @@ export function RelationshipGraph({
                 {/* inner specular highlight */}
                 <circle r={r * 0.55} cx={-r * 0.22} cy={-r * 0.22} fill="white" opacity={0.25} />
 
-                {/* initials */}
-                <text
-                  y={-1}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fontSize={r * 0.58}
-                  fontWeight="700"
-                  fontFamily="ui-monospace, 'Courier New', monospace"
-                  fill={selected ? "#7950f2" : "#2d3a50"}
-                  style={{ pointerEvents: "none", letterSpacing: "0.06em" }}
-                >
-                  {initials(n.name)}
-                </text>
+                {/* avatar (emoji) or initials */}
+                {n.avatar ? (
+                  <text
+                    y={1}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={r * 0.95}
+                    style={{ pointerEvents: "none" }}
+                  >
+                    {n.avatar}
+                  </text>
+                ) : (
+                  <text
+                    y={-1}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={r * 0.58}
+                    fontWeight="700"
+                    fontFamily="ui-monospace, 'Courier New', monospace"
+                    fill={selected ? "#7950f2" : "#2d3a50"}
+                    style={{ pointerEvents: "none", letterSpacing: "0.06em" }}
+                  >
+                    {initials(n.name)}
+                  </text>
+                )}
 
                 {/* mood badge — top right */}
                 <g transform={`translate(${r * 0.72}, ${-r * 0.72})`} style={{ pointerEvents: "none" }}>

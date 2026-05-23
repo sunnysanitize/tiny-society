@@ -170,6 +170,58 @@ function AgentChat({ worldId, agentId, agentName, currentDay }: {
   );
 }
 
+// ── Whisper advice ───────────────────────────────────────────────────────────
+
+function WhisperAdvice({ worldId, agentId, agentName }: {
+  worldId: string; agentId: string; agentName: string;
+}) {
+  const [advice, setAdvice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState<string | null>(null);
+
+  async function send() {
+    const a = advice.trim();
+    if (!a || busy) return;
+    setBusy(true); setConfirm(null);
+    try {
+      await api.advise(worldId, agentId, a);
+      setAdvice("");
+      setConfirm(`${agentName} will remember that.`);
+    } catch {
+      setConfirm("Couldn't deliver that whisper — try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <Label color="var(--gold)">✦ WHISPER ADVICE — {agentName}</Label>
+      <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace", marginBottom: 6, lineHeight: 1.5 }}>
+        Privately nudge {agentName}. It is written to their memory and shapes how they act.
+      </div>
+      <div style={{ display: "flex", gap: 5 }}>
+        <input
+          value={advice}
+          onChange={e => setAdvice(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && send()}
+          placeholder={`whisper to ${agentName}...`}
+          style={{ flex: 1, fontSize: 11 }}
+        />
+        <button onClick={send} disabled={busy || !advice.trim()} className="btn"
+          style={{ padding: "5px 12px", fontSize: 8 }}>
+          {busy ? "..." : "WHISPER"}
+        </button>
+      </div>
+      {confirm && (
+        <div style={{ fontSize: 9, color: "var(--gold)", fontFamily: "ui-monospace", marginTop: 6, fontStyle: "italic" }}>
+          ✦ {confirm}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Agent panel ────────────────────────────────────────────────────────────────
 
 function AgentInspector({ agent, allAgents, worldId, currentDay }: {
@@ -189,13 +241,20 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
           boxShadow: `0 0 14px ${moodColor}50`,
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>
-          <span className="font-pixel" style={{ fontSize: 10, color: "var(--text)", letterSpacing: 0 }}>
-            {agent.name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase()}
-          </span>
+          {agent.avatar ? (
+            <span style={{ fontSize: 26, lineHeight: 1 }}>{agent.avatar}</span>
+          ) : (
+            <span className="font-pixel" style={{ fontSize: 10, color: "var(--text)", letterSpacing: 0 }}>
+              {agent.name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase()}
+            </span>
+          )}
         </div>
         <div>
           <div className="font-pixel" style={{ fontSize: 10, color: "var(--text)", marginBottom: 4, letterSpacing: "0.05em" }}>{agent.name}</div>
-          <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace", marginBottom: 5 }}>{agent.role}</div>
+          <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace", marginBottom: 5 }}>
+            {agent.role}
+            {agent.based_on && <span style={{ color: "var(--gold)" }}> · based on {agent.based_on}</span>}
+          </div>
           <div style={{ display: "flex", gap: 5 }}>
             <span style={{
               fontSize: 8, padding: "2px 7px",
@@ -265,9 +324,13 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
                         display: "flex", alignItems: "center", justifyContent: "center",
                         flexShrink: 0,
                       }}>
-                        <span style={{ fontSize: 7, color: "var(--text-dim)", fontFamily: "var(--font-pixel)" }}>
-                          {name.slice(0, 2).toUpperCase()}
-                        </span>
+                        {other?.avatar ? (
+                          <span style={{ fontSize: 12, lineHeight: 1 }}>{other.avatar}</span>
+                        ) : (
+                          <span style={{ fontSize: 7, color: "var(--text-dim)", fontFamily: "var(--font-pixel)" }}>
+                            {name.slice(0, 2).toUpperCase()}
+                          </span>
+                        )}
                       </div>
                       <span style={{ fontSize: 10, color: "var(--text)", fontFamily: "ui-monospace" }}>{name}</span>
                       {other && <span style={{ fontSize: 8, color: "var(--text-dim)", fontFamily: "ui-monospace" }}>{other.role}</span>}
@@ -315,6 +378,8 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
 
       {worldId && (
         <>
+          <Divider />
+          <WhisperAdvice worldId={worldId} agentId={agent.id} agentName={agent.name} />
           <Divider />
           <AgentChat worldId={worldId} agentId={agent.id} agentName={agent.name} currentDay={currentDay} />
         </>

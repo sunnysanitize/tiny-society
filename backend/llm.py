@@ -9,6 +9,38 @@ from typing import Optional
 import httpx
 
 
+# Matches a capitalized first name inside memory text, used by the PLAN_FORMATION
+# mock to ground a plan in a recently-mentioned person.
+import re as _re_module
+# Only match a capitalized word that sits MID-sentence (preceded by a lowercase
+# letter or comma + space) — sentence-initial words like "Walked"/"Things" are not names.
+_re_plan = _re_module.compile(r"(?<=[a-z,]\s)([A-Z][a-z]{2,})")
+
+# Capitalized words that are NOT names — keeps the PLAN_FORMATION mock from
+# grounding a plan in junk like "Nobody on my side".
+_PLAN_NAME_STOP = {
+    "Nobody", "Someone", "Anyone", "Everyone", "Today", "Yesterday", "Tomorrow",
+    "Last", "Then", "Watch", "Attention", "Mark", "The", "This", "That", "They",
+    "Their", "Them", "When", "While", "After", "Before", "Because", "Honestly",
+}
+
+
+def _clean_mock_event(text: str) -> str:
+    """The mock prompt parsers read the line after a section header; when a day has
+    no world event that line is actually the prompt's instructions. Reject those so
+    plan/vignette text doesn't leak instruction fragments."""
+    t = (text or "").strip()
+    if not t:
+        return ""
+    low = t.lower()
+    if any(kw in low for kw in (
+        "intention", "state your", "one-sentence", "one sentence", "return ",
+        "json", "describe", "declare a", "in first person", "no prose", "no quotes",
+    )):
+        return ""
+    return t
+
+
 class LLMError(Exception):
     pass
 
@@ -521,6 +553,73 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
             })
         return json.dumps({"agents": agents})
 
+    # ── world knowledge graph extraction ───────────────────────────────────────
+    if "WORLD_GRAPH_EXTRACTION" in system:
+        ctx = user.lower()
+        # Derive a few entity-ish nouns from the premise, plus genre-flavored stakes.
+        _STOPWORDS = {
+            "the", "and", "for", "with", "that", "this", "from", "into", "they",
+            "their", "will", "who", "what", "where", "when", "a", "an", "of", "to",
+            "in", "on", "is", "are", "be", "as", "by", "or", "it", "one", "only",
+            "world", "premise", "prediction", "question", "return", "graph", "json",
+            "now", "can", "must",
+        }
+        import re as _re_wg
+        words = _re_wg.findall(r"[A-Za-z]{4,}", user)
+        seen: set[str] = set()
+        nouns: list[str] = []
+        for w in words:
+            lw = w.lower()
+            if lw in _STOPWORDS or lw in seen:
+                continue
+            seen.add(lw)
+            nouns.append(w)
+            if len(nouns) >= 4:
+                break
+
+        is_fantasy = any(w in ctx for w in ("kingdom", "magic", "realm", "throne", "castle", "knight"))
+        is_scifi = any(w in ctx for w in ("space", "colony", "starship", "station", "planet", "crew"))
+        is_corp = any(w in ctx for w in ("office", "company", "startup", "corporate", "firm", "ceo"))
+        is_school = any(w in ctx for w in ("school", "university", "college", "campus", "student", "dorm"))
+
+        if is_fantasy:
+            place, authority = "The Realm", "the Crown"
+            topics = ["loyalty to the crown", "use of forbidden magic", "war vs. diplomacy", "old blood vs. new power"]
+        elif is_scifi:
+            place, authority = "The Station", "Command"
+            topics = ["mission vs. survival", "trust in Command", "resource rationing", "staying vs. leaving"]
+        elif is_corp:
+            place, authority = "The Company", "Executive leadership"
+            topics = ["loyalty vs. ambition", "speed vs. caution", "old guard vs. new cohort", "transparency vs. secrecy"]
+        else:  # school / generic
+            place, authority = "The Campus", "the selection committee"
+            topics = ["competition vs. cooperation", "merit vs. need", "individual vs. group", "honesty vs. advantage"]
+
+        entities = [{"name": place, "kind": "place", "description": "the central setting"}]
+        entities.append({"name": authority, "kind": "institution", "description": "holds decision power"})
+        for n in nouns[:3]:
+            entities.append({"name": n.capitalize(), "kind": "stake", "description": "a contested element of the premise"})
+
+        relationships = [
+            {"source": authority, "target": place, "relation": "governs"},
+        ]
+        if len(entities) > 2:
+            relationships.append({"source": entities[2]["name"], "target": authority, "relation": "is decided by"})
+
+        power_structures = [
+            f"{authority} controls the central stake and outcomes.",
+            f"Influence within {place} is informal and shifts through alliances.",
+        ]
+
+        # 3-6 topics
+        topics = topics[:5]
+        return json.dumps({
+            "entities": entities,
+            "relationships": relationships,
+            "power_structures": power_structures,
+            "topics": topics,
+        })
+
     # ── perception narration ───────────────────────────────────────────────────
     if "PERCEPTION_NARRATION" in system:
         perceiver_name, actor_name, rel_type, raw_delta_str = "", "", "trust", "0.1"
@@ -671,6 +770,169 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
 
         return json.dumps({"insights": chosen})
 
+    # ── theatrical vignette (Slice E) ──────────────────────────────────────────
+    if "VIGNETTE_GENERATION" in system:
+        agent_name = ""
+        agent_mood = ""
+        world_event = ""
+        section = ""
+        for line in user.splitlines():
+            stripped = line.strip()
+            if stripped == "YOUR CHARACTER":
+                section = "char"
+            elif stripped == "CURRENT WORLD EVENT":
+                section = "event"
+            elif section == "char" and line.startswith("Name: "):
+                agent_name = line[6:].strip()
+            elif section == "char" and line.startswith("Mood: "):
+                agent_mood = line[6:].strip()
+            elif section == "event" and stripped and not stripped.startswith("("):
+                world_event = stripped
+
+        world_event = _clean_mock_event(world_event)
+        first = agent_name.split()[0] if agent_name else "Someone"
+        evt = world_event.rstrip(".").lower() if world_event else "everything"
+        pools = {
+            "dream": [
+                f"I dreamt I was the only one left in the room, and somehow that felt like winning.",
+                f"Last night I dreamt about {evt} again — I woke up certain it had already happened.",
+                f"In my dream everyone finally listened to me. Then I woke up. Typical.",
+            ],
+            "catchphrase": [
+                f"As I always say: hesitation is just defeat wearing a polite smile.",
+                f"You know my motto — never blink first.",
+                f"If it's not on fire, I'm not interested.",
+            ],
+            "announcement": [
+                f"I, {first}, hereby declare that {evt} will not break me. Watch.",
+                f"Attention everyone: the era of underestimating me ends today.",
+                f"Mark my words — by the end of this, you'll all remember my name.",
+            ],
+        }
+        # Mood loosely picks the kind, then deterministic rng picks the line.
+        if agent_mood in ("anxious", "heartbroken", "lonely", "calm", "content"):
+            kind = "dream"
+        elif agent_mood in ("confident", "ambitious", "angry"):
+            kind = "announcement"
+        else:
+            kind = rng.choice(["dream", "catchphrase", "announcement"])
+        text = rng.choice(pools[kind])
+        return json.dumps({"kind": kind, "text": text})
+
+    # ── prophecy grading (Slice E) ─────────────────────────────────────────────
+    if "PROPHECY_GRADING" in system:
+        prediction = ""
+        report_text = ""
+        section = ""
+        for line in user.splitlines():
+            stripped = line.strip()
+            if stripped == "PLAYER PREDICTION":
+                section = "pred"
+            elif stripped == "FINAL NARRATIVE REPORT":
+                section = "report"
+            elif stripped.startswith("FINAL BELIEF MEANS"):
+                section = ""
+            elif section == "pred" and stripped:
+                prediction = stripped
+                section = ""
+            elif section == "report" and stripped:
+                report_text += " " + stripped
+
+        pred_l = prediction.lower()
+        report_l = report_text.lower()
+        # Deterministic verdict: token overlap between prediction and outcome report.
+        pred_tokens = {w for w in _re_module.findall(r"[a-z]{4,}", pred_l)}
+        report_tokens = {w for w in _re_module.findall(r"[a-z]{4,}", report_l)}
+        overlap = len(pred_tokens & report_tokens)
+        conflict_signal = any(w in pred_l for w in ("conflict", "fight", "war", "rival", "break", "split"))
+        report_conflict = any(w in report_l for w in ("rivalr", "conflict", "fracture", "fought", "tension"))
+
+        if not report_text:
+            verdict, confidence = "unresolved", 0.3
+        elif conflict_signal and report_conflict:
+            verdict, confidence = "correct", 0.78
+        elif overlap >= 3:
+            verdict, confidence = "partly", 0.6
+        elif conflict_signal and not report_conflict:
+            verdict, confidence = "incorrect", 0.55
+        else:
+            verdict, confidence = "partly", 0.5
+
+        explanation = (
+            f"Judged against the run's outcome, the prediction ('{prediction[:80]}') is rated "
+            f"{verdict}: the final report's dynamics show {'matching' if verdict == 'correct' else 'partial-to-divergent'} "
+            f"alignment with what was foreseen. (Mock grading — set a real LLM_PROVIDER for nuanced judgment.)"
+        )
+        return json.dumps({
+            "verdict": verdict,
+            "confidence": confidence,
+            "explanation": explanation,
+        })
+
+    # ── goal-driven plan formation (Slice D ④) ─────────────────────────────────
+    if "PLAN_FORMATION" in system:
+        agent_name = ""
+        agent_goals: list[str] = []
+        agent_mood = ""
+        world_event = ""
+        recent_mems: list[str] = []
+        section = ""
+        for line in user.splitlines():
+            stripped = line.strip()
+            if stripped == "YOUR CHARACTER":
+                section = "char"
+            elif stripped == "YOUR RECENT MEMORIES":
+                section = "mems"
+            elif stripped == "CURRENT WORLD EVENT":
+                section = "event"
+            elif section == "char" and line.startswith("Name: "):
+                agent_name = line[6:].strip()
+            elif section == "char" and line.startswith("Goals: "):
+                agent_goals = [g.strip() for g in line[7:].split(",") if g.strip() and g.strip() != "(none)"]
+            elif section == "char" and line.startswith("Mood: "):
+                agent_mood = line[6:].strip()
+            elif section == "mems" and stripped.startswith("- "):
+                recent_mems.append(stripped[2:].strip())
+            elif section == "event" and stripped and not stripped.startswith("("):
+                world_event = stripped
+
+        world_event = _clean_mock_event(world_event)
+        goal = agent_goals[0] if agent_goals else "find my footing here"
+        # Pull a name mentioned in recent memories to make the plan concrete & relational.
+        ref_name = None
+        agent_first = agent_name.split()[0] if agent_name else ""
+        for mem in reversed(recent_mems):
+            for cand in _re_plan.findall(mem):
+                if cand and cand not in _PLAN_NAME_STOP and cand not in (agent_name, agent_first):
+                    ref_name = cand
+                    break
+            if ref_name:
+                break
+
+        _MOOD_VERB = {
+            "ambitious": "make a decisive move to",
+            "confident": "press my advantage and",
+            "frustrated": "stop holding back and",
+            "angry": "confront what's in my way so I can",
+            "anxious": "carefully line things up so I can",
+            "hopeful": "take the first real step to",
+            "lonely": "reach out to someone so I can",
+            "calm": "steadily work to",
+            "content": "build on what's working to",
+            "excited": "seize the moment to",
+            "heartbroken": "find a way to refocus and",
+        }
+        verb = _MOOD_VERB.get(agent_mood, "find a way to")
+        if ref_name and world_event:
+            plan = f"I want to {verb} {goal}, starting by getting {ref_name} on my side about the {world_event.rstrip('.').lower()}."
+        elif ref_name:
+            plan = f"I want to {verb} {goal}, and dealing with {ref_name} is my next step."
+        elif world_event:
+            plan = f"I want to {verb} {goal} by responding to the {world_event.rstrip('.').lower()} before anyone else does."
+        else:
+            plan = f"I want to {verb} {goal} with a concrete step this week."
+        return json.dumps({"plan": plan})
+
     # ── agent daily reasoning ──────────────────────────────────────────────────
     if "AGENT_REASONING" in system:
         lines = user.splitlines()
@@ -681,10 +943,28 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
         agent_goals: list[str] = []
         relationships: dict[str, str] = {}
         world_event = ""
+        world_topics: list[str] = []
+        agent_plan = ""
         section = ""
 
         for line in lines:
             stripped = line.strip()
+            if stripped == "YOUR CURRENT PLAN":
+                section = "PLAN"
+                continue
+            if section == "PLAN" and stripped and stripped != "YOUR SHORT-TERM MEMORY (today so far)":
+                agent_plan = stripped
+                section = ""
+                continue
+            if stripped.startswith("WORLD TOPICS"):
+                section = "WORLD TOPICS"
+                continue
+            if section == "WORLD TOPICS" and stripped.startswith("- "):
+                # Format: "- topic name (your current stance: +0.12)"
+                topic = stripped[2:].split(" (your current stance")[0].strip()
+                if topic and topic != "(none)":
+                    world_topics.append(topic)
+                continue
             if line.startswith("Name: "):
                 agent_name = line[6:].strip()
             elif line.startswith("Role: "):
@@ -699,6 +979,10 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
                               "YOUR SHORT-TERM MEMORY (today so far)", "YOUR LONG-TERM MEMORY",
                               "RECENT WORLD LOG (last few entries)"):
                 section = stripped
+            elif stripped.startswith("YOUR FEED"):
+                # New ranked-feed section header (Phase 2 #4) — switch section so its
+                # entry lines don't get mis-captured as the world event.
+                section = "YOUR FEED"
             elif section == "YOUR RELATIONSHIPS" and stripped.startswith("- "):
                 parts = stripped[2:].split(":")
                 if parts:
@@ -724,7 +1008,19 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
             if name not in candidates and name != agent_name:
                 candidates.append(name)
 
-        target = rng.choice(candidates) if candidates else "a fellow student"
+        # PLAN BIAS (Slice D ④): if the agent's current plan names someone on the
+        # roster, prefer them as today's target so the action advances the plan.
+        plan_target = None
+        if agent_plan:
+            for cand in candidates:
+                first = cand.split()[0] if cand else cand
+                if first and first in agent_plan:
+                    plan_target = cand
+                    break
+        if plan_target is not None:
+            target = plan_target
+        else:
+            target = rng.choice(candidates) if candidates else "a fellow student"
 
         # Pick action: trait-driven first, mood-driven fallback
         action_pool: list[tuple] = []
@@ -784,8 +1080,30 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
 
         new_memory = rng.choice(memory_opts)
 
+        # Occasionally shift stance on one of the world topics the agent engaged with.
+        stance_shift: dict[str, float] = {}
+        if world_topics and rng.random() < 0.6:
+            topic = rng.choice(world_topics)
+            # Direction loosely tracks the action's valence (positive vs. conflictual).
+            mag = round(rng.uniform(0.05, 0.25), 3)
+            if rtype in ("conflict", "rivalry") or base_delta < 0:
+                mag = -mag
+            stance_shift[topic] = mag
+
+        # Real action space (Phase 2 #5): deterministically pick a kind so verification
+        # sees variety. Conflictual moves skew private/comment; warm/ambitious moves skew
+        # public/amplify; the rest default to interact. Pure logic, no extra LLM call.
+        _kind_roll = rng.random()
+        if rtype in ("conflict", "rivalry") or base_delta < 0:
+            action_kind = "direct" if _kind_roll < 0.5 else "comment"
+        elif rtype in ("alliance", "influence") or new_mood in ("confident", "ambitious"):
+            action_kind = "post" if _kind_roll < 0.4 else ("amplify" if _kind_roll < 0.7 else "interact")
+        else:
+            action_kind = "interact" if _kind_roll < 0.6 else ("comment" if _kind_roll < 0.85 else "post")
+
         return json.dumps({
             "action": action_verb,
+            "action_kind": action_kind,
             "target_agents": [target],
             "emotional_reaction": new_mood,
             "relationship_effects": {
@@ -795,6 +1113,7 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
                 "self": round(rng.uniform(-1, 3), 1),
                 target: round(rng.uniform(-1, 1), 1),
             },
+            "stance_shift": stance_shift,
             "new_memory": new_memory,
             "explanation": explanation,
         })
