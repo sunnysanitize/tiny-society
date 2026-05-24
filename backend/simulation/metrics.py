@@ -12,7 +12,6 @@ def compute_metrics(
     type_changes_today: int = 0,
     baseline_influence: dict[str, float] | None = None,
 ) -> MacroMetrics:
-    friendship = rivalry = conflict = romance = alliance = 0
     strength_sum = 0.0
     strength_count = 0
     trust_sum = 0.0
@@ -20,27 +19,33 @@ def compute_metrics(
     edge_counts: Counter[str] = Counter()
     group_cross: Counter[str] = Counter()
 
+    # Relationships are DIRECTED and may be one-sided (the consequence layer allows
+    # one-sided antagonism/friendship). Count by unordered PAIR: a pair counts toward a
+    # type if EITHER direction holds it — so a one-sided rivalry is still a rivalry, and
+    # we never undercount the asymmetric bonds the realism layer is built to produce.
+    names = {a.name for a in agents}
+    pair_types: dict[frozenset, set[str]] = {}
+
     for a in agents:
         for name, r in a.relationships.items():
+            if name not in names:
+                continue
             edge_counts[a.name] += 1
             strength_sum += abs(r.strength)
             strength_count += 1
-            if r.type == "friendship":
-                friendship += 1
-            elif r.type == "rivalry":
-                rivalry += 1
-            elif r.type == "conflict":
-                conflict += 1
-            elif r.type == "romance":
-                romance += 1
-            elif r.type == "alliance":
-                alliance += 1
-            elif r.type == "trust" and r.strength > 0:
+            if r.type == "trust" and r.strength > 0:
                 # Only count genuinely-positive trust bonds. A "trust"-labeled edge with
                 # near-zero/negative affinity is just a cooling acquaintance (the consequence
                 # layer doesn't relabel near-neutral bonds), so it shouldn't drag the average.
                 trust_sum += r.strength
                 trust_count += 1
+            pair_types.setdefault(frozenset((a.name, name)), set()).add(r.type)
+
+    friendship = sum(1 for t in pair_types.values() if "friendship" in t)
+    rivalry = sum(1 for t in pair_types.values() if "rivalry" in t)
+    conflict = sum(1 for t in pair_types.values() if "conflict" in t)
+    romance = sum(1 for t in pair_types.values() if "romance" in t)
+    alliance = sum(1 for t in pair_types.values() if "alliance" in t)
 
     # Group centrality: count cross-group edges per group
     by_name = {a.name: a for a in agents}
@@ -96,11 +101,11 @@ def compute_metrics(
         influence_losers = [n for n, d in deltas[-3:] if d < 0][::-1]
 
     return MacroMetrics(
-        friendship_count=friendship // 2,
-        rivalry_count=rivalry // 2,
-        conflict_count=conflict // 2,
-        romance_count=romance // 2,
-        alliance_count=alliance // 2,
+        friendship_count=friendship,
+        rivalry_count=rivalry,
+        conflict_count=conflict,
+        romance_count=romance,
+        alliance_count=alliance,
         average_relationship_strength=round(strength_sum / strength_count, 3) if strength_count else 0.0,
         average_trust_score=round(trust_sum / trust_count, 3) if trust_count else 0.0,
         most_connected=most_connected,

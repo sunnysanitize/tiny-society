@@ -159,3 +159,78 @@ def realize(agent: Agent, other_name: str, other_agent: Agent | None) -> None:
         rel.type = "trust"
     # else: affinity is near-neutral — keep the current label (acquaintance-level churn
     # shouldn't relabel a bond on every minor interaction).
+
+
+# ── Seeding (pre-existing relationships) ──────────────────────────────────────────
+# A relationship can be SEEDED before the sim starts (filler generation, mid-run
+# injection). Seeds used to be written with a positive `strength` regardless of type,
+# which contradicted the signed-affinity convention: a seeded "rivalry" stored at +0.25
+# would be re-derived as friendship/trust on the first interaction, so starting tension
+# evaporated. `seed_relationship` is the single correct entry point — it writes the
+# affinity with the SIGN its type implies and pre-loads interaction/dwell + romantic/
+# alliance signals so `realize` keeps the intended type instead of downgrading it.
+
+_DERIVABLE_SEED = {"friendship", "trust", "romance", "alliance", "rivalry", "conflict"}
+
+
+def _apply_seed(rel: Relationship, rel_type: str, mag: float) -> None:
+    """Write a single direction of a seeded relationship so it realizes as `rel_type`."""
+    rel.type = rel_type
+    if rel_type == "conflict":
+        rel.strength = round(-_clamp(max(mag, 0.5), 0.5, 1.0), 3)          # aff <= -0.5
+        rel.interactions = max(rel.interactions, 2)
+    elif rel_type == "rivalry":
+        rel.strength = round(-_clamp(max(mag, 0.3), 0.3, 0.49), 3)         # -0.5 < aff <= -0.25
+        rel.interactions = max(rel.interactions, 2)
+    elif rel_type == "romance":
+        rel.strength = round(_clamp(max(mag, ROMANCE_AFFINITY + 0.05), ROMANCE_AFFINITY, 1.0), 3)
+        rel.romantic = max(rel.romantic, ROMANCE_SIGNAL)
+        rel.interactions = max(rel.interactions, ROMANCE_INTERACTIONS)
+    elif rel_type == "alliance":
+        rel.strength = round(_clamp(max(mag, ALLIANCE_AFFINITY + 0.05), ALLIANCE_AFFINITY, 1.0), 3)
+        rel.allied = max(rel.allied, ALLIANCE_SIGNAL)
+        rel.interactions = max(rel.interactions, ALLIANCE_INTERACTIONS)
+    elif rel_type == "friendship":
+        rel.strength = round(_clamp(max(mag, FRIENDSHIP_AFFINITY + 0.05), FRIENDSHIP_AFFINITY, 1.0), 3)
+        rel.interactions = max(rel.interactions, 2)
+    elif rel_type in ("influence", "group_membership"):
+        # Not derivable from affinity — keep the explicit label with positive intensity.
+        rel.strength = round(_clamp(mag, 0.1, 1.0), 3)
+        rel.interactions = max(rel.interactions, 1)
+    else:  # trust / fallback — a mild acquaintance bond (kept below the friendship band)
+        rel.strength = round(_clamp(max(mag, TRUST_AFFINITY), TRUST_AFFINITY, 0.29), 3)
+        rel.interactions = max(rel.interactions, 1)
+
+
+def seed_relationship(
+    a: Agent, b: Agent, rel_type: str, magnitude: float, mutual: bool
+) -> None:
+    """Seed a pre-existing relationship consistent with the affinity model.
+
+    `magnitude` is a POSITIVE 0..1 intensity; the stored affinity gets the sign its
+    `rel_type` implies. For derivable types the type is then re-derived via `realize`
+    (using both directions when `mutual`) so it's internally consistent; non-derivable
+    types (`influence`/`group_membership`) keep their explicit label."""
+    if a is None or b is None or a.name == b.name:
+        return
+    rel_type = (rel_type or "trust").strip().lower()
+    if rel_type not in (_DERIVABLE_SEED | {"influence", "group_membership"}):
+        rel_type = "trust"
+    try:
+        mag = _clamp(float(magnitude), 0.1, 1.0)
+    except (TypeError, ValueError):
+        mag = 0.25
+
+    ra = a.relationships.get(b.name) or Relationship(type="trust", strength=0.0)
+    a.relationships[b.name] = ra
+    _apply_seed(ra, rel_type, mag)
+
+    if mutual:
+        rb = b.relationships.get(a.name) or Relationship(type="trust", strength=0.0)
+        b.relationships[a.name] = rb
+        _apply_seed(rb, rel_type, mag)
+
+    if rel_type in _DERIVABLE_SEED:
+        realize(a, b.name, b)
+        if mutual:
+            realize(b, a.name, a)

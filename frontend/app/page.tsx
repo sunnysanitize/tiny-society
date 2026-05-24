@@ -216,7 +216,7 @@ export default function Page() {
         />
       )}
 
-      <main className="page-enter" style={{ maxWidth: 1400, margin: "0 auto", padding: "clamp(12px, 3vw, 20px) clamp(10px, 3vw, 24px)" }}>
+      <main className="page-enter" style={{ maxWidth: 1800, margin: "0 auto", padding: "clamp(12px, 3vw, 20px) clamp(10px, 3vw, 24px)" }}>
 
         {/* ── Title Bar ─────────────────────────────────────────────────── */}
         <header style={{ marginBottom: 28 }}>

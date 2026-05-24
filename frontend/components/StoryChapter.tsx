@@ -1,6 +1,6 @@
 "use client";
 import { useMemo } from "react";
-import type { Agent, DayHighlight, Vignette, VignetteKind, Mood, Forecast } from "@/lib/types";
+import type { Agent, DayHighlight, Vignette, VignetteKind, Mood, Forecast, PerceptionNote } from "@/lib/types";
 import { PixelAvatar, isEmojiAvatar } from "./PixelAvatar";
 
 /**
@@ -87,13 +87,14 @@ function Face({ agent, name, size }: { agent?: Agent; name: string; size: number
 }
 
 export function StoryChapter({
-  agents, highlights, vignettes, eventLog, milestones, day, totalDays, activeEvent, isStartEvent, forecast,
+  agents, highlights, vignettes, eventLog, milestones, perceptionNotes, day, totalDays, activeEvent, isStartEvent, forecast,
 }: {
   agents: Agent[];
   highlights?: DayHighlight[];
   vignettes?: Vignette[];
   eventLog?: string[];
   milestones?: string[];
+  perceptionNotes?: PerceptionNote[];
   day: number;
   totalDays: number;
   activeEvent?: string | null;
@@ -102,6 +103,11 @@ export function StoryChapter({
 }) {
   const safeAgents = agents ?? [];
   const turningPoints = (milestones ?? []).filter(m => (m ?? "").trim());
+  // Subjective reinterpretations worth showing: only those where perception meaningfully
+  // diverged from the raw signal (otherwise it's just "they took it at face value").
+  const perceptions = (perceptionNotes ?? []).filter(
+    p => (p?.narrative ?? "").trim() && Math.abs((p.perceived_delta ?? 0) - (p.raw_delta ?? 0)) >= 0.05
+  );
 
   const beats = useMemo<Beat[]>(() => {
     const out: Beat[] = [];
@@ -257,6 +263,50 @@ export function StoryChapter({
           </div>
         )}
       </div>
+
+      {/* ── How they took it: subjective perception (information asymmetry) ── */}
+      {perceptions.length > 0 && (
+        <div style={{
+          marginTop: 14, padding: "10px 12px",
+          background: "rgba(59,130,246,0.05)", borderLeft: "3px solid var(--cyan)",
+        }}>
+          <div className="font-pixel" style={{ fontSize: 7, color: "var(--cyan)", letterSpacing: "0.1em", marginBottom: 6 }}>
+            ◌ HOW THEY TOOK IT
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {perceptions.slice(0, 5).map((p, i) => {
+              const amplified = Math.abs(p.perceived_delta) > Math.abs(p.raw_delta);
+              const agent = findAgent(safeAgents, p.perceiver);
+              return (
+                <div key={i} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
+                  <Face agent={agent} name={p.perceiver} size={22} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2, flexWrap: "wrap" }}>
+                      <span className="font-pixel" style={{ fontSize: 8, color: "var(--text)", letterSpacing: "0.04em" }}>
+                        {p.perceiver}
+                      </span>
+                      <span className="font-pixel" style={{
+                        fontSize: 6, letterSpacing: "0.06em",
+                        color: amplified ? "var(--pink)" : "var(--text-muted)",
+                      }}>
+                        {amplified ? "▲ FELT STRONGER" : "▼ LANDED SOFTER"}
+                      </span>
+                      {p.revealed_trait && (
+                        <span className="font-pixel" style={{ fontSize: 6, color: "var(--gold)", letterSpacing: "0.04em", marginLeft: "auto" }}>
+                          ✦ {p.revealed_trait}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.55, fontFamily: "ui-monospace, monospace", fontStyle: "italic" }}>
+                      {p.narrative}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── The stakes: where the town is heading ────────────────────── */}
       {forecast?.narrative && (

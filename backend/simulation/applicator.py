@@ -40,6 +40,11 @@ def apply_action(
     by_name = {a.name: a for a in all_agents}
     perception_notes: list[PerceptionNote] = []
     milestones: list[str] = []
+    # Standing for the ACTOR is earned once per action (Phase 5), not once per target —
+    # the per-target loop below used to add the self-delta on every target, inflating
+    # influence for multi-target moves. We accumulate whether the move was antagonistic
+    # toward anyone and apply the actor's self-delta a single time after the loop.
+    any_antagonistic = False
 
     # Mood update
     actor.mood = action.emotional_reaction
@@ -102,9 +107,10 @@ def apply_action(
                 milestones.append(ms)
 
         # DERIVED INFLUENCE: standing shifts from HOW the agent acted, not invented numbers.
+        # The TARGET's standing is affected per target; the ACTOR's is applied once below.
         is_antagonistic = base_delta < 0
-        self_inf, target_inf = consequence.derive_influence(action.action_kind, is_antagonistic)
-        actor.influence_score = round(_clamp(actor.influence_score + self_inf, -100, 100), 2)
+        any_antagonistic = any_antagonistic or is_antagonistic
+        _, target_inf = consequence.derive_influence(action.action_kind, is_antagonistic)
         if target_inf:
             target.influence_score = round(_clamp(target.influence_score + target_inf, -100, 100), 2)
 
@@ -117,11 +123,11 @@ def apply_action(
             received = f"{actor.name} chose to {action.action} toward me."
         target.short_term_memory.append(make_memory(received, day=day))
 
-    # If the agent acted on no one (e.g. a public post to the world), still reflect the
-    # standing effect of speaking up.
-    if not action.target_agents:
-        self_inf, _ = consequence.derive_influence(action.action_kind, False)
-        actor.influence_score = round(_clamp(actor.influence_score + self_inf, -100, 100), 2)
+    # ACTOR STANDING (once per action): the effect of HOW they acted, plus a bump if the
+    # move was antagonistic toward anyone. Covers the no-target case (e.g. a public post)
+    # too, since derive_influence keys off the action_kind.
+    self_inf, _ = consequence.derive_influence(action.action_kind, any_antagonistic)
+    actor.influence_score = round(_clamp(actor.influence_score + self_inf, -100, 100), 2)
 
     # Stance — apply small per-topic deltas to the actor's positions (clamp to [-1, 1]).
     for topic, delta in action.stance_shift.items():

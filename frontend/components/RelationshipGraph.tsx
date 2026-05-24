@@ -73,6 +73,10 @@ const GLOW_COLOR: Record<RelationshipType, string> = {
   conflict: "#f9731680", group_membership: "#eab30880",
 };
 
+// Persist node positions across mounts (e.g. switching between the Story and Network
+// tabs) so the layout RESTORES instead of re-spreading and fully re-simulating each time.
+const POS_CACHE = new Map<string, { x: number; y: number }>();
+
 // ─── types ────────────────────────────────────────────────────────────────────
 
 interface GraphNode extends SimulationNodeDatum {
@@ -140,18 +144,23 @@ function buildGraphData(agents: Agent[]) {
   }));
   const byName = new Map(agents.map((a) => [a.name, a.id]));
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const links: GraphLink[] = [];
-  const seen = new Set<string>();
+  // Relationships are directed and may be ASYMMETRIC (A sees B as rivalry while B sees A
+  // as trust). Collapse to one edge per unordered pair, keeping the direction with the
+  // strongest |affinity| as the representative — instead of drawing two contradictory
+  // edges. `strength` is the SIGNED affinity (drives width/opacity downstream).
+  const byPair = new Map<string, GraphLink>();
   for (const a of agents) {
     for (const [name, rel] of Object.entries(a.relationships)) {
       const tid = byName.get(name);
       if (!tid) continue;
-      const key = [a.id, tid].sort().join("|") + "|" + rel.type;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      links.push({ key, source: a.id as any, target: tid as any, type: rel.type, strength: Math.abs(rel.strength) });
+      const key = [a.id, tid].sort().join("|");
+      const existing = byPair.get(key);
+      if (!existing || Math.abs(rel.strength) > Math.abs(existing.strength)) {
+        byPair.set(key, { key, source: a.id as any, target: tid as any, type: rel.type, strength: rel.strength });
+      }
     }
   }
+  const links: GraphLink[] = Array.from(byPair.values());
   return { nodes, links };
 }
 
@@ -226,17 +235,22 @@ export function RelationshipGraph({
     const W = svgRef.current?.clientWidth ?? 700;
     const H = svgRef.current?.clientHeight ?? 500;
 
-    // Preserve old positions if IDs match
+    // Preserve old positions if IDs match — first from this instance, then from the
+    // cross-mount cache (so a tab switch restores the layout rather than reshuffling).
     const oldPos = new Map(simNodes.current.map((n) => [n.id, { x: n.x, y: n.y }]));
     const count = graphNodes.length;
+    const posFor = (id: string) => oldPos.get(id) ?? POS_CACHE.get(id);
+    // If every node already has a known position, we're restoring a layout — start the
+    // sim at low alpha so it barely moves instead of springing apart and re-settling.
+    const restored = count > 0 && graphNodes.every((n) => posFor(n.id) != null);
     // Spread initial positions evenly across a larger radius so nodes don't start stacked
     const initR = Math.max(Math.min(W, H) * 0.38, count * 14);
     const angle = (i: number) => (i / Math.max(1, count)) * 2 * Math.PI;
 
     const nodes: GraphNode[] = graphNodes.map((n, i) => ({
       ...n,
-      x: oldPos.get(n.id)?.x ?? W / 2 + initR * Math.cos(angle(i)),
-      y: oldPos.get(n.id)?.y ?? H / 2 + initR * Math.sin(angle(i)),
+      x: posFor(n.id)?.x ?? W / 2 + initR * Math.cos(angle(i)),
+      y: posFor(n.id)?.y ?? H / 2 + initR * Math.sin(angle(i)),
     }));
     const links: GraphLink[] = graphLinks.map((l) => ({ ...l }));
 
@@ -291,7 +305,19 @@ export function RelationshipGraph({
       .on("end", () => { tick((t) => t + 1); fitToView(); });
 
     simRef.current = sim;
-    return () => { sim.stop(); };
+    // Restoring a cached layout: damp the starting energy so it doesn't jump on remount.
+    if (restored) sim.alpha(0.15);
+    // Frame once after first paint, in case the container wasn't sized yet at mount.
+    const raf = requestAnimationFrame(() => fitToView());
+
+    return () => {
+      cancelAnimationFrame(raf);
+      // Stash final positions so the next mount (tab switch / day step) restores them.
+      simNodes.current.forEach((n) => {
+        if (n.x != null && n.y != null) POS_CACHE.set(n.id, { x: n.x, y: n.y });
+      });
+      sim.stop();
+    };
   }, [graphNodes.length, agents]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── derived sets for dimming ─────────────────────────────────────────────────
@@ -832,8 +858,12 @@ function GraphEdge({
 
   const d = edgePath(src.x, src.y!, tgt.x, tgt.y!);
   const mid = labelMid(src.x, src.y!, tgt.x, tgt.y!);
-  const opacity = dimmed ? 0 : highlighted ? 1 : isConnected ? 0.85 : 0.55;
-  const width = highlighted ? cfg.width + 1.5 : cfg.width;
+  // Affinity magnitude drives visual weight: a bond that has cooled toward neutral fades
+  // and thins, instead of rendering as healthy as a strong one. (l.strength is signed.)
+  const mag = Math.min(1, Math.abs(l.strength));
+  const baseOpacity = dimmed ? 0 : highlighted ? 1 : isConnected ? 0.85 : 0.55;
+  const opacity = baseOpacity * (0.3 + 0.7 * mag);
+  const width = (highlighted ? cfg.width + 1.5 : cfg.width) * (0.4 + 0.6 * mag);
   const showAnim = !dimmed && opacity > 0;
   const labelText = cfg.label.toUpperCase();
   const badgeW = labelText.length * 5.2 + 14;

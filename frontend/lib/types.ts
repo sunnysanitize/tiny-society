@@ -21,6 +21,15 @@ export interface Memory {
 /** Memories are rich objects now, but legacy saves may hold plain strings. */
 export type MemoryEntry = Memory | string;
 
+/** One ranked-feed observation an agent witnessed (information asymmetry). */
+export interface FeedEntry {
+  text: string;
+  author: string;
+  author_influence: number;
+  day: number;
+  action_kind: string;
+}
+
 /** Safely read a memory's text whether it's a Memory object or a legacy string. */
 export function memText(m: MemoryEntry): string {
   return typeof m === "string" ? m : m?.text ?? "";
@@ -45,8 +54,8 @@ export interface Agent {
   // ── earlier slices (defensive optionals) ──
   stance?: Record<string, number>;
   plan?: string | null;
-  feed?: unknown;
-  observations?: unknown;
+  feed?: FeedEntry[];
+  observations?: string[];
 }
 
 export interface World {
@@ -90,6 +99,19 @@ export interface DayHighlight {
   summary: string;
 }
 
+/** How a character subjectively internalized an incoming event (perception layer).
+ * `narrative` is the readable, in-character reinterpretation; the deltas show how much
+ * the raw social signal was amplified or dampened by who they are. */
+export interface PerceptionNote {
+  perceiver: string;
+  actor: string;
+  raw_delta: number;
+  perceived_delta: number;
+  relationship_type: string;
+  narrative: string;
+  revealed_trait?: string | null;
+}
+
 export interface MacroMetrics {
   friendship_count: number;
   rivalry_count: number;
@@ -119,6 +141,7 @@ export interface DaySnapshot {
   active_event?: string | null;
   vignettes?: Vignette[];
   milestones?: string[];
+  perception_notes?: PerceptionNote[];
 }
 
 export interface SimulationResult {

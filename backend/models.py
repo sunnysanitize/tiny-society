@@ -225,6 +225,41 @@ def normalize_action_kind(value: object) -> str:
     return "interact"
 
 
+# The fixed Mood enum (above) is small; real LLMs routinely return near-synonyms outside
+# it ("happy", "sad", "determined", …). Passing those straight into AgentAction raised a
+# ValidationError that was swallowed upstream, silently dropping the agent's ENTIRE turn.
+# normalize_mood maps common synonyms onto the enum and otherwise falls back, so an
+# off-enum mood never costs an agent its action.
+MOODS: set[str] = {
+    "calm", "excited", "frustrated", "heartbroken", "ambitious",
+    "anxious", "content", "angry", "hopeful", "lonely", "confident",
+}
+_MOOD_SYNONYMS: Dict[str, str] = {
+    "happy": "content", "joyful": "excited", "elated": "excited", "thrilled": "excited",
+    "sad": "heartbroken", "depressed": "heartbroken", "grieving": "heartbroken", "devastated": "heartbroken",
+    "scared": "anxious", "afraid": "anxious", "nervous": "anxious", "worried": "anxious", "fearful": "anxious",
+    "mad": "angry", "furious": "angry", "enraged": "angry", "livid": "angry", "irate": "angry",
+    "irritated": "frustrated", "annoyed": "frustrated", "exasperated": "frustrated", "agitated": "frustrated",
+    "determined": "ambitious", "driven": "ambitious", "motivated": "ambitious", "eager": "ambitious",
+    "proud": "confident", "assured": "confident", "self-assured": "confident", "bold": "confident",
+    "isolated": "lonely", "alone": "lonely", "abandoned": "lonely", "withdrawn": "lonely",
+    "optimistic": "hopeful", "encouraged": "hopeful", "inspired": "hopeful",
+    "peaceful": "calm", "relaxed": "calm", "neutral": "calm", "fine": "calm", "okay": "calm", "serene": "calm",
+}
+
+
+def normalize_mood(value: object, default: str = "calm") -> str:
+    """Clamp an arbitrary value to a valid Mood, mapping common synonyms first.
+    `default` is used when the value is unrecognized (should itself be a valid Mood)."""
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in MOODS:
+            return v
+        if v in _MOOD_SYNONYMS:
+            return _MOOD_SYNONYMS[v]
+    return default if default in MOODS else "calm"
+
+
 class AgentAction(BaseModel):
     """Structured output contract returned by the AI reasoning layer.
 

@@ -92,6 +92,32 @@ function HpBar({ value, color, max = 1 }: { value: number; color: string; max?: 
   );
 }
 
+// A signed stance bar: a center line with the fill growing left (against, red) or
+// right (for, green) — so a belief reads as a position on an axis, not a magnitude.
+function StanceBar({ topic, value }: { topic: string; value: number }) {
+  const v = Math.max(-1, Math.min(1, value));
+  const positive = v >= 0;
+  const halfPct = Math.abs(v) * 50;
+  return (
+    <div style={{ marginBottom: 7 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+        <span style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace" }}>{topic}</span>
+        <span className="font-pixel" style={{ fontSize: 7, color: positive ? "#22c55e" : "var(--red)" }}>
+          {v >= 0 ? "+" : ""}{v.toFixed(2)}
+        </span>
+      </div>
+      <div style={{ position: "relative", height: 5, background: "#ebe8f8", border: "1px solid var(--border)" }}>
+        <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 1, background: "var(--text-muted)" }} />
+        <div style={{
+          position: "absolute", top: 0, bottom: 0,
+          left: positive ? "50%" : `${50 - halfPct}%`, width: `${halfPct}%`,
+          background: positive ? "#22c55e" : "var(--red)", opacity: 0.8,
+        }} />
+      </div>
+    </div>
+  );
+}
+
 // ── Agent Chat ─────────────────────────────────────────────────────────────────
 
 function AgentChat({ worldId, agentId, agentName, currentDay }: {
@@ -225,11 +251,73 @@ function WhisperAdvice({ worldId, agentId, agentName }: {
 
 // ── Agent panel ────────────────────────────────────────────────────────────────
 
-function AgentInspector({ agent, allAgents, worldId, currentDay }: {
+function AgentInspector({ agent, allAgents, worldId, currentDay, compact = false, onExpand }: {
   agent: Agent; allAgents: Agent[]; worldId: string | null; currentDay: number;
+  compact?: boolean; onExpand?: () => void;
 }) {
   const moodColor = MOOD_COLOR[agent.mood] || "#6b7785";
   const rels = Object.entries(agent.relationships).sort((a, b) => Math.abs(b[1].strength) - Math.abs(a[1].strength));
+
+  // COMPACT (Story screen): a quick glance — header, traits, top ties, and a jump to the
+  // full profile in the Network tab. Keeps the panel short so it doesn't grow the page.
+  if (compact) {
+    return (
+      <div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+          <div style={{
+            width: 40, height: 40, flexShrink: 0,
+            background: `radial-gradient(circle at 35% 35%, ${moodColor}25, #f8f6ff)`,
+            border: `2px solid ${moodColor}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            {isEmojiAvatar(agent.avatar)
+              ? <span style={{ fontSize: 22, lineHeight: 1 }}>{agent.avatar}</span>
+              : <PixelAvatar seed={agent.id} avatar={agent.avatar} mood={agent.mood} size={34} title={agent.name} />}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div className="font-pixel" style={{ fontSize: 10, color: "var(--text)", marginBottom: 3, letterSpacing: "0.05em" }}>{agent.name}</div>
+            <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{agent.role}</div>
+            <div style={{ display: "flex", gap: 5 }}>
+              <span style={{ fontSize: 8, padding: "2px 7px", background: `${moodColor}12`, color: moodColor, border: `1px solid ${moodColor}35`, fontFamily: "var(--font-pixel)", textTransform: "uppercase" }}>{agent.mood}</span>
+              <span style={{ fontSize: 8, padding: "2px 7px", background: "rgba(121,80,242,0.08)", color: "var(--accent)", border: "1px solid rgba(121,80,242,0.22)", fontFamily: "var(--font-pixel)" }}>
+                {agent.influence_score >= 0 ? "+" : ""}{agent.influence_score.toFixed(1)} INF
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {agent.traits.length > 0 && (
+          <div style={{ marginBottom: 10 }}>{agent.traits.slice(0, 5).map(t => <Tag key={t} label={t} />)}</div>
+        )}
+
+        {rels.length > 0 && (
+          <>
+            <Label>TOP TIES</Label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
+              {rels.slice(0, 3).map(([name, r]) => {
+                const color = REL_COLOR[r.type] || "#6b7785";
+                return (
+                  <div key={name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 10, color: "var(--text)", fontFamily: "ui-monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+                    <span style={{ fontSize: 7, padding: "1px 5px", background: `${color}12`, color, border: `1px solid ${color}28`, fontFamily: "var(--font-pixel)", textTransform: "uppercase", flexShrink: 0 }}>{r.type}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {onExpand && (
+          <button onClick={onExpand} className="font-pixel" style={{
+            width: "100%", fontSize: 7, padding: "7px 0", cursor: "pointer", letterSpacing: "0.08em",
+            background: "transparent", color: "var(--accent)", border: "1px solid var(--accent)", textTransform: "uppercase",
+          }}>
+            VIEW FULL PROFILE IN NETWORK →
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -379,6 +467,36 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
         </>
       )}
 
+      {agent.stance && Object.keys(agent.stance).length > 0 && (
+        <>
+          <Divider />
+          <Label color="var(--accent)">BELIEFS</Label>
+          <div style={{ marginBottom: 4 }}>
+            {Object.entries(agent.stance).map(([t, v]) => <StanceBar key={t} topic={t} value={v} />)}
+          </div>
+        </>
+      )}
+
+      {agent.feed && agent.feed.length > 0 && (
+        <>
+          <Divider />
+          <Label color="var(--cyan)">◌ WHAT THEY SEE</Label>
+          <div style={{ fontSize: 8, color: "var(--text-muted)", fontFamily: "ui-monospace", marginBottom: 6, lineHeight: 1.5 }}>
+            Their personal feed — what reached them, not the whole town.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
+            {[...agent.feed].slice(-6).reverse().map((f, i) => (
+              <div key={i} style={{
+                fontSize: 9, color: "var(--text-dim)", padding: "5px 8px",
+                background: "var(--surface-2)", borderLeft: "2px solid rgba(59,130,246,0.4)", fontFamily: "ui-monospace",
+              }}>
+                {f.text}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       {worldId && (
         <>
           <Divider />
@@ -393,10 +511,10 @@ function AgentInspector({ agent, allAgents, worldId, currentDay }: {
 
 // ── Edge panel ─────────────────────────────────────────────────────────────────
 
-function EdgeInspector({ edgeKey, allAgents }: { edgeKey: string; allAgents: Agent[] }) {
+function EdgeInspector({ edgeKey, allAgents, compact = false, onExpand }: {
+  edgeKey: string; allAgents: Agent[]; compact?: boolean; onExpand?: () => void;
+}) {
   const parts = edgeKey.split("|");
-  const relType = (parts[2] || "trust") as RelationshipType;
-  const color = REL_COLOR[relType] || "#6b7785";
   const agentA = allAgents.find(a => a.id === parts[0]);
   const agentB = allAgents.find(a => a.id === parts[1]);
 
@@ -404,24 +522,57 @@ function EdgeInspector({ edgeKey, allAgents }: { edgeKey: string; allAgents: Age
 
   const relAB = agentA.relationships[agentB.name];
   const relBA = agentB.relationships[agentA.name];
-  const strength = relAB?.strength ?? relBA?.strength ?? 0;
+  // The edge key no longer encodes a type (edges are deduped per unordered pair, and a
+  // bond can be asymmetric). Derive the headline type from the direction with the
+  // stronger |affinity| as the representative.
+  const dominant = Math.abs(relAB?.strength ?? 0) >= Math.abs(relBA?.strength ?? 0) ? relAB : relBA;
+  const relType = (dominant?.type ?? "trust") as RelationshipType;
+  const color = REL_COLOR[relType] || "#6b7785";
+  const strength = dominant?.strength ?? 0;
+  const mag = Math.abs(strength);
+
+  const header = (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+      <div className="font-pixel" style={{
+        fontSize: 8, color: "var(--text)", padding: "5px 10px",
+        background: "var(--surface-2)", border: "1px solid var(--border)",
+      }}>{agentA.name}</div>
+      <div style={{ flex: 1, textAlign: "center" }}>
+        <div style={{ height: 2, background: color, opacity: 0.6, marginBottom: 4 }} />
+        <Tag label={relType} color={color} />
+      </div>
+      <div className="font-pixel" style={{
+        fontSize: 8, color: "var(--text)", padding: "5px 10px",
+        background: "var(--surface-2)", border: "1px solid var(--border)",
+      }}>{agentB.name}</div>
+    </div>
+  );
+
+  // COMPACT (Story screen): header + bond strength + jump to full detail in the Network tab.
+  if (compact) {
+    return (
+      <div>
+        {header}
+        <Label>BOND STRENGTH</Label>
+        <div style={{ marginBottom: 4 }}><HpBar value={strength} color={color} /></div>
+        <div className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", marginBottom: 12, letterSpacing: "0.06em" }}>
+          {(mag * 100).toFixed(0)}% — {mag > 0.7 ? "STRONG" : mag > 0.4 ? "MODERATE" : "WEAK"}
+        </div>
+        {onExpand && (
+          <button onClick={onExpand} className="font-pixel" style={{
+            width: "100%", fontSize: 7, padding: "7px 0", cursor: "pointer", letterSpacing: "0.08em",
+            background: "transparent", color: "var(--accent)", border: "1px solid var(--accent)", textTransform: "uppercase",
+          }}>
+            VIEW FULL DETAIL IN NETWORK →
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-        <div className="font-pixel" style={{
-          fontSize: 8, color: "var(--text)", padding: "5px 10px",
-          background: "var(--surface-2)", border: "1px solid var(--border)",
-        }}>{agentA.name}</div>
-        <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ height: 2, background: color, opacity: 0.6, marginBottom: 4 }} />
-          <Tag label={relType} color={color} />
-        </div>
-        <div className="font-pixel" style={{
-          fontSize: 8, color: "var(--text)", padding: "5px 10px",
-          background: "var(--surface-2)", border: "1px solid var(--border)",
-        }}>{agentB.name}</div>
-      </div>
+      {header}
 
       <div style={{
         fontSize: 10, color: "var(--text-dim)", lineHeight: 1.7,
@@ -435,7 +586,7 @@ function EdgeInspector({ edgeKey, allAgents }: { edgeKey: string; allAgents: Age
       <Label>BOND STRENGTH</Label>
       <div style={{ marginBottom: 4 }}><HpBar value={strength} color={color} /></div>
       <div className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", marginBottom: 14, letterSpacing: "0.06em" }}>
-        {(strength * 100).toFixed(0)}% — {strength > 0.7 ? "STRONG" : strength > 0.4 ? "MODERATE" : "WEAK"}
+        {(mag * 100).toFixed(0)}% — {mag > 0.7 ? "STRONG" : mag > 0.4 ? "MODERATE" : "WEAK"}
       </div>
 
       <Label>{agentA.name}'s VIEW</Label>
@@ -524,12 +675,15 @@ function MetricsSummary({ initial, current, day }: { initial: MacroMetrics; curr
 
 type Selection = { kind: "node"; id: string } | { kind: "edge"; key: string } | null;
 
-export function Inspector({ selection, snap, initialMetrics, worldId, stacked = false }: {
+export function Inspector({ selection, snap, initialMetrics, worldId, stacked = false, compact = false, onExpand }: {
   selection: Selection;
   snap: { agents: Agent[]; metrics: MacroMetrics; day: number; highlights: any[] };
   initialMetrics: MacroMetrics;
   worldId: string | null;
   stacked?: boolean;
+  // compact: condensed profiles (Story screen) — depth lives in the Network tab.
+  compact?: boolean;
+  onExpand?: () => void;
 }) {
   const selectedAgent = selection?.kind === "node" ? snap.agents.find(a => a.id === selection.id) ?? null : null;
   const title = selection?.kind === "node" ? selectedAgent?.name ?? "CHARACTER" : selection?.kind === "edge" ? "RELATIONSHIP" : `DAY ${snap.day}`;
@@ -560,37 +714,55 @@ export function Inspector({ selection, snap, initialMetrics, worldId, stacked = 
             <div style={{ fontSize: 9, color: "var(--text-dim)", marginBottom: 14, lineHeight: 1.7, fontFamily: "ui-monospace" }}>
               Click a node to inspect a character, or click an edge to read about a relationship.
             </div>
-            <MetricsSummary initial={initialMetrics} current={snap.metrics} day={snap.day} />
-
-            {snap.highlights.length > 0 && (
+            {compact ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {([
+                  ["Friendships", snap.metrics.friendship_count, "#22c55e"],
+                  ["Romances", snap.metrics.romance_count, "var(--pink)"],
+                  ["Tensions", snap.metrics.rivalry_count + snap.metrics.conflict_count, "var(--red)"],
+                  ["Alliances", snap.metrics.alliance_count, "var(--cyan)"],
+                ] as [string, number, string][]).map(([label, val, color]) => (
+                  <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: "1px solid var(--border)" }}>
+                    <span style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace" }}>{label}</span>
+                    <span className="font-pixel" style={{ fontSize: 9, color }}>{val}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
               <>
-                <Divider />
-                <Label color="var(--gold)">TODAY'S EVENTS</Label>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {snap.highlights.slice(0, 6).map((h, i) => (
-                    <div key={i} style={{
-                      padding: "7px 9px", background: "var(--surface-2)",
-                      borderLeft: "2px solid var(--gold)",
-                    }}>
-                      <div className="font-pixel" style={{ fontSize: 7, color: "var(--gold)", marginBottom: 3, letterSpacing: "0.05em" }}>
-                        {h.agent}
-                      </div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, fontFamily: "ui-monospace" }}>
-                        {h.summary}
-                      </div>
+                <MetricsSummary initial={initialMetrics} current={snap.metrics} day={snap.day} />
+
+                {snap.highlights.length > 0 && (
+                  <>
+                    <Divider />
+                    <Label color="var(--gold)">TODAY'S EVENTS</Label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {snap.highlights.slice(0, 6).map((h, i) => (
+                        <div key={i} style={{
+                          padding: "7px 9px", background: "var(--surface-2)",
+                          borderLeft: "2px solid var(--gold)",
+                        }}>
+                          <div className="font-pixel" style={{ fontSize: 7, color: "var(--gold)", marginBottom: 3, letterSpacing: "0.05em" }}>
+                            {h.agent}
+                          </div>
+                          <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, fontFamily: "ui-monospace" }}>
+                            {h.summary}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </>
+                )}
               </>
             )}
           </>
         )}
 
         {selection?.kind === "node" && selectedAgent && (
-          <AgentInspector agent={selectedAgent} allAgents={snap.agents} worldId={worldId} currentDay={snap.day} />
+          <AgentInspector agent={selectedAgent} allAgents={snap.agents} worldId={worldId} currentDay={snap.day} compact={compact} onExpand={onExpand} />
         )}
         {selection?.kind === "edge" && (
-          <EdgeInspector edgeKey={selection.key} allAgents={snap.agents} />
+          <EdgeInspector edgeKey={selection.key} allAgents={snap.agents} compact={compact} onExpand={onExpand} />
         )}
       </div>
     </div>

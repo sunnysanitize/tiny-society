@@ -8,6 +8,7 @@ import uuid
 from models import Agent, World
 from llm import call_llm
 from .memory import make_memory
+from . import consequence
 
 FILLER_SYSTEM = """FILLER_AGENT_GENERATION
 You generate fictional citizens for a multi-agent social simulation. Return STRICT JSON only.
@@ -141,8 +142,6 @@ def _seed_relationships(agents: list[Agent], world_prompt: str) -> None:
     if len(agents) < 2:
         return
 
-    from models import Relationship
-
     summaries = "\n".join(
         f"- {a.name}: {a.role} | traits: {', '.join(a.traits[:3])} "
         f"| last memory: {a.long_term_memory[-1].text[:100] if a.long_term_memory else 'none'}"
@@ -169,10 +168,10 @@ def _seed_relationships(agents: list[Agent], world_prompt: str) -> None:
             rel_type = rel.get("type", "trust")
             strength = float(rel.get("strength", 0.25))
             strength = max(0.1, min(0.7, strength))
-            mutual = rel.get("mutual", True)
-            a.relationships[b_name] = Relationship(type=rel_type, strength=strength)
-            if mutual:
-                b.relationships[a_name] = Relationship(type=rel_type, strength=strength)
+            mutual = bool(rel.get("mutual", True))
+            # Seed via the consequence layer so the affinity carries the correct SIGN for
+            # its type (a seeded rivalry/conflict is negative) and survives `realize`.
+            consequence.seed_relationship(a, b, rel_type, strength, mutual)
         logging.info(f"Seeded relationships for {len(agents)} agents")
     except Exception as e:
         logging.warning(f"Relationship seeding failed: {e}")

@@ -215,6 +215,95 @@ def test_persona_veto_blocks_implausible_romance():
     assert act.intents["Other"] == "support" and notes == []
 
 
+def test_seeded_antagonism_persists():
+    """#11: a seeded rivalry/conflict is stored as NEGATIVE affinity and survives realize
+    (it used to be seeded positive and flip to warmth on first contact). Mutual romance/
+    alliance seeds realize bilaterally."""
+    a, b = _agent("A"), _agent("B")
+    consequence.seed_relationship(a, b, "rivalry", 0.4, mutual=False)
+    assert a.relationships["B"].type == "rivalry", a.relationships["B"]
+    assert a.relationships["B"].strength < 0, a.relationships["B"]
+    assert "A" not in b.relationships  # one-sided antagonism
+
+    # an ordinary neutral interaction must not flip the rivalry to warmth
+    consequence.accumulate(a, b.name, "trust", 0.05)
+    consequence.realize(a, b.name, b)
+    assert a.relationships["B"].type in ("rivalry", "conflict"), a.relationships["B"]
+
+    c, d = _agent("C"), _agent("D")
+    consequence.seed_relationship(c, d, "conflict", 0.6, mutual=True)
+    assert c.relationships["D"].type == "conflict" and d.relationships["C"].type == "conflict"
+
+    e_, f = _agent("E"), _agent("F")
+    consequence.seed_relationship(e_, f, "romance", 0.6, mutual=True)
+    assert e_.relationships["F"].type == "romance" and f.relationships["E"].type == "romance"
+
+
+def test_background_rivalry_not_zeroed():
+    """#12: the background (deterministic) layer fades a negative-affinity rivalry toward
+    neutral by at most one DECAY step — it must NOT snap it to 0 (the old positive-only
+    rule did), and the type stays consistent with the affinity."""
+    import random as _r
+    from simulation.deterministic import apply_background_rules, DECAY
+
+    a, b = _agent("A"), _agent("B")
+    consequence.seed_relationship(a, b, "rivalry", 0.4, mutual=True)
+    before = a.relationships["B"].strength
+    assert before < 0
+    apply_background_rules([a, b], [a, b], _r.Random(1))
+    after = a.relationships["B"].strength
+    assert after < 0, after
+    assert abs(after - before) <= DECAY + 1e-9, (before, after)
+    assert a.relationships["B"].type in ("rivalry", "conflict"), a.relationships["B"]
+
+
+def test_metrics_count_one_sided_rivalry():
+    """#13: macro metrics count a one-sided rivalry as a rivalry (the old `//2` symmetric
+    counting reported 0 for a single directed antagonistic edge)."""
+    from simulation.metrics import compute_metrics
+
+    a, b = _agent("A"), _agent("B")
+    consequence.seed_relationship(a, b, "rivalry", 0.4, mutual=False)
+    m = compute_metrics([a, b])
+    assert m.rivalry_count == 1, m.rivalry_count
+
+
+def test_mood_normalization_keeps_action():
+    """#14: off-enum moods are mapped onto the Mood enum (or fall back) so building an
+    AgentAction never raises — which previously dropped the agent's entire turn."""
+    from models import normalize_mood, AgentAction
+
+    assert normalize_mood("happy") == "content"
+    assert normalize_mood("FURIOUS") == "angry"
+    assert normalize_mood("calm") == "calm"
+    assert normalize_mood("zxcv", default="hopeful") == "hopeful"
+    assert normalize_mood("ecstatic", default="calm") == "calm"
+
+    act = AgentAction(
+        action="x",
+        emotional_reaction=normalize_mood("totally-not-a-mood", default="calm"),
+        new_memory="m", explanation="e",
+    )
+    assert act.emotional_reaction == "calm"
+
+
+def test_stance_grounded_in_disposition():
+    """#15: starting stances correlate with character disposition (openness↔caution),
+    not pure hash noise — an open-disposition agent leans more positive than a cautious one."""
+    from simulation.stance import initialize_stances, _disposition
+
+    opener = _agent("Opener"); opener.traits = ["idealistic", "creative", "ambitious"]
+    guard = _agent("Guard"); guard.traits = ["traditional", "cautious", "stubborn"]
+    assert _disposition(opener) > 0
+    assert _disposition(guard) < 0
+
+    topics = ["tradition versus progress"]
+    initialize_stances([opener, guard], topics)
+    assert opener.stance[topics[0]] > guard.stance[topics[0]], (
+        opener.stance, guard.stance
+    )
+
+
 # ── SYSTEM-LEVEL INVARIANTS (full engine on mock) ──────────────────────────────────
 
 # A modest-length run is enough for arcs to form without being expensive on mock.
@@ -377,6 +466,11 @@ _TESTS = [
     test_conflict_is_gradual_and_may_be_one_sided,
     test_intent_to_bid_is_bounded_and_sensible,
     test_persona_veto_blocks_implausible_romance,
+    test_seeded_antagonism_persists,
+    test_background_rivalry_not_zeroed,
+    test_metrics_count_one_sided_rivalry,
+    test_mood_normalization_keeps_action,
+    test_stance_grounded_in_disposition,
     test_every_romance_edge_is_mutual,
     test_changes_are_slow_base_rate,
     test_no_thin_air_drama,

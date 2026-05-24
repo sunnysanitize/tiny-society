@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import random as _random
 import re
 from typing import Optional
 
-from models import Agent, AgentAction, WorldGraph, normalize_action_kind
+from models import Agent, AgentAction, WorldGraph, normalize_action_kind, normalize_mood
 from llm import call_llm, acall_llm
 from .memory import retrieve
 from .observation import rank_feed
+
+# How many other agents to surface in a reasoning prompt (bounds prompt size). The roster
+# is RANKED so every agent stays reachable over time, rather than always showing the first
+# N by insertion order (which left the back half of a large population unreferenceable).
+ROSTER_LIMIT = 30
 
 REASONER_SYSTEM = """AGENT_REASONING
 You are a single fictional character in a multi-agent social simulation.
@@ -123,7 +130,7 @@ def _parse_action(agent: Agent, raw: str) -> Optional[AgentAction]:
             action=str(data.get("action", "observe"))[:60],
             action_kind=normalize_action_kind(data.get("action_kind", "interact")),
             target_agents=targets,
-            emotional_reaction=data.get("emotional_reaction", agent.mood),
+            emotional_reaction=normalize_mood(data.get("emotional_reaction"), default=agent.mood),
             intents=intents,
             utterance=str(data.get("utterance", "")).strip()[:400],
             stance_shift=stance_shift,
@@ -144,11 +151,10 @@ def _build_prompt(
     rel_lines = []
     for name, r in agent.relationships.items():
         rel_lines.append(f"  - {name}: {r.type} (strength {r.strength:+.2f})")
-    roster_lines = []
-    for a in roster:
-        if a.id == agent.id:
-            continue
-        roster_lines.append(f"- {a.name}: {a.role}, traits={a.traits}, groups={a.groups}")
+    roster_lines = [
+        f"- {a.name}: {a.role}, traits={a.traits}, groups={a.groups}"
+        for a in _ranked_roster(agent, roster, current_day, ROSTER_LIMIT)
+    ]
 
     # RELEVANCE-BASED RETRIEVAL: query = today's event + the agent's relationship
     # names (its likely targets). Long-term memory is selected by relevance + recency
@@ -230,11 +236,45 @@ def _build_prompt(
         "\n".join(f"- {e.text}" for e in ranked_feed) or "(nothing notable yet)",
         "",
         "OTHER AGENTS IN THE WORLD",
-        "\n".join(roster_lines[:30]),
+        "\n".join(roster_lines),
         "",
         "Return your action as JSON now.",
     ]
     return "\n".join(parts)
+
+
+def _ranked_roster(
+    agent: Agent, roster: list[Agent], current_day: int, limit: int
+) -> list[Agent]:
+    """Pick up to `limit` other agents to show this agent, prioritizing the ones it can
+    most plausibly act on (existing relationships, then group-mates, then recent feed
+    authors), and filling the rest with a DAY-SEEDED rotating sample of everyone else so
+    the whole population stays reachable over the run instead of only the first N by list
+    order. Deterministic: the sample seed is a stable hash of (agent id, day), so the
+    day-by-day path stays byte-identical to a batch run."""
+    others = [a for a in roster if a.id != agent.id]
+    if len(others) <= limit:
+        return others
+
+    rel_names = set(agent.relationships.keys())
+    groups = set(agent.groups)
+    feed_authors = {e.author for e in agent.feed if e.author}
+
+    def priority(a: Agent) -> int:
+        if a.name in rel_names:
+            return 0
+        if groups and (groups & set(a.groups)):
+            return 1
+        if a.name in feed_authors:
+            return 2
+        return 3
+
+    seed = int(hashlib.sha256(f"{agent.id}|{current_day}".encode()).hexdigest()[:8], 16)
+    rng = _random.Random(seed)
+    # Sort by priority tier, breaking ties with a per-day deterministic jitter so the
+    # lowest-priority tier (strangers) rotates which members are shown each day.
+    decorated = sorted(others, key=lambda a: (priority(a), rng.random()))
+    return decorated[:limit]
 
 
 def _safe_json(raw: str) -> dict:
