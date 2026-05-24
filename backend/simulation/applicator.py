@@ -5,6 +5,7 @@ from typing import Optional
 from models import Agent, AgentAction, PerceptionNote, Relationship
 from .perception import perceive_event
 from .memory import make_memory
+from . import consequence
 
 
 # A relationship turning into one of these (or forming as one) is a story milestone.
@@ -18,7 +19,6 @@ _TYPE_FAMILY = {
     "friendship": "warmth", "alliance": "warmth", "trust": "warmth", "romance": "romance",
     "influence": "power", "group_membership": "group",
 }
-
 
 def apply_action(
     actor: Agent,
@@ -49,8 +49,8 @@ def apply_action(
         actor.short_term_memory.append(make_memory(action.new_memory, day=day))
 
     # AMPLIFY side-effect (Phase 2 #5): boosting/reposting another agent raises THEIR
-    # influence — endorsement transfers standing. (Reach/visibility spread is handled in
-    # observation.distribute_observation.) Applied on top of any influence_effects.
+    # standing — endorsement transfers influence. (Reach/visibility is handled in
+    # observation.distribute_observation.)
     AMPLIFY_INFLUENCE_BOOST = 2.0
     if action.action_kind == "amplify":
         for tname in action.target_agents:
@@ -60,55 +60,68 @@ def apply_action(
                     _clamp(t.influence_score + AMPLIFY_INFLUENCE_BOOST, -100, 100), 2
                 )
 
-    # Influence
-    for target_name, delta in action.influence_effects.items():
-        delta = _clamp(delta, -10.0, 10.0)
-        if target_name == "self":
-            actor.influence_score = round(_clamp(actor.influence_score + delta, -100, 100), 2)
-        elif target_name in by_name:
-            t = by_name[target_name]
-            t.influence_score = round(_clamp(t.influence_score + delta, -100, 100), 2)
-
-    # Relationships — actor side is direct; target side goes through perception
-    for target_name, eff in action.relationship_effects.items():
+    # SOCIAL MOVE → CONSEQUENCE. The agent expressed an in-character INTENT toward each
+    # target (not a number). For each, map the intent to a calibrated affinity bid, route
+    # the target's side through perception, accumulate both directions, then DERIVE each
+    # side's relationship type from the bilateral state. Bonds are earned, never asserted.
+    for target_name in action.target_agents:
         if target_name not in by_name or target_name == actor.name:
             continue
         target = by_name[target_name]
+        intent = action.intents.get(target_name, "talk")
+        proposed_type, base_delta = consequence.intent_to_bid(intent)
 
-        # Actor's own relationship: their intent, applied as-is. Capture before/after
-        # so we can detect a story milestone (type change or strength crossing).
+        # Snapshot the actor's prior bond so we can detect a story milestone afterward.
         prev = actor.relationships.get(target.name)
         prev_type = prev.type if prev else None
         prev_strength = prev.strength if prev else 0.0
-        _update_relationship(actor, target.name, eff.type, eff.strength_delta)
-        now = actor.relationships.get(target.name)
-        if now is not None:
-            ms = _detect_milestone(actor.name, target.name, prev_type, prev_strength, now)
-            if ms:
-                milestones.append(ms)
 
-        # Target's relationship: filtered through their character
-        action_summary = action.new_memory or f"{action.action} {target_name}"
+        # The target's SUBJECTIVE reception of the move (perception modulates how it lands).
+        action_summary = action.utterance or action.new_memory or f"{action.action} {target_name}"
         perceived_delta, note = perceive_event(
             perceiver=target,
             actor=actor,
-            raw_delta=eff.strength_delta,
-            rel_type=eff.type,
+            raw_delta=base_delta,
+            rel_type=proposed_type,
             action_summary=action_summary,
         )
-        _update_relationship(target, actor.name, eff.type, perceived_delta)
         if note:
             perception_notes.append(note)
 
-        # TWO-SIDED MEMORY: the target remembers what was done TO them. Prefer the
-        # perception narrative (it's specific to the target's character); otherwise a
-        # plain first-person line. Gated on a non-trivial interaction to avoid noise.
-        if abs(eff.strength_delta) >= 0.05:
-            if note and note.narrative:
-                received = note.narrative
-            else:
-                received = f"{actor.name} chose to {action.action} toward me."
-            target.short_term_memory.append(make_memory(received, day=day))
+        consequence.accumulate(actor, target.name, proposed_type, base_delta)
+        consequence.accumulate(target, actor.name, proposed_type, perceived_delta)
+        consequence.realize(actor, target.name, target)
+        consequence.realize(target, actor.name, actor)
+
+        now = actor.relationships.get(target.name)
+        if now is not None:
+            ms = _detect_milestone(
+                actor.name, target.name, prev_type, prev_strength, now, action.explanation
+            )
+            if ms:
+                milestones.append(ms)
+
+        # DERIVED INFLUENCE: standing shifts from HOW the agent acted, not invented numbers.
+        is_antagonistic = base_delta < 0
+        self_inf, target_inf = consequence.derive_influence(action.action_kind, is_antagonistic)
+        actor.influence_score = round(_clamp(actor.influence_score + self_inf, -100, 100), 2)
+        if target_inf:
+            target.influence_score = round(_clamp(target.influence_score + target_inf, -100, 100), 2)
+
+        # TWO-SIDED MEMORY: the target remembers what was done TO them — prefer the
+        # perception narrative (it's written from the target's perspective); else a neutral
+        # line in the target's POV (NOT the actor's first-person utterance).
+        if note and note.narrative:
+            received = note.narrative
+        else:
+            received = f"{actor.name} chose to {action.action} toward me."
+        target.short_term_memory.append(make_memory(received, day=day))
+
+    # If the agent acted on no one (e.g. a public post to the world), still reflect the
+    # standing effect of speaking up.
+    if not action.target_agents:
+        self_inf, _ = consequence.derive_influence(action.action_kind, False)
+        actor.influence_score = round(_clamp(actor.influence_score + self_inf, -100, 100), 2)
 
     # Stance — apply small per-topic deltas to the actor's positions (clamp to [-1, 1]).
     for topic, delta in action.stance_shift.items():
@@ -135,50 +148,33 @@ def apply_action(
 
 
 def _detect_milestone(
-    a_name: str, b_name: str, prev_type: Optional[str], prev_strength: float, now: Relationship
+    a_name: str, b_name: str, prev_type: Optional[str], prev_strength: float,
+    now: Relationship, explanation: str = "",
 ) -> Optional[str]:
     """Return a human-readable 'turning point' beat if this relationship change is
-    narratively significant — a new charged bond, a type flip, or a deepening past
-    the threshold. Otherwise None."""
+    narratively significant — a new charged bond, a type flip, or a deepening past the
+    threshold. The actor's `explanation` (why they acted) is appended as the WHY, which
+    is what players want most — so a milestone reads "X and Y formed a romance — <why>"
+    instead of a bare label. Otherwise None."""
     new_type = now.type
     new_strength = now.strength
+    label: Optional[str] = None
     if prev_type is None:
         if new_type in _MILESTONE_TYPES and abs(new_strength) >= 0.2:
-            return f"{a_name} and {b_name} formed a {new_type}."
-        return None
-    if prev_type != new_type:
+            label = f"{a_name} and {b_name} formed a {new_type}."
+    elif prev_type != new_type:
         # Suppress flips within the same narrative family (rivalry⇄conflict, etc.) —
         # they're not genuine turning points, just noise.
-        if _TYPE_FAMILY.get(prev_type) == _TYPE_FAMILY.get(new_type):
-            return None
-        return f"{a_name} and {b_name}: {prev_type} turned into {new_type}."
-    if abs(prev_strength) < _DEEP_THRESHOLD <= abs(new_strength):
+        if _TYPE_FAMILY.get(prev_type) != _TYPE_FAMILY.get(new_type):
+            label = f"{a_name} and {b_name}: {prev_type} turned into {new_type}."
+    elif abs(prev_strength) < _DEEP_THRESHOLD <= abs(new_strength):
         word = "deepened" if new_strength > 0 else "hardened"
-        return f"{a_name} and {b_name}'s {new_type} {word}."
-    return None
+        label = f"{a_name} and {b_name}'s {new_type} {word}."
 
-
-def _update_relationship(agent: Agent, target_name: str, rtype: str, delta: float) -> bool:
-    """Return True if the relationship type changed (volatility signal)."""
-    existing = agent.relationships.get(target_name)
-    changed = False
-    if existing is None:
-        agent.relationships[target_name] = Relationship(
-            type=rtype,
-            strength=round(_clamp(delta, -1.0, 1.0), 3),
-        )
-        return True
-    if existing.type != rtype:
-        # Type flip happens when delta is strong enough to override
-        if abs(delta) >= 0.15:
-            existing.type = rtype
-            existing.strength = round(_clamp(delta, -1.0, 1.0), 3)
-            changed = True
-        else:
-            existing.strength = round(_clamp(existing.strength + delta * 0.5, -1.0, 1.0), 3)
-    else:
-        existing.strength = round(_clamp(existing.strength + delta, -1.0, 1.0), 3)
-    return changed
+    if label is None:
+        return None
+    why = (explanation or "").strip().rstrip(".")
+    return f"{label.rstrip('.')} — {why}." if why else label
 
 
 def _clamp(x: float, lo: float, hi: float) -> float:

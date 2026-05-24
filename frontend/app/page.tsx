@@ -12,7 +12,9 @@ import { SavesScreen } from "@/components/SavesScreen";
 import { SaveModal } from "@/components/SaveModal";
 import type { Session } from "@supabase/supabase-js";
 
-type Phase = "auth" | "saves" | "setup" | "running" | "result";
+// "playing" = day-by-day interactive state (a run in progress the player advances one
+// day at a time, intervening between days). "result" remains the post-run review state.
+type Phase = "auth" | "saves" | "setup" | "running" | "playing" | "result";
 
 const SCANLINE_BG: React.CSSProperties = {
   position: "fixed", inset: 0, pointerEvents: "none", zIndex: -1,
@@ -29,6 +31,7 @@ export default function Page() {
   const [phase, setPhase] = useState<Phase>("auth");
   const [liveSnaps, setLiveSnaps] = useState<DaySnapshot[]>([]);
   const [totalDays, setTotalDays] = useState(0);
+  const [playPerDay, setPlayPerDay] = useState(8);
   const [runError, setRunError] = useState<string | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const abortRef = useRef(false);
@@ -113,12 +116,44 @@ export default function Page() {
 
   function handleRun(days: number, perDay: number) {
     if (!worldId || !world) return;
-    runStream(worldId, world, days, perDay, false);
+    runStream(worldId, world, days, perDay, true);  // batch fast-forward also appends
   }
   function handleContinue(days: number, perDay: number) {
     if (!worldId || !world) return;
     runStream(worldId, world, days, perDay, true);
   }
+
+  // DAY-BY-DAY: stream a single day. Used for "Begin" (day 1) and every "Next day".
+  // Lands in the interactive "playing" phase so the player can intervene before the next.
+  async function handleAdvance(perDay: number) {
+    if (!worldId || !world) return;
+    abortRef.current = false; setRunError(null);
+    const hadResult = !!result;
+    setPlayPerDay(perDay);
+    setPhase("running");
+    if (!hadResult) setLiveSnaps([]);
+    setTotalDays((result?.days ?? 0) + 1);
+    try {
+      for await (const event of api.advanceStream(worldId, perDay)) {
+        if (abortRef.current) break;
+        if (event.type === "day") {
+          setLiveSnaps((prev) => [...prev, event.snapshot]);
+        } else if (event.type === "done") {
+          setResult(event.result);
+          setLiveSnaps(event.result.snapshots);
+          setTotalDays(event.result.days);
+          setPhase("playing");
+          return;
+        } else if (event.type === "error") {
+          throw new Error(event.message);
+        }
+      }
+    } catch (e: any) {
+      setRunError(e.message ?? "Advance failed");
+      setPhase(hadResult ? "playing" : "setup");
+    }
+  }
+  function handleBegin(perDay: number) { handleAdvance(perDay); }
 
   const liveResult: SimulationResult | null = (() => {
     if (liveSnaps.length === 0) return null;
@@ -126,7 +161,7 @@ export default function Page() {
     const last = liveSnaps[liveSnaps.length - 1].metrics;
     return { days: totalDays, snapshots: liveSnaps, initial_metrics: result?.initial_metrics ?? first, final_metrics: last, final_report: "", dynamic_events: {} };
   })();
-  const viewResult = phase === "result" ? result : liveResult ?? result;
+  const viewResult = (phase === "result" || phase === "playing") ? result : liveResult ?? result;
 
   // Loading state while auth resolves
   if (session === undefined) {
@@ -252,7 +287,7 @@ export default function Page() {
         {phase === "setup" && worldId && world && (
           <div className="stagger-in" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <CharacterEditor worldId={worldId} world={world} onWorldChange={setWorld} />
-            <EventAndRun worldId={worldId} world={world} onWorldChange={setWorld} onRun={handleRun} />
+            <EventAndRun worldId={worldId} world={world} onWorldChange={setWorld} onRun={handleRun} onBegin={handleBegin} />
             {runError && <GameError message={runError} />}
           </div>
         )}
@@ -275,7 +310,8 @@ export default function Page() {
             world={world}
             worldId={worldId}
             isLive={phase === "running"}
-            onContinue={phase === "result" ? handleContinue : undefined}
+            onContinue={(phase === "result" || phase === "playing") ? handleContinue : undefined}
+            onAdvance={phase === "playing" ? () => handleAdvance(playPerDay) : undefined}
           />
         )}
 

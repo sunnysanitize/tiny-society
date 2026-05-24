@@ -22,7 +22,20 @@ Mood = Literal[
 
 class Relationship(BaseModel):
     type: RelationshipType
+    # `strength` is the underlying continuous AFFINITY (signed sentiment) in [-1, 1].
+    # The relationship `type` is no longer set by fiat — it is DERIVED from this affinity
+    # (plus the fields below) by simulation/consequence.py, so bonds are earned, not asserted.
     strength: float = Field(ge=-1.0, le=1.0)
+    # How many meaningful interactions this pair has had — the "dwell time" that gates
+    # transitions (e.g. an alliance/romance needs sustained contact, not one moment).
+    interactions: int = 0
+    # Accumulated ROMANTIC signal (rises only on romantic overtures). Romance requires
+    # this to be mutually high — so it can't spring from platonic closeness alone.
+    romantic: float = 0.0
+    # Accumulated ALLIANCE signal (rises only on strategic/allying overtures). Like
+    # `romantic`, this distinguishes a strategic pact from ordinary warm friendship, so
+    # close friends aren't mislabeled as allies just for being close.
+    allied: float = 0.0
 
 
 class WorldEntity(BaseModel):
@@ -213,18 +226,29 @@ def normalize_action_kind(value: object) -> str:
 
 
 class AgentAction(BaseModel):
-    """Structured output contract returned by the AI reasoning layer."""
+    """Structured output contract returned by the AI reasoning layer.
+
+    The agent expresses an in-character SOCIAL MOVE — what it does/says and its *intent*
+    toward each target — NOT numeric relationship/influence deltas. The consequence layer
+    (simulation/consequence.py) translates intents into calibrated, bilateral state changes,
+    so bonds are earned rather than asserted. (Stage 2 of the realism re-architecture.)
+    """
     action: str
     # Social-action type driving reach + side-effects (see ActionKind above). Safe
     # default "interact" preserves prior behavior for any caller that omits it.
     action_kind: ActionKind = "interact"
     target_agents: list[str] = []
     emotional_reaction: Mood = "calm"
-    relationship_effects: dict[str, RelationshipEffect] = {}
-    influence_effects: dict[str, float] = {}
+    # Per-target SOCIAL INTENT verb (befriend / confide / flirt / court / ally / confront /
+    # undermine / distance / …). The verb — not a number — is what the agent controls; the
+    # consequence layer maps it to a calibrated affinity bid. See consequence.INTENT_EFFECTS.
+    intents: dict[str, str] = {}
+    # What the character actually says or does this turn, in-character (1-2 sentences).
+    utterance: str = ""
     # Optional small per-topic stance deltas (topic -> delta, roughly -0.3..0.3) for the
     # world topics this agent actually engaged with today. Applied to the actor's
-    # `stance` in applicator.apply_action and clamped to [-1, 1].
+    # `stance` in applicator.apply_action and clamped to [-1, 1]. (Beliefs are self-owned,
+    # so this stays agent-authored — it's not an interpersonal effect.)
     stance_shift: dict[str, float] = {}
     new_memory: str
     explanation: str
@@ -337,6 +361,11 @@ class SimulationResult(BaseModel):
     forecast: Optional[Forecast] = None
     # PROPHECY grading (Slice E). None when the world had no prophecy set.
     prophecy_verdict: Optional[ProphecyVerdict] = None
+    # DAY-BY-DAY: the influence scores captured BEFORE day 1, so "gainers/losers" stay
+    # measured against day 0 even when the run is advanced one day at a time (each
+    # advance is a fresh run_simulation call that would otherwise re-baseline). Carried
+    # forward by _merge_results and fed back into run_simulation on each advance.
+    baseline_influence: Dict[str, float] = Field(default_factory=dict)
 
 
 DaySnapshot.model_rebuild()

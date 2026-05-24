@@ -6,8 +6,10 @@ import { ProphecyInput } from "./Engagement";
 
 const DAY_OPTIONS = [7, 14, 30, 60];
 
-export function EventAndRun({ worldId, world, onWorldChange, onRun }: {
-  worldId: string; world: World; onWorldChange: (w: World) => void; onRun: (days: number, perDay: number) => void;
+export function EventAndRun({ worldId, world, onWorldChange, onRun, onBegin }: {
+  worldId: string; world: World; onWorldChange: (w: World) => void;
+  onRun: (days: number, perDay: number) => void;
+  onBegin: (perDay: number) => void;
 }) {
   const [event, setEvent] = useState(world.starting_event || "A new entrepreneurship club launches with only 12 spots.");
   const [days, setDays] = useState(30);
@@ -15,13 +17,20 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun }: {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  async function saveEvent() {
+    const w = await api.setEvent(worldId, event);
+    onWorldChange(w);
+  }
   async function run() {
     setSaving(true); setErr(null);
-    try {
-      const w = await api.setEvent(worldId, event);
-      onWorldChange(w);
-      onRun(days, perDay);
-    } catch (e: any) { setErr(e.message); }
+    try { await saveEvent(); onRun(days, perDay); }
+    catch (e: any) { setErr(e.message); }
+    finally { setSaving(false); }
+  }
+  async function begin() {
+    setSaving(true); setErr(null);
+    try { await saveEvent(); onBegin(perDay); }
+    catch (e: any) { setErr(e.message); }
     finally { setSaving(false); }
   }
 
@@ -67,7 +76,7 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun }: {
         {/* Duration */}
         <div>
           <div className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", marginBottom: 8, letterSpacing: "0.1em" }}>
-            DURATION
+            FAST-FORWARD (DAYS)
           </div>
           <div style={{ display: "flex", gap: 5 }}>
             {DAY_OPTIONS.map(d => (
@@ -124,13 +133,25 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun }: {
         </div>
       )}
 
+      {/* Primary: begin day-by-day. The town advances one day at a time, and you can
+          nudge / inject events / add characters / set a prophecy between days. */}
       <button
         className="btn"
-        onClick={run}
+        onClick={begin}
         disabled={!canRun}
         style={{ width: "100%", padding: "14px", fontSize: 10, letterSpacing: "0.15em" }}
       >
-        {saving ? "SAVING EVENT..." : `▶▶  LAUNCH ${days}-DAY SIMULATION`}
+        {saving ? "SAVING EVENT..." : "▶  BEGIN — DAY BY DAY"}
+      </button>
+
+      {/* Secondary: fast-forward straight through N days (the old batch behavior). */}
+      <button
+        className="btn-ghost"
+        onClick={run}
+        disabled={!canRun}
+        style={{ width: "100%", padding: "11px", fontSize: 9, letterSpacing: "0.12em", marginTop: 8 }}
+      >
+        ▶▶  FAST-FORWARD {days} DAYS
       </button>
 
       {err && (

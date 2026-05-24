@@ -35,7 +35,10 @@ def compute_metrics(
                 romance += 1
             elif r.type == "alliance":
                 alliance += 1
-            elif r.type == "trust":
+            elif r.type == "trust" and r.strength > 0:
+                # Only count genuinely-positive trust bonds. A "trust"-labeled edge with
+                # near-zero/negative affinity is just a cooling acquaintance (the consequence
+                # layer doesn't relabel near-neutral bonds), so it shouldn't drag the average.
                 trust_sum += r.strength
                 trust_count += 1
 

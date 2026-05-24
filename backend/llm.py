@@ -1186,7 +1186,6 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
             ]
 
         action_verb, rtype, base_delta, new_mood, explanation = rng.choice(action_pool)
-        delta = round(base_delta + rng.uniform(-0.05, 0.05), 2)
 
         # Build a contextual narrative memory sentence
         goal = agent_goals[0] if agent_goals else "find my place here"
@@ -1247,18 +1246,22 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
         else:
             action_kind = "interact" if _kind_roll < 0.6 else ("comment" if _kind_roll < 0.85 else "post")
 
+        # NEW CONTRACT (Stage 2): emit an in-character INTENT verb (mapped from the trait
+        # template's relationship dimension) + an utterance, NOT numeric effects. The
+        # consequence layer derives the actual relationship/influence change.
+        _RTYPE_TO_INTENT = {
+            "friendship": "befriend", "trust": "confide", "romance": "court",
+            "alliance": "ally", "rivalry": "challenge", "conflict": "confront",
+            "influence": "support", "group_membership": "collaborate",
+        }
+        intent = _RTYPE_TO_INTENT.get(rtype, "talk")
         return json.dumps({
             "action": action_verb,
             "action_kind": action_kind,
             "target_agents": [target],
             "emotional_reaction": new_mood,
-            "relationship_effects": {
-                target: {"type": rtype, "strength_delta": delta}
-            },
-            "influence_effects": {
-                "self": round(rng.uniform(-1, 3), 1),
-                target: round(rng.uniform(-1, 1), 1),
-            },
+            "intents": {target: intent},
+            "utterance": new_memory,
             "stance_shift": stance_shift,
             "new_memory": new_memory,
             "explanation": explanation,

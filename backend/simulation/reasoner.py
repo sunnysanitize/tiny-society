@@ -4,7 +4,7 @@ import json
 import re
 from typing import Optional
 
-from models import Agent, AgentAction, RelationshipEffect, WorldGraph, normalize_action_kind
+from models import Agent, AgentAction, WorldGraph, normalize_action_kind
 from llm import call_llm, acall_llm
 from .memory import retrieve
 from .observation import rank_feed
@@ -12,51 +12,51 @@ from .observation import rank_feed
 REASONER_SYSTEM = """AGENT_REASONING
 You are a single fictional character in a multi-agent social simulation.
 You will be given your personality, memories, relationships, and the current world event.
-Reason about what your character would do today, then return STRICT JSON only — no prose.
+Reason about what your character would actually do today, then return STRICT JSON only — no prose.
+
+You do NOT control relationship numbers. You only decide WHAT YOU DO and YOUR INTENT toward
+each person; the world decides the consequences, and relationships change slowly, only through
+sustained, mutual behavior (a romance can't happen in a day, or one-sidedly).
 
 JSON schema:
 {
-  "action": "short verb phrase (e.g. 'confront', 'befriend', 'comfort', 'gossip about')",
+  "action": "short verb phrase summarizing the move (e.g. 'confront', 'open up to', 'rally')",
   "action_kind": "post | direct | amplify | comment | interact",
   "target_agents": ["Name", ...],
+  "utterance": "what you actually say or do, in your own voice (1-2 sentences)",
+  "intents": {
+    "TargetName": "one intent verb from the list below"
+  },
   "emotional_reaction": "calm|excited|frustrated|heartbroken|ambitious|anxious|content|angry|hopeful|lonely|confident",
-  "relationship_effects": {
-    "TargetName": {
-      "type": "friendship|rivalry|romance|trust|influence|alliance|conflict|group_membership",
-      "strength_delta": -1.0 to 1.0
-    }
-  },
-  "influence_effects": {
-    "self": float,
-    "TargetName": float
-  },
-  "stance_shift": {
-    "TopicName": -0.3 to 0.3
-  },
+  "stance_shift": { "TopicName": -0.3 to 0.3 },
   "new_memory": "first-person past-tense sentence describing what you did today",
   "explanation": "one sentence linking your traits and memories to this specific action"
 }
 
+INTENT VERBS (pick the one that matches your true intent toward each target):
+  warmth:     befriend, support, comfort, praise, reconcile, confide, trust
+  romance:    flirt, court          (only use these if you genuinely feel romantic — they're rare)
+  strategic:  ally, collaborate
+  antagonism: confront, rebuke, reject, undermine, challenge, compete, distance
+  neutral:    talk, observe
+
 action_kind — how you act, which decides who sees it:
   - post     : a public broadcast everyone in the world sees (use for big statements).
   - direct   : a private exchange only your named target(s) witness.
-  - amplify  : you boost/repost another agent — raises THEIR influence and spreads
-               their standing to people who see you. (Set target_agents to who you boost.)
+  - amplify  : you boost/repost another agent — raises THEIR standing. (target_agents = who you boost.)
   - comment  : a reply, seen by your usual circle (medium reach).
   - interact : default — an ordinary interaction (your circle + public if you're prominent).
 
 CRITICAL RULES:
-- ANTI-REPETITION: Read your LAST ACTION field below carefully. If your last action targeted
-  the same person with the same intent, you MUST do something meaningfully different today.
-  Escalate, de-escalate, redirect to a different person, withdraw, or take an internal action.
-  Repeating the identical action is always wrong — real people adapt.
-- Stay in character. Let traits, mood, goals, and memories drive the choice.
-- PURSUE YOUR PLAN: if a "YOUR CURRENT PLAN" section is present, strongly prefer an
-  action that advances that intention today (unless the world event makes it impossible).
-- Only reference agent names from the roster — never invent names.
-- Keep strength_delta values modest: -0.4 to +0.4 unless the event is extreme.
-- stance_shift: ONLY include WORLD TOPICS you actually engaged with today, and use small
-  magnitudes (-0.3 to 0.3). Leave it as {} if your action didn't touch any topic.
+- ANTI-REPETITION: read YOUR RECENT ACTIONS. If you keep engaging the same person the same way,
+  you MUST change course — escalate, resolve, withdraw, or turn to someone new.
+- Stay in character. Let traits, mood, goals, and memories drive the choice and the utterance.
+- BE REALISTIC: most days are ordinary. Reserve romance ('flirt'/'court') for when there is a
+  real, established, mutual closeness — never as a sudden leap. Don't manufacture drama.
+- PURSUE YOUR PLAN if one is present (unless the event makes it impossible).
+- Only reference agent names from the roster — never invent names. Put each target in BOTH
+  target_agents and intents.
+- stance_shift: ONLY topics you actually engaged with today, small magnitudes (-0.3..0.3), else {}.
 - Output only JSON. No markdown, no commentary, no preamble.
 """
 
@@ -104,18 +104,16 @@ def _parse_action(agent: Agent, raw: str) -> Optional[AgentAction]:
         logging.warning(f"Empty/invalid JSON from LLM for agent {agent.name}: {raw[:100]!r}")
         return None
     try:
-        rel_effects: dict[str, RelationshipEffect] = {}
-        for name, eff in (data.get("relationship_effects") or {}).items():
-            if not isinstance(eff, dict):
-                continue
-            rel_effects[name] = RelationshipEffect(
-                type=eff.get("type", "trust"),
-                strength_delta=_clamp(float(eff.get("strength_delta", 0)), -1.0, 1.0),
-            )
-        influence_effects = {
-            k: float(v) for k, v in (data.get("influence_effects") or {}).items()
-            if isinstance(v, (int, float))
+        intents = {
+            str(name): str(verb).strip().lower()
+            for name, verb in (data.get("intents") or {}).items()
+            if isinstance(verb, str) and verb.strip()
         }
+        targets = [str(t) for t in (data.get("target_agents") or [])][:5]
+        # Be forgiving: if intents are missing but targets exist, default to neutral contact
+        # so the action still has consequence-layer effects.
+        for t in targets:
+            intents.setdefault(t, "talk")
         stance_shift = {
             str(k): _clamp(float(v), -0.3, 0.3)
             for k, v in (data.get("stance_shift") or {}).items()
@@ -124,10 +122,10 @@ def _parse_action(agent: Agent, raw: str) -> Optional[AgentAction]:
         return AgentAction(
             action=str(data.get("action", "observe"))[:60],
             action_kind=normalize_action_kind(data.get("action_kind", "interact")),
-            target_agents=[str(t) for t in (data.get("target_agents") or [])][:5],
+            target_agents=targets,
             emotional_reaction=data.get("emotional_reaction", agent.mood),
-            relationship_effects=rel_effects,
-            influence_effects=influence_effects,
+            intents=intents,
+            utterance=str(data.get("utterance", "")).strip()[:400],
             stance_shift=stance_shift,
             new_memory=str(data.get("new_memory", "")).strip()[:280],
             explanation=str(data.get("explanation", "")).strip()[:280],

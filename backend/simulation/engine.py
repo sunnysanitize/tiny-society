@@ -56,8 +56,10 @@ def run_simulation(
     initial_agents: Optional[list[Agent]] = None,
     day_offset: int = 0,
     pause_on_days: Optional[list[int]] = None,
+    baseline_influence: Optional[dict[str, float]] = None,
+    prior_event_log: Optional[list[str]] = None,
+    active_event_in: Optional[str] = None,
 ) -> SimulationResult:
-    rng = random.Random(seed)
     agents = [copy.deepcopy(a) for a in (initial_agents or world.agents)]
     if not agents:
         raise ValueError("World has no agents")
@@ -73,15 +75,27 @@ def run_simulation(
     # world topic now that topics are known.
     initialize_stances(agents, topics)
 
-    baseline_influence = snapshot_influence(agents)
+    # DAY-BY-DAY: reuse the persisted day-0 baseline when advancing (so gainers/losers
+    # stay measured against day 0); otherwise capture it now (fresh run).
+    if not baseline_influence:
+        baseline_influence = snapshot_influence(agents)
     initial_metrics = compute_metrics(agents, baseline_influence=baseline_influence)
 
     snapshots: list[DaySnapshot] = []
-    full_event_log: list[str] = []
+    # Seed the running log with prior days' events (passed on an advance/continue) so the
+    # selector keeps recent-event context and dynamic-event generation has material to
+    # work from even when each call only simulates a single day.
+    full_event_log: list[str] = list(prior_event_log or [])
     dynamic_events: dict[str, str] = {}
 
-    # Starting event shown for first 3 days of a fresh run
-    active_event: Optional[str] = world.starting_event if day_offset == 0 else None
+    # Carry the active event across calls so day-by-day advancing matches a batch run:
+    # a dynamic event generated on (say) day 5 stays "active" on day 6+ until the next
+    # one fires. On a continue/advance, callers pass the previous day's active_event;
+    # otherwise the starting event is active for the first 3 absolute days.
+    if active_event_in is not None:
+        active_event: Optional[str] = active_event_in
+    else:
+        active_event = world.starting_event if (day_offset + 1) <= 3 else None
 
     # INJECT-AN-EVENT nudge (Slice E): a player-authored event queued on the world
     # becomes the active_event on this run's FIRST day, taking priority over the
@@ -97,9 +111,13 @@ def run_simulation(
         day_highlights: list[DayHighlight] = []
         day_vignettes: list[Vignette] = []
         type_changes = 0
+        # Per-day RNG derived from the absolute day, so advancing one day at a time
+        # produces the SAME randomness as running the days in a batch (day N's draws
+        # depend only on seed+N, not on how many days were simulated in this call).
+        day_rng = random.Random(seed + abs_day)
 
-        # Clear starting event after day 3
-        if day == 4 and active_event == world.starting_event:
+        # Clear starting event once we're past day 3 (works for both batch and 1-day steps)
+        if abs_day > 3 and active_event == world.starting_event:
             active_event = None
 
         # Player-injected event takes priority on the run's first day.
@@ -134,7 +152,7 @@ def run_simulation(
             agents,
             world.starting_event if abs_day == 1 else _recent_event_summary(full_event_log),
             config.reasoning_agents_per_day,
-            rng,
+            day_rng,
         )
         selected_ids = {a.id for a in selected}
         background = [a for a in agents if a.id not in selected_ids]
@@ -177,11 +195,10 @@ def run_simulation(
                 agent=actor.name,
                 summary=action.new_memory or f"{action.action} {', '.join(action.target_agents) or '(no one)'} — {action.explanation}",
             ))
-            changed = sum(
-                1 for eff in action.relationship_effects.values()
-                if abs(eff.strength_delta) >= 0.15
-            )
-            type_changes += changed
+            # Volatility = realized significant relationship changes this action, i.e.
+            # the milestones the consequence layer actually produced (earned transitions),
+            # not the agent's proposed bids.
+            type_changes += len(milestones)
             return log_line
 
         # PARALLEL PASS: form plans + reason for every selected actor concurrently.
@@ -248,15 +265,15 @@ def run_simulation(
                     speaker, responder = responder, speaker
 
         # EVENING: background rules + relationship decay
-        bg_log = apply_background_rules(background, agents, rng)
+        bg_log = apply_background_rules(background, agents, day_rng)
         day_log.extend(bg_log)
 
         # THEATRICAL VIGNETTES (Slice E): occasionally let an agent have a charming
         # first-person moment (dream / catchphrase / dramatic announcement). Bounded to
         # MAX_VIGNETTES_PER_DAY to control cost; gated so it doesn't fire every day.
-        if selected and rng.random() < 0.7:
+        if selected and day_rng.random() < 0.7:
             n_vig = min(MAX_VIGNETTES_PER_DAY, len(selected))
-            vig_actors = rng.sample(selected, rng.randint(1, n_vig))
+            vig_actors = day_rng.sample(selected, day_rng.randint(1, n_vig))
             for actor in vig_actors:
                 struct = generate_vignette_struct(actor, active_event, abs_day)
                 if struct:
@@ -334,6 +351,7 @@ def run_simulation(
         dynamic_events=dynamic_events,
         forecast=forecast,
         prophecy_verdict=prophecy_verdict,
+        baseline_influence=baseline_influence,
     )
 
 
@@ -370,7 +388,7 @@ def _is_charged(actor: Agent, action) -> bool:
     Charged when the actor targeted a specific person AND any of:
       - the existing relationship type is rivalry/romance/conflict, OR
       - the existing relationship |strength| >= 0.4, OR
-      - a relationship_effect of those types with |delta| >= 0.2.
+      - the agent's INTENT toward them is antagonistic or romantic (rivalry/conflict/romance).
     """
     if not action.target_agents:
         return False
@@ -385,10 +403,9 @@ def _is_charged(actor: Agent, action) -> bool:
         if abs(rel.strength) >= 0.4:
             return True
 
-    eff = action.relationship_effects.get(primary)
-    if eff is not None and eff.type in _CHARGED_REL_TYPES and abs(eff.strength_delta) >= 0.2:
-        return True
-    return False
+    from . import consequence
+    proposed_type, _ = consequence.intent_to_bid(action.intents.get(primary, ""))
+    return proposed_type in _CHARGED_REL_TYPES
 
 
 def _recent_event_summary(log: list[str]) -> Optional[str]:

@@ -250,6 +250,9 @@ def simulate_continue(wid: str, body: ContinueRequest):
         seed=body.seed,
         initial_agents=last_snap.agents,
         day_offset=last_snap.day,
+        baseline_influence=prev.baseline_influence,
+        prior_event_log=_prior_event_log(prev),
+        active_event_in=last_snap.active_event,
     )
     merged = _merge_results(prev, new_result)
     store.save_result(wid, merged)
@@ -273,7 +276,41 @@ async def simulate_continue_stream(wid: str, body: ContinueRequest):
         initial_agents=last_snap.agents,
         prev_result=prev,
         pause_on_days=body.pause_on_days,
+        baseline_influence=prev.baseline_influence,
+        prior_event_log=_prior_event_log(prev),
+        active_event_in=last_snap.active_event,
     )
+
+
+class AdvanceRequest(BaseModel):
+    reasoning_agents_per_day: int = Field(default=8, ge=1, le=30)
+    seed: int = 42
+
+
+@app.post("/world/{wid}/advance", response_model=SimulationResult)
+def advance(wid: str, body: AdvanceRequest):
+    """DAY-BY-DAY: advance the world exactly ONE day. The first call (no prior result)
+    runs day 1 with full setup (world graph, stances); every later call continues one more
+    day, preserving the day-0 baseline and the accumulated event log via the continue path.
+    Returns the merged result so far. Use this for the 'Next day' button."""
+    prev = store.get_result(wid)
+    if prev:
+        return simulate_continue(wid, ContinueRequest(
+            days=1, reasoning_agents_per_day=body.reasoning_agents_per_day, seed=body.seed))
+    return simulate(wid, SimulateRequest(
+        days=1, reasoning_agents_per_day=body.reasoning_agents_per_day, seed=body.seed))
+
+
+@app.post("/world/{wid}/advance/stream")
+async def advance_stream(wid: str, body: AdvanceRequest):
+    """Streaming variant of /advance — emits the single day's actions over SSE so the
+    'Next day' reveal feels alive, then a final done event with the merged result."""
+    prev = store.get_result(wid)
+    if prev:
+        return await simulate_continue_stream(wid, ContinueRequest(
+            days=1, reasoning_agents_per_day=body.reasoning_agents_per_day, seed=body.seed))
+    return await simulate_stream(wid, SimulateRequest(
+        days=1, reasoning_agents_per_day=body.reasoning_agents_per_day, seed=body.seed))
 
 
 @app.get("/world/{wid}/result", response_model=SimulationResult)
@@ -525,7 +562,14 @@ def _merge_results(prev: SimulationResult, new: SimulationResult) -> SimulationR
         dynamic_events={**prev.dynamic_events, **new.dynamic_events},
         forecast=new.forecast,
         prophecy_verdict=new.prophecy_verdict or prev.prophecy_verdict,
+        baseline_influence=prev.baseline_influence or new.baseline_influence,
     )
+
+
+def _prior_event_log(prev: SimulationResult) -> list[str]:
+    """Flatten all prior days' event logs so an advance/continue keeps the selector's
+    recent-event context and gives dynamic-event generation material to build on."""
+    return [line for s in prev.snapshots for line in s.event_log]
 
 
 def _make_stream_response(
@@ -538,6 +582,9 @@ def _make_stream_response(
     initial_agents,
     prev_result: Optional[SimulationResult] = None,
     pause_on_days: Optional[list[int]] = None,
+    baseline_influence: Optional[dict] = None,
+    prior_event_log: Optional[list[str]] = None,
+    active_event_in: Optional[str] = None,
 ) -> StreamingResponse:
     q: _queue.Queue = _queue.Queue()
     DONE = object()
@@ -554,6 +601,9 @@ def _make_stream_response(
                 initial_agents=initial_agents,
                 day_offset=day_offset,
                 pause_on_days=pause_on_days,
+                baseline_influence=baseline_influence,
+                prior_event_log=prior_event_log,
+                active_event_in=active_event_in,
             )
             if prev_result is not None:
                 result = _merge_results(prev_result, result)

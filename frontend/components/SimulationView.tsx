@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { SimulationResult, World } from "@/lib/types";
 import { RelationshipGraph } from "./RelationshipGraph";
 import { Inspector } from "./Inspector";
@@ -22,13 +22,25 @@ function StatBox({ value, label, color }: { value: number | string; label: strin
   );
 }
 
-export function SimulationView({ result, world, worldId, isLive = false, onContinue }: {
+export function SimulationView({ result, world, worldId, isLive = false, onContinue, onAdvance }: {
   result: SimulationResult; world: World; worldId: string;
   isLive?: boolean; onContinue?: (days: number, perDay: number) => void;
+  // DAY-BY-DAY: present in the interactive "playing" phase — advances exactly one day.
+  onAdvance?: () => void;
 }) {
   const lastSnap = result.snapshots[result.snapshots.length - 1];
   const [day, setDay] = useState<number>(lastSnap?.day ?? 1);
   const [selection, setSelection] = useState<Selection>(null);
+
+  // When a new day finishes simulating, jump the dashboard to that latest day
+  // instead of staying on the previously-viewed one.
+  const prevLastDay = useRef(lastSnap?.day ?? 1);
+  useEffect(() => {
+    const latest = lastSnap?.day ?? 1;
+    if (latest > prevLastDay.current) setDay(latest);
+    prevLastDay.current = latest;
+  }, [lastSnap?.day]);
+
   const [showReport, setShowReport] = useState(false);
   const [continueDays, setContinueDays] = useState(7);
   const [continuePerDay, setContinuePerDay] = useState(8);
@@ -213,6 +225,14 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
               </button>
             )}
 
+            {/* DAY-BY-DAY: the primary action — advance one day. */}
+            {onAdvance && !isLive && (
+              <button className="btn" onClick={onAdvance}
+                style={{ fontSize: 8, padding: "6px 14px", letterSpacing: "0.1em" }}>
+                ▶ NEXT DAY
+              </button>
+            )}
+
             {onContinue && !isLive && (
               <div style={{ position: "relative" }}>
                 <button className="font-pixel"
@@ -224,7 +244,7 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
                     border: `1px solid ${showContinueMenu ? "var(--accent)" : "var(--border)"}`,
                     textTransform: "uppercase",
                   }}>
-                  CONTINUE +
+                  {onAdvance ? "FAST-FWD +" : "CONTINUE +"}
                 </button>
                 {showContinueMenu && (
                   <div style={{

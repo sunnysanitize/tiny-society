@@ -115,6 +115,16 @@ export const api = {
   continueStream: (wid: string, days: number, perDay = 8, seed = 42) =>
     streamReq(`/world/${wid}/simulate/continue/stream`, { days, reasoning_agents_per_day: perDay, seed }),
 
+  // DAY-BY-DAY: advance exactly one day. The backend picks first-day setup vs. continue.
+  advance: (wid: string, perDay = 8, seed = 42) =>
+    req<SimulationResult>(`/world/${wid}/advance`, {
+      method: "POST",
+      body: JSON.stringify({ reasoning_agents_per_day: perDay, seed }),
+    }),
+
+  advanceStream: (wid: string, perDay = 8, seed = 42) =>
+    streamReq(`/world/${wid}/advance/stream`, { reasoning_agents_per_day: perDay, seed }),
+
   getResult: (wid: string) =>
     req<SimulationResult>(`/world/${wid}/result`),
 
