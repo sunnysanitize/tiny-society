@@ -60,6 +60,16 @@ end an LLM writes the town's story and grades the player's **prophecy**. No two 
 
 ---
 
+## Screenshots
+
+![Story view](./web/public/story.png)
+
+![Network view](./web/public/network.png)
+
+![Forecast view](./web/public/forecast.png)
+
+---
+
 ## Architecture
 
 ```
