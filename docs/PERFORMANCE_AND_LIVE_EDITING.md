@@ -104,7 +104,7 @@ At 8 agents that's roughly an **8×+ wall-clock reduction** per day. No new mode
 > backward compatible — with no new env vars, behavior is identical to before). Mock ignores
 > tier. Call sites routed: routine reasoning, vignettes, fillers, relationship seeding, planning,
 > and dynamic events → `cheap`; reflection, world-graph extraction, prophecy grading, the final
-> report, and player-facing chat → `strong`. `backend/.env.example` documents the new vars.
+> report, and player-facing chat → `strong`. `engine/.env.example` documents the new vars.
 
 ### Idea
 Route routine work to a cheap/fast model and reserve a strong model for moments that matter.

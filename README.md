@@ -4,7 +4,7 @@ A multi-agent AI social simulation **and prediction engine**. Build a world, pop
 pixel characters (some based on real people), fire off an event, and watch a cast of LLM-driven
 agents reason, remember, reflect, form relationships, and shift opinions over 7–30 simulated days
 — then read the swarm's forecast of where it's all heading. Part living town,
-part MiroFish-style prediction engine.
+part swarm prediction engine.
 
 ![Stack](https://img.shields.io/badge/backend-FastAPI-009688?style=flat-square) ![Stack](https://img.shields.io/badge/frontend-Next.js%2014-000000?style=flat-square) ![Stack](https://img.shields.io/badge/LLM-Anthropic%20%7C%20Groq%20%7C%20Mock-5A4FCF?style=flat-square) ![Stack](https://img.shields.io/badge/auth%2Bsaves-Supabase-3FCF8E?style=flat-square)
 
@@ -29,7 +29,7 @@ end an LLM writes the town's story and grades the player's **prophecy**. No two 
 
 ## Features
 
-**Believable agents (Generative-Agents style)**
+**Believable characters (Agents)**
 - **Relevance memory retrieval** — memories scored by relevance · recency · importance, not just recency.
 - **Reflection** — agents periodically synthesize higher-level insights from recent memories.
 - **Perception** — the same event lands differently depending on who receives it and their history.
@@ -40,7 +40,7 @@ end an LLM writes the town's story and grades the player's **prophecy**. No two 
 - **Per-agent feed** ranked by interest + influence + recency → echo chambers, virality, factions.
 - **World knowledge graph** — entities, relationships, and power structures extracted up front.
 
-**Prediction engine (MiroFish style)**
+**Prediction engine**
 - Per-agent **belief/stance** on auto-derived topics, aggregated daily into a population distribution.
 - **Forecast** with **swarm confidence** (consensus vs. disagreement) and **pivotal-day** causal tracing.
 
@@ -93,7 +93,7 @@ In-memory world store (per session) · Supabase persistence for saves
 ## Project layout
 
 ```
-backend/
+engine/
   main.py                 REST + SSE endpoints
   models.py               Pydantic models (Agent, World, WorldGraph, Memory, Forecast, …)
   state.py                In-memory world store
@@ -119,7 +119,7 @@ backend/
     generator.py          LLM-generates filler characters
     reporter.py           Final narrative report + structured forecast
 
-frontend/
+web/
   app/page.tsx            Main flow: setup → characters → event → simulation
   components/
     WorldSetup, CharacterEditor, EventAndRun, SimulationView, RelationshipGraph,
@@ -131,7 +131,7 @@ frontend/
 
 ## LLM providers
 
-Set `LLM_PROVIDER` in `backend/.env`:
+Set `LLM_PROVIDER` in `engine/.env`:
 
 | Provider | Cost | Notes |
 |---|---|---|
@@ -172,8 +172,8 @@ only the save/load feature is disabled.
 
 ```env
 SUPABASE_URL=https://<project>.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=...        # backend only
-# frontend/.env.local:
+SUPABASE_SERVICE_ROLE_KEY=...        # engine only
+# web/.env.local:
 NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 ```
@@ -185,16 +185,16 @@ Run `supabase_migration.sql` in the Supabase SQL editor to create the `saves` ta
 ## Getting started
 
 ```bash
-# 1 — Backend
-cd backend
+# 1 — Engine (backend)
+cd engine
 python3 -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env                                # pick your LLM provider
 uvicorn main:app --reload --port 8000
 # verify: curl http://localhost:8000/health  →  {"ok":true,"llm_provider":"..."}
 
-# 2 — Frontend
-cd frontend
+# 2 — Web (frontend)
+cd web
 npm install
 npm run dev          # http://localhost:3000
 ```
