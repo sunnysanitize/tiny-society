@@ -17,6 +17,12 @@ IMPORTANCE_WEIGHT = 1.0
 # last accessed. 0.85 ≈ a memory loses ~15% of its recency weight per day.
 RECENCY_DECAY = 0.85
 
+# DIVERSITY (anti-rut): when selecting the top-k, penalize a candidate by how much
+# it overlaps memories already chosen. Without this, a strong relationship makes the
+# same person's memories monopolize recall, so the agent keeps acting on them and the
+# story "goes nowhere." This injects variety so new threads can surface.
+DIVERSITY_PENALTY = 0.6
+
 # Importance heuristic: keywords that signal an emotionally or relationally loaded
 # memory worth recalling. Each hit nudges importance up.
 _EMOTIONAL_KEYWORDS = {
@@ -84,6 +90,16 @@ def _relevance(mem_tokens: set[str], query_tokens: set[str]) -> float:
     return overlap / len(query_tokens)
 
 
+def _jaccard(a: set[str], b: set[str]) -> float:
+    """Token-set similarity in [0, 1] — used to penalize near-duplicate recalls."""
+    if not a or not b:
+        return 0.0
+    inter = len(a & b)
+    if inter == 0:
+        return 0.0
+    return inter / len(a | b)
+
+
 def _recency(memory: Memory, current_day: int) -> float:
     """Exponential decay on days since last access, in (0, 1]."""
     age = max(0, current_day - (memory.last_accessed_day or memory.day))
@@ -116,8 +132,9 @@ def retrieve(
         return []
 
     query_tokens = _tokenize(query)
+    mem_tokens = [_tokenize(m.text) for m in mems]
 
-    relevance = [_relevance(_tokenize(m.text), query_tokens) for m in mems]
+    relevance = [_relevance(mem_tokens[i], query_tokens) for i in range(len(mems))]
     recency = [_recency(m, current_day) for m in mems]
     importance = [m.importance / 10.0 for m in mems]
 
@@ -125,18 +142,33 @@ def retrieve(
     nrec = _normalize(recency)
     nimp = _normalize(importance)
 
-    scored = [
-        (
-            RELEVANCE_WEIGHT * nr[i]
-            + RECENCY_WEIGHT * nrec[i]
-            + IMPORTANCE_WEIGHT * nimp[i],
-            i,
-        )
+    base = [
+        RELEVANCE_WEIGHT * nr[i]
+        + RECENCY_WEIGHT * nrec[i]
+        + IMPORTANCE_WEIGHT * nimp[i]
         for i in range(len(mems))
     ]
-    scored.sort(key=lambda x: x[0], reverse=True)
 
-    top = [mems[i] for _, i in scored[:k]]
+    # DIVERSIFIED top-k (greedy MMR): repeatedly pick the highest-scoring memory after
+    # subtracting a penalty for redundancy with what's already chosen, so a single
+    # relationship can't monopolize recall and new narrative threads can surface.
+    chosen: list[int] = []
+    remaining = set(range(len(mems)))
+    while remaining and len(chosen) < k:
+        best_i, best_val = None, float("-inf")
+        for i in remaining:
+            penalty = 0.0
+            if chosen:
+                penalty = DIVERSITY_PENALTY * max(
+                    _jaccard(mem_tokens[i], mem_tokens[j]) for j in chosen
+                )
+            val = base[i] - penalty
+            if val > best_val:
+                best_val, best_i = val, i
+        chosen.append(best_i)
+        remaining.discard(best_i)
+
+    top = [mems[i] for i in chosen]
     for m in top:
         if current_day > m.last_accessed_day:
             m.last_accessed_day = current_day

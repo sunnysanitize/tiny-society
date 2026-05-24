@@ -14,6 +14,8 @@ Write a 4-6 paragraph summary in plain prose covering:
 - how the injected event reshaped the society
 - which agents gained or lost influence and why
 - which factions, romances, rivalries, or alliances formed
+- the RELATIONSHIP TURNING POINTS (if given) — trace these as the spine of the story: who
+  changed toward whom, and what it set in motion. Do not just list activity; show the arc.
 - any surprising emergent dynamics
 - the final social shape compared to Day 0
 
@@ -152,6 +154,13 @@ def generate_final_report(
     prelim = build_forecast(snapshots, question, topics, dynamic_events, narrative="")
     pivotal_days = prelim.pivotal_days if prelim else []
 
+    # Relationship turning points across the run — the narrative spine.
+    milestone_lines: list[str] = []
+    for s in snapshots:
+        ms = getattr(s, "milestones", None) or []
+        if ms:
+            milestone_lines.append(f"Day {s.day}: " + "; ".join(ms[:6]))
+
     user = (
         f"WORLD: {world_prompt}\n\n"
         f"STARTING EVENT: {starting_event or '(none)'}\n\n"
@@ -160,6 +169,11 @@ def generate_final_report(
         f"{final.model_dump_json(indent=2)}\n\n"
         f"DAILY HIGHLIGHTS:\n" + "\n".join(highlights_blob[:30])
     )
+    if milestone_lines:
+        user += (
+            "\n\nRELATIONSHIP TURNING POINTS (chronological — anchor the narrative on these):\n"
+            + "\n".join(milestone_lines[:40])
+        )
 
     if question or final.topic_means:
         traj = _belief_trajectory_blob(snapshots, topics)

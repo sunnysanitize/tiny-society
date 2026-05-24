@@ -67,11 +67,12 @@ def reason_for_agent(
     event: Optional[str],
     current_day: int = 1,
     world_graph: Optional[WorldGraph] = None,
+    tier: str = "cheap",
 ) -> Optional[AgentAction]:
     import logging
     user = _build_prompt(agent, roster, event, current_day, world_graph)
     try:
-        raw = call_llm(REASONER_SYSTEM, user, json_mode=True, max_tokens=1024, tier="cheap")
+        raw = call_llm(REASONER_SYSTEM, user, json_mode=True, max_tokens=1024, tier=tier)
     except Exception as e:
         logging.warning(f"LLM call failed for agent {agent.name}: {e}")
         return None
@@ -84,11 +85,12 @@ async def areason_for_agent(
     event: Optional[str],
     current_day: int = 1,
     world_graph: Optional[WorldGraph] = None,
+    tier: str = "cheap",
 ) -> Optional[AgentAction]:
     import logging
     user = _build_prompt(agent, roster, event, current_day, world_graph)
     try:
-        raw = await acall_llm(REASONER_SYSTEM, user, json_mode=True, max_tokens=1024, tier="cheap")
+        raw = await acall_llm(REASONER_SYSTEM, user, json_mode=True, max_tokens=1024, tier=tier)
     except Exception as e:
         logging.warning(f"LLM call failed for agent {agent.name}: {e}")
         return None
@@ -164,6 +166,9 @@ def _build_prompt(
     # Extract last action from short-term memory (today) to surface it explicitly
     last_pool = agent.short_term_memory or agent.long_term_memory
     last_action = last_pool[-1].text if last_pool else None
+    # Rolling action history (structured: kind/verb → targets) drives anti-repetition —
+    # the model sees its OWN recent pattern, not just one stale line.
+    recent_actions = agent.recent_actions[-5:]
 
     # WORLD FACTS & POWER STRUCTURE: compact shared ground truth from the knowledge
     # graph, plus the contested topics + this agent's current stance on them.
@@ -214,8 +219,11 @@ def _build_prompt(
         "YOUR LONG-TERM MEMORY (most relevant to today)",
         "\n".join(f"- {m.text}" for m in retrieved) or "(empty)",
         "",
-        f"LAST ACTION: {last_action or '(none — this is your first day)'}",
-        "→ Do NOT repeat this. Choose a different action, target, or approach today.",
+        "YOUR RECENT ACTIONS (vary from these — do NOT repeat the same target or the same move)",
+        "\n".join(f"- {r}" for r in recent_actions)
+            or f"- {last_action or '(none — this is your first day)'}",
+        "→ If you keep engaging the same person, you MUST change course: escalate it, resolve it, "
+        "withdraw, or turn to someone new. Repeating yesterday verbatim is always wrong.",
         "",
         "CURRENT WORLD EVENT",
         event or "(no specific event today)",

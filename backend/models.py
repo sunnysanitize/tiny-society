@@ -121,6 +121,10 @@ class Agent(BaseModel):
     # day's action can pursue it. `plan_day` is the sim day the plan was last set.
     plan: Optional[str] = None
     plan_day: int = 0
+    # ANTI-REPETITION (richness fix): a short rolling log of this agent's most recent
+    # actions ("day3: confront -> Aria"), surfaced in the reasoner prompt so the model
+    # can see its OWN pattern and deliberately vary target/approach instead of looping.
+    recent_actions: list[str] = []
     is_custom: bool = False
     # IDENTITY INJECTION (Slice E): an emoji or a preset pixel-avatar id string used by
     # the frontend to render the character. None means the frontend assigns one.
@@ -251,6 +255,11 @@ class DaySnapshot(BaseModel):
     # THEATRICAL VIGNETTES (Slice E): bounded per-day charming moments. Default [] so
     # existing snapshots/serialization are unaffected.
     vignettes: list[Vignette] = []
+    # RELATIONSHIP MILESTONES (richness fix): human-readable "turning point" beats
+    # detected this day — a relationship changed type (friendship→romance, trust→rivalry)
+    # or crossed a strength threshold. Fed into the final report and surfaced in the
+    # story view so arcs are visible instead of buried in per-day activity. Default [].
+    milestones: list[str] = []
 
 
 class MacroMetrics(BaseModel):

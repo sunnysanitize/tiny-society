@@ -114,15 +114,19 @@ def run_simulation(
                 dynamic_events[str(abs_day)] = new_ev
                 logging.info(f"Dynamic event generated for day {abs_day}: {new_ev!r}")
 
-        # MORNING: promote last short-term memory to long-term; reset
+        # MORNING: promote ALL of yesterday's short-term memories to long-term (deduped),
+        # then reset. Promoting only the last one lost everything from multi-action /
+        # multi-turn-exchange days and everything an agent remembered being done TO them
+        # (two-sided memory), flattening their history — so promote them all.
         for a in agents:
             if abs_day > 1:
                 if a.short_term_memory:
-                    promoted = a.short_term_memory[-1]
                     existing_texts = {m.text for m in a.long_term_memory}
-                    if promoted.text and promoted.text not in existing_texts:
-                        a.long_term_memory.append(promoted)
-                        a.long_term_memory = a.long_term_memory[-40:]
+                    for mem in a.short_term_memory:
+                        if mem.text and mem.text not in existing_texts:
+                            a.long_term_memory.append(mem)
+                            existing_texts.add(mem.text)
+                    a.long_term_memory = a.long_term_memory[-60:]
                 a.short_term_memory = []
 
         # AFTERNOON: select agents, run AI reasoning + deterministic rules
@@ -148,17 +152,19 @@ def run_simulation(
                     )
 
         day_perception_notes: list = []
+        day_milestones: list[str] = []
         by_name = {a.name: a for a in agents}
         exchanges_today = 0
 
-        def _commit_action(actor: Agent, action) -> int:
+        def _commit_action(actor: Agent, action) -> str:
             """Apply an action, route its observation/perception, log + highlight it.
 
-            Returns the count of significant relationship-type changes it produced.
-            Used identically for primary actions and multi-turn response turns."""
+            Returns the action's log line. Used identically for primary actions and
+            multi-turn response turns; also accumulates relationship milestones."""
             nonlocal type_changes
-            log_line, notes = apply_action(actor, action, agents, day=abs_day)
+            log_line, notes, milestones = apply_action(actor, action, agents, day=abs_day)
             day_log.append(log_line)
+            day_milestones.extend(milestones)
             # PER-AGENT OBSERVATION LOCALITY: route this action only to the agents
             # who could plausibly witness it (actor, targets, group-mates, or
             # everyone if the actor is a high-influence public figure).
@@ -226,12 +232,15 @@ def run_simulation(
                     logging.info(
                         f"Day {abs_day}: exchange turn — {responder.name} responds to {speaker.name}"
                     )
+                    # Charged exchanges are the dramatic, pivotal turns — use the
+                    # strong model here even though the routine fan-out runs cheap.
                     resp = reason_for_agent(
                         responder,
                         agents,
                         event=resp_event,
                         current_day=abs_day,
                         world_graph=world.world_graph,
+                        tier="strong",
                     )
                     if resp is None:
                         break
@@ -273,6 +282,7 @@ def run_simulation(
             active_event=active_event,
             perception_notes=day_perception_notes,
             vignettes=day_vignettes,
+            milestones=day_milestones,
         )
         snapshots.append(snap)
 

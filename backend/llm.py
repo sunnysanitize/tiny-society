@@ -175,14 +175,22 @@ def _call_openai_compat(system: str, user: str, json_mode: bool, max_tokens: int
 # ── async path (concurrent fan-out) ─────────────────────────────────────────────
 
 _sem: Optional[asyncio.Semaphore] = None
+_sem_loop: Optional[asyncio.AbstractEventLoop] = None
 
 
 def _get_sem() -> asyncio.Semaphore:
-    """Lazily create the concurrency semaphore on first async call so it binds to
-    the running loop (and the env var is read at first use)."""
-    global _sem
-    if _sem is None:
+    """Return the concurrency semaphore bound to the CURRENT running loop.
+
+    An asyncio.Semaphore binds to the loop it's first awaited on. The engine runs
+    one `asyncio.run(...)` per simulated day, so each day gets a fresh loop — a
+    cached semaphore from a previous day is bound to a closed loop and raises
+    "bound to a different event loop". So we (re)create it whenever the running
+    loop changes. (The env var is read at first use / on each recreate.)"""
+    global _sem, _sem_loop
+    loop = asyncio.get_running_loop()
+    if _sem is None or _sem_loop is not loop:
         _sem = asyncio.Semaphore(int(os.getenv("LLM_MAX_CONCURRENCY", "6")))
+        _sem_loop = loop
     return _sem
 
 

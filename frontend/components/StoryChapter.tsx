@@ -87,12 +87,13 @@ function Face({ agent, name, size }: { agent?: Agent; name: string; size: number
 }
 
 export function StoryChapter({
-  agents, highlights, vignettes, eventLog, day, totalDays, activeEvent, isStartEvent, forecast,
+  agents, highlights, vignettes, eventLog, milestones, day, totalDays, activeEvent, isStartEvent, forecast,
 }: {
   agents: Agent[];
   highlights?: DayHighlight[];
   vignettes?: Vignette[];
   eventLog?: string[];
+  milestones?: string[];
   day: number;
   totalDays: number;
   activeEvent?: string | null;
@@ -100,6 +101,7 @@ export function StoryChapter({
   forecast?: Forecast | null;
 }) {
   const safeAgents = agents ?? [];
+  const turningPoints = (milestones ?? []).filter(m => (m ?? "").trim());
 
   const beats = useMemo<Beat[]>(() => {
     const out: Beat[] = [];
@@ -170,6 +172,25 @@ export function StoryChapter({
           </div>
           <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.6, fontFamily: "ui-monospace, monospace" }}>
             {activeEvent}
+          </div>
+        </div>
+      )}
+
+      {/* Turning points: relationship milestones that moved the story this day. */}
+      {turningPoints.length > 0 && (
+        <div style={{
+          marginTop: 12, padding: "10px 12px",
+          background: "rgba(204,93,232,0.06)", borderLeft: "3px solid var(--purple)",
+        }}>
+          <div className="font-pixel" style={{ fontSize: 7, color: "var(--purple)", letterSpacing: "0.1em", marginBottom: 6 }}>
+            ✦ TURNING POINTS
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {turningPoints.slice(0, 6).map((m, i) => (
+              <div key={i} style={{ fontSize: 12.5, color: "var(--text)", lineHeight: 1.5, fontFamily: "ui-monospace, monospace" }}>
+                <span style={{ color: "var(--purple)", marginRight: 6 }}>↳</span>{m}
+              </div>
+            ))}
           </div>
         </div>
       )}

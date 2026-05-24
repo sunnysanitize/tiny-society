@@ -104,6 +104,7 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
         highlights={snap.highlights}
         vignettes={snap.vignettes}
         eventLog={snap.event_log}
+        milestones={snap.milestones}
         day={snap.day}
         totalDays={totalDays}
         activeEvent={activeEvent}

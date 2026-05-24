@@ -118,6 +118,7 @@ export interface DaySnapshot {
   metrics: MacroMetrics;
   active_event?: string | null;
   vignettes?: Vignette[];
+  milestones?: string[];
 }
 
 export interface SimulationResult {
