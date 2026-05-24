@@ -78,7 +78,7 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun, onBegin }: {
           <div className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", marginBottom: 8, letterSpacing: "0.1em" }}>
             FAST-FORWARD (DAYS)
           </div>
-          <div style={{ display: "flex", gap: 5 }}>
+          <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
             {DAY_OPTIONS.map(d => (
               <button key={d} onClick={() => setDays(d)} style={{
                 padding: "7px 12px", cursor: "pointer",
@@ -93,6 +93,18 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun, onBegin }: {
                 {d}D
               </button>
             ))}
+            {/* Free duration: type any number of days (clamped 1..1000). Highlights when
+                the value isn't one of the presets, so a custom run is visibly selected. */}
+            <input
+              type="number" min={1} max={1000} value={days}
+              onChange={e => setDays(Math.max(1, Math.min(1000, parseInt(e.target.value) || 1)))}
+              aria-label="custom number of days"
+              style={{
+                width: 64, marginLeft: 3, fontSize: 11, textAlign: "center",
+                borderColor: DAY_OPTIONS.includes(days) ? "var(--border)" : "var(--gold)",
+                color: DAY_OPTIONS.includes(days) ? "var(--text-dim)" : "var(--gold)",
+              }}
+            />
           </div>
         </div>
 

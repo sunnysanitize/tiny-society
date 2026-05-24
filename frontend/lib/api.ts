@@ -125,6 +125,11 @@ export const api = {
   advanceStream: (wid: string, perDay = 8, seed = 42) =>
     streamReq(`/world/${wid}/advance/stream`, { reasoning_agents_per_day: perDay, seed }),
 
+  // Halt an in-flight streaming run server-side. The run stops after the current day and
+  // emits a normal "done" with the partial result, so the UI lands on the review screen.
+  cancel: (wid: string) =>
+    req<{ ok: boolean; cancelled: string }>(`/world/${wid}/cancel`, { method: "POST" }),
+
   getResult: (wid: string) =>
     req<SimulationResult>(`/world/${wid}/result`),
 

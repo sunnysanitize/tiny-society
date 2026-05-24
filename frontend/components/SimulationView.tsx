@@ -256,7 +256,7 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
                     <div className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", marginBottom: 10, letterSpacing: "0.08em" }}>
                       EXTEND FROM DAY {lastSnap.day}
                     </div>
-                    <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+                    <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
                       {CONTINUE_OPTIONS.map(d => (
                         <button key={d} onClick={() => setContinueDays(d)} className="font-pixel" style={{
                           flex: 1, padding: "5px 0", fontSize: 7, cursor: "pointer",
@@ -266,6 +266,17 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
                           border: `1px solid ${continueDays === d ? "var(--accent)" : "var(--border)"}`,
                         }}>{d}D</button>
                       ))}
+                    </div>
+                    {/* Free duration: any number of days (clamped 1..1000). */}
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+                      <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", flexShrink: 0 }}>OR DAYS</span>
+                      <input type="number" min={1} max={1000} value={continueDays}
+                        onChange={e => setContinueDays(Math.max(1, Math.min(1000, parseInt(e.target.value) || 1)))}
+                        style={{
+                          flex: 1, fontSize: 11, textAlign: "center",
+                          borderColor: CONTINUE_OPTIONS.includes(continueDays) ? "var(--border)" : "var(--accent)",
+                          color: CONTINUE_OPTIONS.includes(continueDays) ? "var(--text-dim)" : "var(--accent)",
+                        }} />
                     </div>
                     <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
                       <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", flexShrink: 0 }}>AI/DAY</span>

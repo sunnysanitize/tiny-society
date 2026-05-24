@@ -16,6 +16,7 @@ from .reflector import reflect
 from .planner import form_plan
 from .deterministic import apply_background_rules
 from .applicator import apply_action
+from .persona import vet_action
 from .observation import distribute_observation
 from .metrics import compute_metrics, snapshot_influence
 from .reporter import generate_final_report
@@ -59,6 +60,7 @@ def run_simulation(
     baseline_influence: Optional[dict[str, float]] = None,
     prior_event_log: Optional[list[str]] = None,
     active_event_in: Optional[str] = None,
+    should_cancel: Optional[Callable[[], bool]] = None,
 ) -> SimulationResult:
     agents = [copy.deepcopy(a) for a in (initial_agents or world.agents)]
     if not agents:
@@ -107,6 +109,14 @@ def run_simulation(
 
     for day in range(1, config.days + 1):
         abs_day = day + day_offset
+        # USER CANCEL: stop before starting a new day if the player asked to halt the run.
+        # Gated on `snapshots` so at least one day of THIS call always completes — that
+        # guarantees a non-empty, resumable partial result (continue/merge expect a last
+        # snapshot). The day already in progress when cancel arrives finishes; the next
+        # one doesn't start. Treated like a natural early end (same as pause_on_days).
+        if should_cancel and snapshots and should_cancel():
+            logging.info(f"Cancelling simulation before day {abs_day} (user request)")
+            break
         day_log: list[str] = []
         day_highlights: list[DayHighlight] = []
         day_vignettes: list[Vignette] = []
@@ -180,6 +190,12 @@ def run_simulation(
             Returns the action's log line. Used identically for primary actions and
             multi-turn response turns; also accumulates relationship milestones."""
             nonlocal type_changes
+            # PERSONA VETO (Stage 3): before any consequence is applied, reject intents this
+            # character plausibly wouldn't act on given mood/traits/standing (e.g. courting
+            # while heartbroken). Downgrades happen in place; vetoes are logged so the
+            # restraint is visible in the story instead of silent.
+            veto_notes = vet_action(actor, action, by_name)
+            day_log.extend(veto_notes)
             log_line, notes, milestones = apply_action(actor, action, agents, day=abs_day)
             day_log.append(log_line)
             day_milestones.extend(milestones)

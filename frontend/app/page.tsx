@@ -34,6 +34,7 @@ export default function Page() {
   const [playPerDay, setPlayPerDay] = useState(8);
   const [runError, setRunError] = useState<string | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const abortRef = useRef(false);
 
   // Bootstrap auth session
@@ -90,8 +91,17 @@ export default function Page() {
     }
   }
 
+  // Stop an in-flight run: ask the backend to halt (it finishes the current day, then
+  // emits a normal "done" with the partial result, so the stream's done-handler lands the
+  // UI on the review screen — no stuck "running" state and the run stays resumable).
+  function handleStop() {
+    if (!worldId) return;
+    setStopping(true);
+    api.cancel(worldId).catch(() => {});
+  }
+
   async function runStream(wid: string, w: World, days: number, perDay: number, isContin = false) {
-    abortRef.current = false;
+    abortRef.current = false; setStopping(false);
     setPhase("running"); setRunError(null);
     if (!isContin) setLiveSnaps([]);
     setTotalDays((isContin ? (result?.days ?? 0) : 0) + days);
@@ -103,20 +113,23 @@ export default function Page() {
         if (event.type === "day") {
           setLiveSnaps((prev) => [...(isContin ? prev : []), event.snapshot]);
         } else if (event.type === "done") {
-          setResult(event.result); setPhase("result"); return;
+          setResult(event.result); setStopping(false); setPhase("result"); return;
         } else if (event.type === "error") {
           throw new Error(event.message);
         }
       }
     } catch (e: any) {
       setRunError(e.message ?? "Simulation failed");
+      setStopping(false);
       setPhase(result ? "result" : "setup");
     }
   }
 
   function handleRun(days: number, perDay: number) {
     if (!worldId || !world) return;
-    runStream(worldId, world, days, perDay, true);  // batch fast-forward also appends
+    // FAST-FORWARD from setup: a fresh batch run if nothing has run yet, otherwise append
+    // to the existing run. (Continuing with no prior result hits /simulate, not /continue.)
+    runStream(worldId, world, days, perDay, !!result);
   }
   function handleContinue(days: number, perDay: number) {
     if (!worldId || !world) return;
@@ -300,6 +313,21 @@ export default function Page() {
               totalDays={totalDays}
               latestLog={liveSnaps.length > 0 ? liveSnaps[liveSnaps.length - 1].event_log : []}
             />
+            <div style={{ display: "flex", justifyContent: "center", marginTop: 10 }}>
+              <button
+                onClick={handleStop}
+                disabled={stopping}
+                className="font-pixel"
+                style={{
+                  fontSize: 8, padding: "8px 18px", letterSpacing: "0.1em",
+                  cursor: stopping ? "default" : "pointer", textTransform: "uppercase",
+                  background: "transparent", color: "var(--red)",
+                  border: "1px solid var(--red)", opacity: stopping ? 0.5 : 1,
+                }}
+              >
+                {stopping ? "STOPPING — FINISHING CURRENT DAY..." : "■ STOP RUN"}
+              </button>
+            </div>
           </div>
         )}
 

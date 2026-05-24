@@ -165,6 +165,56 @@ def test_intent_to_bid_is_bounded_and_sensible():
     assert dtype in valid_types and abs(ddelta) <= 0.1
 
 
+def test_persona_veto_blocks_implausible_romance():
+    """#10 (Stage 3): the persona veto downgrades romantic intents a character would not
+    act on — heartbroken mood, an unresolved rift, or a guarded near-stranger — and leaves
+    plausible ones intact."""
+    from models import AgentAction
+    from simulation.persona import vet_action
+
+    def _action(intents):
+        return AgentAction(action="approach", action_kind="direct",
+                           target_agents=list(intents), intents=dict(intents),
+                           new_memory="I approached them.", explanation="testing")
+
+    # (a) heartbroken -> 'court' is held back to 'talk'
+    grieving = _agent("Grieving"); grieving.mood = "heartbroken"
+    other = _agent("Other")
+    act = _action({"Other": "court"})
+    notes = vet_action(grieving, act, {"Other": other})
+    assert act.intents["Other"] == "talk", act.intents
+    assert notes and "heartbroken" in notes[0]
+
+    # (b) open rift -> 'flirt' becomes 'reconcile' (mend first)
+    foe_a, foe_b = _agent("FoeA"), _agent("FoeB")
+    _exchange(foe_a, foe_b, "conflict", -0.3, "conflict", -0.3, rounds=4)
+    assert foe_a.relationships["FoeB"].type in ("conflict", "rivalry")
+    act = _action({"FoeB": "flirt"})
+    vet_action(foe_a, act, {"FoeB": foe_b})
+    assert act.intents["FoeB"] == "reconcile", act.intents
+
+    # (c) reserved character + near-stranger -> 'court' held back to 'talk'
+    shy = _agent("Shy"); shy.traits = ["reserved", "bookish"]
+    stranger = _agent("Stranger")
+    act = _action({"Stranger": "court"})
+    vet_action(shy, act, {"Stranger": stranger})
+    assert act.intents["Stranger"] == "talk", act.intents
+
+    # (d) an established, calm couple's 'flirt' is NOT vetoed
+    lover_a, lover_b = _agent("LoverA"), _agent("LoverB")
+    lover_a.mood = "content"
+    _exchange(lover_a, lover_b, "romance", 0.3, "romance", 0.3, rounds=5)
+    act = _action({"LoverB": "flirt"})
+    notes = vet_action(lover_a, act, {"LoverB": lover_b})
+    assert act.intents["LoverB"] == "flirt", act.intents
+    assert notes == []
+
+    # (e) non-romantic intents are never touched, even while heartbroken
+    act = _action({"Other": "support"})
+    notes = vet_action(grieving, act, {"Other": other})
+    assert act.intents["Other"] == "support" and notes == []
+
+
 # ── SYSTEM-LEVEL INVARIANTS (full engine on mock) ──────────────────────────────────
 
 # A modest-length run is enough for arcs to form without being expensive on mock.
@@ -326,6 +376,7 @@ _TESTS = [
     test_alliance_requires_mutual_ally_bids,
     test_conflict_is_gradual_and_may_be_one_sided,
     test_intent_to_bid_is_bounded_and_sensible,
+    test_persona_veto_blocks_implausible_romance,
     test_every_romance_edge_is_mutual,
     test_changes_are_slow_base_rate,
     test_no_thin_air_drama,

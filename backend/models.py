@@ -186,7 +186,7 @@ class World(BaseModel):
 
 
 class SimulationConfig(BaseModel):
-    days: int = Field(default=30, ge=1, le=365)
+    days: int = Field(default=30, ge=1, le=1000)
     reasoning_agents_per_day: int = Field(default=8, ge=1, le=30)
 
 

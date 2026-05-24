@@ -27,6 +27,23 @@ from simulation.memory import make_memory
 
 app = FastAPI(title="Tiny Society AI")
 
+# ── Cancellation registry ──────────────────────────────────────────────────────────
+# A streaming run executes in a background thread (see _make_stream_response). To let a
+# client halt a long run server-side (not just stop listening), each world gets a
+# threading.Event; /cancel sets it, and the engine checks it between days. Thread-safe
+# because the cancel request and the run thread touch the dict under a lock.
+_cancel_lock = threading.Lock()
+_cancel_flags: dict[str, threading.Event] = {}
+
+
+def _cancel_event(wid: str) -> threading.Event:
+    with _cancel_lock:
+        ev = _cancel_flags.get(wid)
+        if ev is None:
+            ev = threading.Event()
+            _cancel_flags[wid] = ev
+        return ev
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -187,7 +204,7 @@ def set_event(wid: str, body: EventInput):
 
 
 class SimulateRequest(BaseModel):
-    days: int = Field(default=30, ge=1, le=365)
+    days: int = Field(default=30, ge=1, le=1000)
     reasoning_agents_per_day: int = Field(default=8, ge=1, le=30)
     seed: int = 42
     # MID-RUN PAUSE (Part C, Level 2): absolute days on which the stream stops early
@@ -227,7 +244,7 @@ async def simulate_stream(wid: str, body: SimulateRequest):
 
 
 class ContinueRequest(BaseModel):
-    days: int = Field(default=7, ge=1, le=365)
+    days: int = Field(default=7, ge=1, le=1000)
     reasoning_agents_per_day: int = Field(default=8, ge=1, le=30)
     seed: int = 42
     # See SimulateRequest.pause_on_days.
@@ -280,6 +297,17 @@ async def simulate_continue_stream(wid: str, body: ContinueRequest):
         prior_event_log=_prior_event_log(prev),
         active_event_in=last_snap.active_event,
     )
+
+
+@app.post("/world/{wid}/cancel")
+def cancel_simulation(wid: str):
+    """Request that an in-flight streaming run for this world halt. The engine checks the
+    flag between days, so the run stops after the day currently being computed finishes,
+    then finalizes and saves the partial result (fully resumable via continue). Safe to
+    call when nothing is running — it just arms the flag, which the next run clears."""
+    _require(wid)
+    _cancel_event(wid).set()
+    return {"ok": True, "cancelled": wid}
 
 
 class AdvanceRequest(BaseModel):
@@ -589,6 +617,11 @@ def _make_stream_response(
     q: _queue.Queue = _queue.Queue()
     DONE = object()
 
+    # Arm a fresh cancel flag for this run (clearing any stale request from a prior run),
+    # then let the engine poll it between days.
+    cancel_ev = _cancel_event(wid)
+    cancel_ev.clear()
+
     def _run():
         try:
             def on_day(snap: DaySnapshot):
@@ -604,6 +637,7 @@ def _make_stream_response(
                 baseline_influence=baseline_influence,
                 prior_event_log=prior_event_log,
                 active_event_in=active_event_in,
+                should_cancel=cancel_ev.is_set,
             )
             if prev_result is not None:
                 result = _merge_results(prev_result, result)
@@ -614,7 +648,7 @@ def _make_stream_response(
                 last_day = result.snapshots[-1].day
                 if last_day in pause_on_days:
                     paused_on = last_day
-            q.put(("done", (result, paused_on)))
+            q.put(("done", (result, paused_on, cancel_ev.is_set())))
         except Exception as exc:
             q.put(("error", str(exc)))
 
@@ -628,11 +662,13 @@ def _make_stream_response(
                 data = _json.dumps({"type": "day", "snapshot": payload.model_dump()})
                 yield f"data: {data}\n\n"
             elif kind == "done":
-                result, paused_on = payload
+                result, paused_on, cancelled = payload
                 done_payload = {"type": "done", "result": result.model_dump()}
                 if paused_on is not None:
                     done_payload["paused"] = True
                     done_payload["paused_on"] = paused_on
+                if cancelled:
+                    done_payload["cancelled"] = True
                 yield f"data: {_json.dumps(done_payload)}\n\n"
                 break
             elif kind == "error":
