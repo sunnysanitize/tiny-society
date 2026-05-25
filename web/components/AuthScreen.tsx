@@ -49,9 +49,6 @@ export function AuthScreen() {
               TINY SOCIETY AI
             </span>
           </div>
-          <div style={{ fontSize: 10, color: "var(--text-dim)", letterSpacing: "0.08em" }}>
-            multi-character social simulation
-          </div>
         </div>
 
         {/* card */}

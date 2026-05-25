@@ -251,7 +251,7 @@ export default function Page() {
                 </span>
               </div>
               <div style={{ fontSize: 10, color: "var(--text-dim)", letterSpacing: "0.08em", paddingLeft: 20 }}>
-                multi-character social simulation · llm-powered character reasoning
+                llm-powered character reasoning
               </div>
             </div>
 
