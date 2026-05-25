@@ -1,0 +1,27 @@
+# Host-agnostic local/self-hosted deployment of both services.
+#   docker compose up --build
+# Engine reads engine/.env; web reads build args + web/.env.local at runtime for
+# server-side, but NEXT_PUBLIC_* are baked at build time (see build args below).
+services:
+  engine:
+    build: ./engine
+    env_file:
+      - ./engine/.env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      args:
+        # NEXT_PUBLIC_* are inlined at build time. For a same-host deploy the browser
+        # talks to the engine via the host's published port, not the compose network.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - engine
+    restart: unless-stopped

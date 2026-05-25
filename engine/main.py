@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json as _json
+import logging
 import os
 import queue as _queue
 import threading
 import uuid
+from contextlib import asynccontextmanager
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -16,6 +18,16 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
+# ── Logging ────────────────────────────────────────────────────────────────────
+# Configure a root handler so the logging.info/warning calls scattered through the
+# simulation modules actually surface (they had no handler before, so logs were
+# silently dropped). Level overridable via LOG_LEVEL (default INFO).
+logging.basicConfig(
+    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+log = logging.getLogger("tiny_society")
+
 from models import (
     Agent, CharacterInput, World, WorldInput,
     SimulationConfig, SimulationResult, DaySnapshot,
@@ -25,7 +37,45 @@ from simulation.engine import run_simulation
 from simulation.generator import generate_fillers
 from simulation.memory import make_memory
 
-app = FastAPI(title="Tiny Society AI")
+
+def _validate_config() -> None:
+    """Fail-fast startup check: verify the chosen LLM provider and (if configured)
+    Supabase have the credentials they need, so a misconfigured deploy errors at boot
+    instead of on the first request. Warns rather than raises for the mock provider and
+    for absent Supabase (saves/auth simply stay disabled)."""
+    provider = os.getenv("LLM_PROVIDER", "mock").lower()
+    if provider == "anthropic" and not os.getenv("ANTHROPIC_API_KEY"):
+        raise RuntimeError("LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY is unset")
+    if provider == "openai_compat" and not (
+        os.getenv("OPENAI_COMPAT_BASE_URL") and os.getenv("OPENAI_COMPAT_API_KEY")
+    ):
+        raise RuntimeError(
+            "LLM_PROVIDER=openai_compat requires OPENAI_COMPAT_BASE_URL and "
+            "OPENAI_COMPAT_API_KEY"
+        )
+    if provider == "mock":
+        log.warning("LLM_PROVIDER=mock — running with the deterministic mock provider")
+
+    has_url = bool(os.getenv("SUPABASE_URL"))
+    has_key = bool(os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+    if has_url ^ has_key:
+        raise RuntimeError(
+            "Supabase is half-configured: set BOTH SUPABASE_URL and "
+            "SUPABASE_SERVICE_ROLE_KEY, or neither"
+        )
+    if not (has_url and has_key):
+        log.warning("Supabase not configured — save files and auth are disabled")
+
+    log.info("Startup config OK (llm_provider=%s, supabase=%s)", provider, has_url and has_key)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _validate_config()
+    yield
+
+
+app = FastAPI(title="Tiny Society AI", lifespan=lifespan)
 
 # ── Cancellation registry ──────────────────────────────────────────────────────────
 # A streaming run executes in a background thread (see _make_stream_response). To let a
@@ -44,9 +94,13 @@ def _cancel_event(wid: str) -> threading.Event:
             _cancel_flags[wid] = ev
         return ev
 
+# CORS: read allowed origins from FRONTEND_ORIGIN (comma-separated for multiple).
+# Defaults to localhost dev. Set to "*" explicitly only if you intend to allow any origin.
+_origins_env = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
+_allow_origins = [o.strip() for o in _origins_env.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allow_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
