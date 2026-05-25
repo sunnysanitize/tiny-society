@@ -388,6 +388,7 @@ def _generate_dynamic_event(recent_log: list[str], agents: list[Agent]) -> Optio
     )
     try:
         raw = call_llm(
+            "DYNAMIC_EVENT_GENERATION\n"
             "Generate a single-sentence world event for a social simulation. No quotes, no prefix, under 20 words.",
             prompt,
             max_tokens=60,

@@ -250,9 +250,6 @@ export default function Page() {
                   v1.0
                 </span>
               </div>
-              <div style={{ fontSize: 10, color: "var(--text-dim)", letterSpacing: "0.08em", paddingLeft: 20 }}>
-                llm-powered character reasoning
-              </div>
             </div>
 
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>

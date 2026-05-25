@@ -65,6 +65,7 @@ export interface World {
   starting_event: string | null;
   // ── Engagement (Slice F) ──
   prophecy?: string | null;
+  question?: string | null;
   pending_event?: string | null;
 }
 

@@ -11,13 +11,17 @@ Status legend: 🔴 bug · 🟡 gap · 🟢 enhancement · ⏳ deferred · ✅ d
 > and mid-run character injection) has since been **implemented** — see
 > [PERFORMANCE_AND_LIVE_EDITING.md](./PERFORMANCE_AND_LIVE_EDITING.md). This resolves the
 > tiered-models half of §⑤ below (concurrency replaced the serial-with-sleep loop; a cheap/strong
-> tier split is live). Items ①–④ and ⑥–⑬ remain open.
+> tier split is live). Items ⑥–⑬ remain open.
+>
+> **Update 2 (2026-05-24).** Part 1 ①–④ are now **done** (mock-mode dynamic-event + relationship-seeding
+> branches, the prediction-`question` wiring end-to-end, and the dead `initials()` removal); verified on
+> the mock provider (15 pytest pass, frontend `tsc` clean).
 
 ---
 
 ## Part 1 — Diagnosed issues (fix these first)
 
-### 🔴 ① Dynamic events are nonsense on the mock provider
+### ✅ ① Dynamic events are nonsense on the mock provider — DONE
 **What it means.** `simulation/engine.py`'s `_generate_dynamic_event` calls the LLM with a
 plain instruction string that has **no unique marker**. The mock provider (`llm.py` `_mock`)
 dispatches on markers (e.g. `AGENT_REASONING`, `VIGNETTE_GENERATION`); with no marker this
@@ -32,7 +36,7 @@ with `DYNAMIC_EVENT_GENERATION`) and add a matching branch in `llm.py` `_mock` t
 short, plausible event sentence derived from recent activity (mirror how the other mock
 branches parse the prompt). Mirrors the pattern already used for vignettes/plans.
 
-### 🔴 ② Relationship seeding silently no-ops on the mock provider
+### ✅ ② Relationship seeding silently no-ops on the mock provider — DONE
 **What it means.** During filler generation the social graph is seeded via an LLM call whose
 system prompt starts with `RELATIONSHIP_SEEDING` — but there is **no mock branch** for that
 marker, so on mock it hits the chat fallback, returns prose, fails JSON parsing, and seeds
@@ -43,7 +47,7 @@ pre-wired relationships the feature intends, so early days look flat. (Real LLM 
 valid JSON (a handful of plausible relationships among the provided agent names), following the
 established `_mock` dispatch pattern.
 
-### 🟡 ③ The prediction "question" is never settable
+### ✅ ③ The prediction "question" is never settable — DONE
 **What it means.** Phase 2 introduced `World.question` (the player's prediction question that
 should anchor the whole forecast). Slice F added a UI only for `World.prophecy` (the free-text
 bet). Nothing in the API or UI ever sets `World.question`, so `Forecast.question` is always
@@ -55,7 +59,7 @@ runs off auto-derived topics only, and the question→topics→forecast chain is
 input); pass `world.question` into `worldgraph.extract_world_graph` so topics derive from it,
 and confirm it flows into `Forecast.question`.
 
-### 🟢 ④ Dead code
+### ✅ ④ Dead code — DONE
 **What it means.** `initials()` in `components/RelationshipGraph.tsx` is unused after pixel
 avatars replaced initial-tiles on graph nodes.
 **Why it matters.** Minor — clutter only (tsconfig doesn't flag unused locals).

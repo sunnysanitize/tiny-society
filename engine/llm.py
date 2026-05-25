@@ -1277,6 +1277,74 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
             "(Mock report — set LLM_PROVIDER=anthropic or openai_compat for real narration.)"
         )
 
+    # ── dynamic world event (engine.py _generate_dynamic_event) ───────────────
+    if "DYNAMIC_EVENT_GENERATION" in system:
+        # Pull names from the "Recent activity:" log so the event references real actors.
+        names: list[str] = []
+        for line in user.splitlines():
+            m = _re_module.match(r"\s*([A-Z][\w'-]+)\b", line)
+            if m and m.group(1) not in ("Recent", "Several", "Generate"):
+                if m.group(1) not in names:
+                    names.append(m.group(1))
+        mood = ""
+        mm = _re_module.search(r"agents feel (\w+)", user)
+        if mm:
+            mood = mm.group(1)
+        a = names[0] if names else "Someone"
+        b = names[1] if len(names) > 1 else None
+        templates = [
+            f"Word spreads that {a} has been keeping something from the group.",
+            f"A heated exchange between {a} and {b} becomes the talk of the town." if b
+                else f"{a}'s recent choices leave everyone quietly choosing sides.",
+            f"An old rumor about {a} resurfaces at the worst possible moment.",
+            f"{a} calls a sudden meeting, and the mood in the room shifts.",
+            f"Tensions boil over after {a} makes a decision no one expected.",
+        ]
+        if mood in ("angry", "frustrated"):
+            templates.insert(0, f"A simmering grievance finally erupts into the open around {a}.")
+        elif mood in ("anxious", "heartbroken", "lonely"):
+            templates.insert(0, f"A quiet unease settles over the group as {a} withdraws.")
+        return rng.choice(templates)
+
+    # ── relationship seeding (generator.py _seed_relationships) ───────────────
+    if "RELATIONSHIP_SEEDING" in system:
+        # User prompt lists characters as "- Name: role | traits: ... | last memory: ..."
+        seed_names: list[str] = []
+        for line in user.splitlines():
+            m = _re_module.match(r"\s*-\s+([^:]+):", line)
+            if m:
+                nm = m.group(1).strip()
+                if nm and nm not in seed_names:
+                    seed_names.append(nm)
+        rels: list[dict] = []
+        if len(seed_names) >= 2:
+            # First type is always rivalry so the graph has at least one rivalry/conflict.
+            rel_types = ["rivalry", "friendship", "trust", "conflict", "alliance", "romance", "influence"]
+            shuffled = seed_names[:]
+            rng.shuffle(shuffled)
+            target = min(rng.randint(3, 6), len(shuffled))  # 3-6, bounded by agent count
+            seen: set[frozenset] = set()
+            degree: dict[str, int] = {n: 0 for n in shuffled}
+            attempts = 0
+            while len(rels) < target and attempts < target * 8:
+                attempts += 1
+                a_name, b_name = rng.sample(shuffled, 2)
+                key = frozenset((a_name, b_name))
+                # No duplicate pairs; cap each agent at 2 relationships to avoid over-connecting.
+                if key in seen or degree[a_name] >= 2 or degree[b_name] >= 2:
+                    continue
+                seen.add(key)
+                degree[a_name] += 1
+                degree[b_name] += 1
+                rels.append({
+                    "agent_a": a_name,
+                    "agent_b": b_name,
+                    "type": rel_types[len(rels) % len(rel_types)],
+                    "strength": round(rng.uniform(0.2, 0.6), 2),
+                    "mutual": rng.random() > 0.4,
+                })
+        return json.dumps({"relationships": rels})
+
     # ── agent chat (in-character roleplay) ────────────────────────────────────
     # Parse every field from the structured prompt
     import re as _re

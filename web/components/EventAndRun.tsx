@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import type { World } from "@/lib/types";
-import { ProphecyInput } from "./Engagement";
+import { ProphecyInput, QuestionInput } from "./Engagement";
 
 const DAY_OPTIONS = [7, 14, 30, 60];
 
@@ -67,6 +67,10 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun, onBegin }: {
           />
         </div>
       </div>
+
+      {/* Prediction question — anchors the forecast */}
+      <QuestionInput worldId={worldId} initial={world.question}
+        onSaved={q => onWorldChange({ ...world, question: q })} />
 
       {/* Prophecy */}
       <ProphecyInput worldId={worldId} initial={world.prophecy} />

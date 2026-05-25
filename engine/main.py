@@ -553,6 +553,20 @@ def set_prophecy(wid: str, body: ProphecyRequest):
     return w
 
 
+class QuestionRequest(BaseModel):
+    question: str
+
+
+@app.post("/world/{wid}/question", response_model=World)
+def set_question(wid: str, body: QuestionRequest):
+    """Set the player's prediction question — the thing the forecast should answer.
+    Anchors world-graph topic extraction and flows through to Forecast.question."""
+    w = _require(wid)
+    w.question = (body.question or "").strip() or None
+    store.update(wid, w)
+    return w
+
+
 # ─── save files ───────────────────────────────────────────────────────────────
 
 import supabase_db

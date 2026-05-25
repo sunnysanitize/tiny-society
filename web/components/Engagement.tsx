@@ -22,6 +22,57 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+// ── Prediction question ───────────────────────────────────────────────────────
+// The question the forecast should answer. Anchors world-graph topic extraction
+// and flows through to Forecast.question.
+
+export function QuestionInput({ worldId, initial, onSaved }: {
+  worldId: string; initial?: string | null; onSaved?: (question: string) => void;
+}) {
+  const [text, setText] = useState(initial ?? "");
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(!!initial);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    const q = text.trim();
+    if (!q || busy) return;
+    setBusy(true); setErr(null);
+    try {
+      await api.setQuestion(worldId, q);
+      setSaved(true);
+      onSaved?.(q);
+    } catch (e: any) { setErr(e?.message ?? "Failed to save question."); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div className="font-pixel" style={{ fontSize: 8, color: "var(--accent)", marginBottom: 8, letterSpacing: "0.1em" }}>
+        ? PREDICTION QUESTION (OPTIONAL)
+      </div>
+      <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace", marginBottom: 8, lineHeight: 1.5 }}>
+        The question the forecast answers — e.g. &ldquo;Will the club survive the semester?&rdquo;. It anchors which topics the swarm forecasts.
+      </div>
+      <textarea
+        rows={2}
+        value={text}
+        onChange={e => { setText(e.target.value); setSaved(false); }}
+        placeholder="ask a question the simulation should forecast..."
+        style={{ borderColor: "rgba(121,80,242,0.35)", color: "var(--accent)" }}
+      />
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+        <button className="btn-ghost" onClick={save} disabled={busy || !text.trim()}
+          style={{ fontSize: 8, padding: "6px 12px" }}>
+          {busy ? "SAVING..." : saved ? "✓ QUESTION SET" : "SET QUESTION"}
+        </button>
+        {saved && <span style={{ fontSize: 9, color: "var(--accent)", fontFamily: "ui-monospace", fontStyle: "italic" }}>The forecast will answer this.</span>}
+      </div>
+      {err && <div style={{ fontSize: 9, color: "var(--red)", fontFamily: "ui-monospace", marginTop: 6 }}>✖ {err}</div>}
+    </div>
+  );
+}
+
 // ── Prophecy input ──────────────────────────────────────────────────────────
 // Free-text prediction the player makes before / during a run.
 

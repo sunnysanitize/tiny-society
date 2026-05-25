@@ -159,6 +159,12 @@ export const api = {
       body: JSON.stringify({ prediction }),
     }),
 
+  setQuestion: (wid: string, question: string) =>
+    req<World>(`/world/${wid}/question`, {
+      method: "POST",
+      body: JSON.stringify({ question }),
+    }),
+
   // ── Save files ────────────────────────────────────────────────────────────
 
   listSaves: () =>
