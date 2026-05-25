@@ -46,7 +46,7 @@ export function AuthScreen() {
               animation: "neon-pulse 2s ease-in-out infinite",
             }} />
             <span className="font-pixel" style={{ fontSize: 14, color: "var(--accent)", letterSpacing: "0.05em" }}>
-              TINY SOCIETY AI
+              THE TINY SOCIETY GAME
             </span>
           </div>
         </div>
