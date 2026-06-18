@@ -1,11 +1,13 @@
 "use client";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { normalizeUsername, usernameToEmail, validateUsername } from "@/lib/auth";
 
 export function AuthScreen() {
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [recoveryEmail, setRecoveryEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -16,13 +18,33 @@ export function AuthScreen() {
     setError(null);
     setInfo(null);
     try {
+      const usernameError = validateUsername(username);
+      if (usernameError) throw new Error(usernameError);
+
+      const email = usernameToEmail(username);
+
       if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        if (error) throw new Error("Incorrect username or password");
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        setInfo("Check your email for a confirmation link.");
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { username: normalizeUsername(username), recovery_email: recoveryEmail.trim() || null } },
+        });
+        if (error) {
+          if (/already registered|already exists/i.test(error.message)) {
+            throw new Error("That username is already taken");
+          }
+          throw error;
+        }
+        // With email confirmation disabled, signUp returns a session and the
+        // onAuthStateChange listener takes over. If confirmation is still on,
+        // no session comes back — sign in explicitly so the user isn't stuck.
+        if (!data.session) {
+          const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+          if (signInError) throw signInError;
+        }
       }
     } catch (err: any) {
       setError(err.message ?? "Authentication failed");
@@ -63,15 +85,17 @@ export function AuthScreen() {
           <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div>
               <label className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>
-                EMAIL
+                USERNAME
               </label>
               <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="player@example.com"
+                type="text"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                placeholder="pixelfish"
                 required
-                autoComplete="email"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
               />
             </div>
 
@@ -89,6 +113,24 @@ export function AuthScreen() {
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
               />
             </div>
+
+            {mode === "signup" && (
+              <div>
+                <label className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>
+                  RECOVERY EMAIL <span style={{ opacity: 0.6 }}>(OPTIONAL)</span>
+                </label>
+                <input
+                  type="email"
+                  value={recoveryEmail}
+                  onChange={e => setRecoveryEmail(e.target.value)}
+                  placeholder="player@example.com"
+                  autoComplete="email"
+                />
+                <div style={{ marginTop: 6, fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", opacity: 0.7 }}>
+                  Used only to reset a forgotten password. Leave blank to skip.
+                </div>
+              </div>
+            )}
 
             {error && (
               <div style={{

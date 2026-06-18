@@ -186,9 +186,18 @@ SUPABASE_SERVICE_ROLE_KEY=...        # engine only
 # web/.env.local:
 NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+# web/.env.local — optional, overrides the synthetic-email domain (default users.mirofish.app):
+NEXT_PUBLIC_AUTH_EMAIL_DOMAIN=users.mirofish.app
 ```
 Run `supabase_migration.sql` in the Supabase SQL editor to create the `saves` table (incl. the
 `service_role` grants).
+
+**Auth is username + password.** Supabase Auth logs in by email, so each account gets a
+permanent synthetic login email (`<username>@<NEXT_PUBLIC_AUTH_EMAIL_DOMAIN>`); the username and
+an optional recovery email are stored in `user_metadata`. Because synthetic addresses can't
+receive mail, **disable email confirmation** in Supabase (Authentication → Providers → Email →
+turn off "Confirm email") so signup logs the user straight in. The recovery-email reset flow is
+not built yet — the address is collected and stored now so it works once that ships.
 
 ---
 
