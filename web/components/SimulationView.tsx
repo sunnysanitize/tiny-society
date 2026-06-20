@@ -13,6 +13,11 @@ type Tab = "story" | "network" | "forecast" | "cast";
 
 const CONTINUE_OPTIONS = [7, 14, 30];
 
+// Story tab (desktop): the side-by-side row is pinned to this height so the small
+// interactive display drives the length and stays uncompressed. The chapter column
+// matches it and scrolls internally rather than dictating (and collapsing) the height.
+const STORY_ROW_H = "clamp(620px, calc(100dvh - 260px), 900px)";
+
 const STAT: React.CSSProperties = { textAlign: "center" };
 
 function StatBox({ value, label, color }: { value: number | string; label: string; color: string }) {
@@ -59,11 +64,17 @@ function NetworkPanel({ snap, selection, onSelect, initialMetrics, worldId, isLi
       boxShadow: "0 4px 16px rgba(100,80,200,0.08)",
     }}>
       <div style={{
-        flex: desktopStacked ? "1 1 0" : vertical ? "none" : 1,
+        // Story tab (desktopStacked): the interactive map is a true SQUARE — its height is
+        // driven by the column width via aspect-ratio, so it stays square at any width and
+        // (crucially) does NOT change height when a node is selected, avoiding the graph
+        // re-fit glitch. The profile fills whatever height remains below it.
+        flex: desktopStacked ? "none" : vertical ? "none" : 1,
         minWidth: 0,
+        width: desktopStacked ? "100%" : undefined,
+        aspectRatio: desktopStacked ? "1 / 1" : undefined,
         position: "relative",
         height: desktopStacked ? "auto" : vertical ? graphHeight : "auto",
-        minHeight: desktopStacked ? 220 : vertical ? 320 : 0,
+        minHeight: desktopStacked ? 0 : vertical ? 320 : 0,
       }}>
         <RelationshipGraph agents={snap.agents} selection={selection} onSelect={onSelect} />
         {isLive && (
@@ -89,9 +100,9 @@ function NetworkPanel({ snap, selection, onSelect, initialMetrics, worldId, isLi
         // stacked (Story) layout it sits at natural height below the graph (which flexes).
         <div style={isNarrow
           ? { height: "50dvh", minHeight: 280, display: "flex", flexDirection: "column", borderTop: "1px solid var(--border)" }
-          // Fixed-height profile region so selecting a node does NOT change the graph's
-          // height (which previously triggered a ResizeObserver re-fit — the "glitch").
-          : { height: 300, flexShrink: 0, borderTop: "1px solid var(--border)", overflowY: "auto" }}>
+          // Desktop Story tab: profile fills the height left below the square map. Its
+          // content changing on selection no longer affects the graph (square is width-driven).
+          : { flex: "1 1 0", minHeight: 0, borderTop: "1px solid var(--border)", overflowY: "auto" }}>
           <Inspector selection={selection} snap={snap} initialMetrics={initialMetrics} worldId={worldId} stacked compact={compact} onExpand={onExpand} />
         </div>
       ) : (
@@ -365,8 +376,8 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
               signature view, mirrored here so it's visible without leaving the story.
               The right column sticks while you read the chapter. Clicking a node opens the
               full Network tab focused on that character. */}
-          <div style={{ display: "flex", flexDirection: isNarrow ? "column" : "row", gap: 8, alignItems: "stretch" }}>
-            <div style={{ flex: isNarrow ? "none" : "1 1 0", minWidth: 0, width: isNarrow ? "100%" : undefined }}>
+          <div style={{ display: "flex", flexDirection: isNarrow ? "column" : "row", gap: 8, alignItems: "stretch", height: isNarrow ? undefined : STORY_ROW_H }}>
+            <div style={{ flex: isNarrow ? "none" : "1 1 0", minWidth: 0, width: isNarrow ? "100%" : undefined, minHeight: 0, display: isNarrow ? "block" : "flex" }}>
               <StoryChapter
                 agents={snap.agents}
                 highlights={snap.highlights}
@@ -379,6 +390,7 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
                 activeEvent={activeEvent}
                 isStartEvent={!snap.active_event || snap.active_event === world.starting_event}
                 forecast={result.forecast}
+                fillHeight={!isNarrow}
               />
             </div>
             {/* The relationship network alongside the story — narrow, in normal flow (it
@@ -485,7 +497,10 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
           worldId={worldId}
           isLive={isLive}
           isNarrow={isNarrow}
-          height="min(calc(100dvh - 320px), 900px)"
+          // Network tab only: don't cram the graph + profile into the viewport. Give it a
+          // comfortable height with a real floor so nothing is compressed; on shorter
+          // screens it simply grows past the fold and the page scrolls.
+          height="clamp(760px, calc(100dvh - 180px), 1200px)"
         />
       )}
 

@@ -88,7 +88,7 @@ def _call_openai_compat(system: str, user: str, json_mode: bool, max_tokens: int
 
     base = os.getenv("OPENAI_COMPAT_BASE_URL", "").rstrip("/")
     key = os.getenv("OPENAI_COMPAT_API_KEY")
-    model = os.getenv(f"OPENAI_COMPAT_MODEL_{tier.upper()}") or os.getenv("OPENAI_COMPAT_MODEL", "google/gemini-2.0-flash-001")
+    model = os.getenv(f"OPENAI_COMPAT_MODEL_{tier.upper()}") or os.getenv("OPENAI_COMPAT_MODEL", "google/gemini-2.5-flash")
     if not base or not key:
         raise LLMError("OPENAI_COMPAT_BASE_URL or OPENAI_COMPAT_API_KEY not set")
 
@@ -233,7 +233,7 @@ async def _call_openai_compat_async(system: str, user: str, json_mode: bool, max
 
     base = os.getenv("OPENAI_COMPAT_BASE_URL", "").rstrip("/")
     key = os.getenv("OPENAI_COMPAT_API_KEY")
-    model = os.getenv(f"OPENAI_COMPAT_MODEL_{tier.upper()}") or os.getenv("OPENAI_COMPAT_MODEL", "google/gemini-2.0-flash-001")
+    model = os.getenv(f"OPENAI_COMPAT_MODEL_{tier.upper()}") or os.getenv("OPENAI_COMPAT_MODEL", "google/gemini-2.5-flash")
     if not base or not key:
         raise LLMError("OPENAI_COMPAT_BASE_URL or OPENAI_COMPAT_API_KEY not set")
 

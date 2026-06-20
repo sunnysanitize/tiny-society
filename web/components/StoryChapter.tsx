@@ -87,7 +87,7 @@ function Face({ agent, name, size }: { agent?: Agent; name: string; size: number
 }
 
 export function StoryChapter({
-  agents, highlights, vignettes, eventLog, milestones, perceptionNotes, day, totalDays, activeEvent, isStartEvent, forecast,
+  agents, highlights, vignettes, eventLog, milestones, perceptionNotes, day, totalDays, activeEvent, isStartEvent, forecast, fillHeight = false,
 }: {
   agents: Agent[];
   highlights?: DayHighlight[];
@@ -100,6 +100,10 @@ export function StoryChapter({
   activeEvent?: string | null;
   isStartEvent: boolean;
   forecast?: Forecast | null;
+  // When true (desktop Story tab), the card fills its column's fixed height and the
+  // whole chapter scrolls as one — so it matches the interactive panel's length instead
+  // of dictating it. The inner beats list drops its own cap to avoid a nested scrollbar.
+  fillHeight?: boolean;
 }) {
   const safeAgents = agents ?? [];
   const turningPoints = (milestones ?? []).filter(m => (m ?? "").trim());
@@ -148,6 +152,7 @@ export function StoryChapter({
       background: "var(--surface)", border: "1px solid var(--accent-dim)",
       boxShadow: "0 6px 24px rgba(100,80,200,0.09)",
       padding: "16px 18px", position: "relative",
+      ...(fillHeight ? { height: "100%", minHeight: 0, overflowY: "auto" as const, width: "100%" } : null),
     }}>
       <div style={{ position: "absolute", top: -2, left: -2, width: 12, height: 12, borderTop: "2px solid var(--accent)", borderLeft: "2px solid var(--accent)" }} />
 
@@ -208,7 +213,7 @@ export function StoryChapter({
             A calm day in town — nothing of note was recorded.
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 340, overflowY: "auto" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: fillHeight ? undefined : 340, overflowY: fillHeight ? "visible" : "auto" }}>
             {beats.map((b, i) => {
               if (b.kind === "event") {
                 return (
