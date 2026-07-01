@@ -7,6 +7,10 @@ import { supabase } from "@/lib/supabase";
 interface Props {
   onNewGame: () => void;
   onLoad: (worldId: string, world: World, result: SimulationResult | null) => void;
+  // When true the visitor has no account: skip the (auth-gated) saves fetch and
+  // surface a sign-in affordance instead of sign-out.
+  guest?: boolean;
+  onSignIn?: () => void;
 }
 
 function timeAgo(iso: string) {
@@ -17,19 +21,21 @@ function timeAgo(iso: string) {
   return `${Math.floor(secs / 86400)}d ago`;
 }
 
-export function SavesScreen({ onNewGame, onLoad }: Props) {
+export function SavesScreen({ onNewGame, onLoad, guest, onSignIn }: Props) {
   const [saves, setSaves] = useState<SaveMeta[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!guest);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Guests have no token; listing saves would 401. Show the empty state.
+    if (guest) return;
     api.listSaves()
       .then(setSaves)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [guest]);
 
   async function handleLoad(id: string) {
     setLoadingId(id);
@@ -81,15 +87,15 @@ export function SavesScreen({ onNewGame, onLoad }: Props) {
           </span>
         </div>
         <button
-          onClick={handleSignOut}
+          onClick={guest ? onSignIn : handleSignOut}
           className="font-pixel"
           style={{
             fontSize: 8, padding: "5px 12px", cursor: "pointer",
-            background: "transparent", color: "var(--text-dim)",
-            border: "1px solid var(--border)", letterSpacing: "0.08em",
+            background: "transparent", color: guest ? "var(--accent)" : "var(--text-dim)",
+            border: `1px solid ${guest ? "var(--accent)" : "var(--border)"}`, letterSpacing: "0.08em",
           }}
         >
-          SIGN OUT
+          {guest ? "SIGN IN" : "SIGN OUT"}
         </button>
       </div>
 
@@ -116,7 +122,9 @@ export function SavesScreen({ onNewGame, onLoad }: Props) {
             — NO SAVE FILES —
           </div>
           <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 8 }}>
-            Start a new simulation to create your first save.
+            {guest
+              ? "Playing as guest — sign in to save your progress."
+              : "Start a new simulation to create your first save."}
           </div>
         </div>
       ) : (

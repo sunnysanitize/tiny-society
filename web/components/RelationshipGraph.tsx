@@ -354,12 +354,19 @@ export function RelationshipGraph({
     if (!nodes.length || !svgRef.current) return;
     const W = svgRef.current.clientWidth;
     const H = svgRef.current.clientHeight;
-    const pad = 90;
+    // Small margin so the graph fills the section (was 90, which left a wide blank band).
+    // Just enough that node rings/labels aren't flush against the frame.
+    const pad = 34;
     const xs = nodes.map(n => n.x!);
     const ys = nodes.map(n => n.y!);
     const gx1 = Math.min(...xs) - pad, gx2 = Math.max(...xs) + pad;
     const gy1 = Math.min(...ys) - pad, gy2 = Math.max(...ys) + pad;
-    const k = Math.max(0.3, Math.min(2, Math.min(W / (gx2 - gx1), H / (gy2 - gy1))));
+    // Floor must be low enough to CONTAIN the whole layout — with many characters in the
+    // small (Story-tab) square the fit needs k well below 0.3, and a higher floor renders
+    // the graph larger than the frame so it clips (nodes sliced off the edges, worse after
+    // a drag reheats and spreads the layout). Only the floor bites when content is large,
+    // which is exactly when we must zoom OUT. Keep a tiny floor to avoid degenerate zoom.
+    const k = Math.max(0.05, Math.min(2, Math.min(W / (gx2 - gx1), H / (gy2 - gy1))));
     setTf({
       x: (W - (gx2 - gx1) * k) / 2 - gx1 * k,
       y: (H - (gy2 - gy1) * k) / 2 - gy1 * k,
@@ -427,17 +434,33 @@ export function RelationshipGraph({
     e.currentTarget.setPointerCapture(e.pointerId);
   }
 
+  // Clamp a candidate pan so the content's bounding box can never be dragged out of the
+  // viewport (the previous ±1.5·W clamp let you push the whole graph off-frame, so it
+  // "cut off" and never re-centered). If the box is smaller than the viewport it stays
+  // fully inside; if larger, the viewport stays inside the box — either way no empty gap.
+  function clampPan(x: number, y: number, k: number, W: number, H: number) {
+    const ns = simNodes.current.filter((n) => n.x != null && n.y != null);
+    if (!ns.length) return { x, y };
+    const pad = 20; // let a pan bring content right up to the border (was 70 → big blank gap)
+    const gx1 = Math.min(...ns.map((n) => n.x!)) - pad;
+    const gx2 = Math.max(...ns.map((n) => n.x!)) + pad;
+    const gy1 = Math.min(...ns.map((n) => n.y!)) - pad;
+    const gy2 = Math.max(...ns.map((n) => n.y!)) + pad;
+    const ax = -gx1 * k, bx = W - gx2 * k;
+    const ay = -gy1 * k, by = H - gy2 * k;
+    return {
+      x: Math.min(Math.max(x, Math.min(ax, bx)), Math.max(ax, bx)),
+      y: Math.min(Math.max(y, Math.min(ay, by)), Math.max(ay, by)),
+    };
+  }
+
   function onBgMove(e: PointerEvent<SVGRectElement>) {
     if (!isPanning.current) return;
     const W = svgRef.current?.clientWidth ?? 700;
     const H = svgRef.current?.clientHeight ?? 500;
     const newX = e.clientX - panOrigin.current.x;
     const newY = e.clientY - panOrigin.current.y;
-    setTf((t) => ({
-      ...t,
-      x: Math.max(-W * 1.5, Math.min(W * 1.5, newX)),
-      y: Math.max(-H * 1.5, Math.min(H * 1.5, newY)),
-    }));
+    setTf((t) => ({ ...t, ...clampPan(newX, newY, t.k, W, H) }));
   }
 
   function onBgUp(e: PointerEvent<SVGRectElement>) {
@@ -530,7 +553,10 @@ export function RelationshipGraph({
       {/* SVG canvas */}
       <svg
         ref={svgRef}
-        style={{ flex: 1, cursor: "grab", userSelect: "none" }}
+        // width:100% is required: an <svg> has an intrinsic default width of 300px and does
+        // NOT stretch across the flex cross-axis from `flex:1` alone, so clientWidth read a
+        // stale 300 and the graph was framed/pan-clamped into the left 300px of the section.
+        style={{ flex: 1, width: "100%", minWidth: 0, cursor: "grab", userSelect: "none" }}
       >
         <Defs />
         <rect width="100%" height="100%" fill="url(#grid)" />
@@ -602,6 +628,14 @@ export function RelationshipGraph({
             const infPct = Math.max(0, Math.min(1, n.influence / 25));
             const barW = Math.max(r * 1.8, 48);
             const nameplateW = Math.max(r * 2 + 10, n.name.length * 6.2 + 16);
+            // Render the transform from the LIVE simulation position (fallback to the
+            // cross-mount cache, then origin). d3 also updates this imperatively per tick,
+            // but a static "translate(0,0)" would snap every node to the corner on each
+            // re-render (hover/select/drag) until the next tick — nodes flicker to the
+            // top-left and get clipped by the container's overflow ("cut off when dragging").
+            const live = simNodes.current.find((sn) => sn.id === n.id);
+            const px = live?.x ?? POS_CACHE.get(n.id)?.x ?? 0;
+            const py = live?.y ?? POS_CACHE.get(n.id)?.y ?? 0;
             return (
               <g
                 key={n.id}
@@ -609,7 +643,7 @@ export function RelationshipGraph({
                   if (el) nodeRefs.current.set(n.id, el);
                   else nodeRefs.current.delete(n.id);
                 }}
-                transform="translate(0,0)"
+                transform={`translate(${px},${py})`}
                 style={{
                   opacity: dimmed ? 0.12 : 1,
                   cursor: "pointer",
@@ -845,8 +879,14 @@ function GraphEdge({
   showConnLabel: boolean;
   simNodes: React.RefObject<GraphNode[]>;
 }) {
-  const src = l.source as GraphNode;
-  const tgt = l.target as GraphNode;
+  // l.source / l.target are string ids here — d3 only resolves them to node objects on
+  // its own private copies (simLinks.current), never on the memoized graphLinks we render
+  // from. Read the live positions out of simNodes.current by id so the edge actually draws.
+  const nodes = simNodes.current ?? [];
+  const srcId = typeof l.source === "object" ? (l.source as GraphNode).id : String(l.source);
+  const tgtId = typeof l.target === "object" ? (l.target as GraphNode).id : String(l.target);
+  const src = nodes.find((n) => n.id === srcId);
+  const tgt = nodes.find((n) => n.id === tgtId);
   if (!src?.x || !tgt?.x) return null;
 
   const d = edgePath(src.x, src.y!, tgt.x, tgt.y!);

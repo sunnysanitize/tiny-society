@@ -5,10 +5,6 @@
 // The username is what the player types; the synthetic email is internal
 // plumbing they never see. Username uniqueness comes for free from Supabase's
 // email-uniqueness guarantee.
-//
-// An optional real recovery email is collected at signup and stored in
-// user_metadata. The flow that actually sends a reset link to it is added later
-// (see docs); storing it now means existing accounts work once that ships.
 
 // Domain for synthetic login emails. Never receives mail, so it just needs to
 // be a syntactically valid domain. Overridable so it can match deployments.

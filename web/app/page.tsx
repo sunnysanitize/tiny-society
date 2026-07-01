@@ -10,6 +10,7 @@ import { SimulationView } from "@/components/SimulationView";
 import { AuthScreen } from "@/components/AuthScreen";
 import { SavesScreen } from "@/components/SavesScreen";
 import { SaveModal } from "@/components/SaveModal";
+import { SaveSignInModal } from "@/components/SaveSignInModal";
 import type { Session } from "@supabase/supabase-js";
 
 // "playing" = day-by-day interactive state (a run in progress the player advances one
@@ -25,6 +26,9 @@ const SCANLINE_BG: React.CSSProperties = {
 
 export default function Page() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
+  // Guest mode: playing without an account. No token, so saves are unavailable
+  // until the guest signs in. Set when the visitor picks "play without account".
+  const [guest, setGuest] = useState(false);
   const [worldId, setWorldId] = useState<string | null>(null);
   const [world, setWorld] = useState<World | null>(null);
   const [result, setResult] = useState<SimulationResult | null>(null);
@@ -34,6 +38,8 @@ export default function Page() {
   const [playPerDay, setPlayPerDay] = useState(8);
   const [runError, setRunError] = useState<string | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
+  // Guest clicked SAVE: prompt sign-in first, then hand off to the save modal.
+  const [showSignInToSave, setShowSignInToSave] = useState(false);
   const [stopping, setStopping] = useState(false);
   const abortRef = useRef(false);
 
@@ -50,13 +56,20 @@ export default function Page() {
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
       if (s) {
+        // Signed in (possibly a guest signing in mid-game). Keep whatever phase
+        // they're on so an in-progress simulation survives; only move off the
+        // auth screen itself.
+        setGuest(false);
         setAuthToken(s.access_token);
         setPhase(prev => prev === "auth" ? "saves" : prev);
-      } else {
+      } else if (event === "SIGNED_OUT") {
+        // Only an explicit sign-out returns to auth — a guest (who never had a
+        // session) must not be kicked out by a null-session event.
         setAuthToken(null);
+        setGuest(false);
         setPhase("auth");
         reset();
       }
@@ -74,7 +87,7 @@ export default function Page() {
 
   function reset() {
     setWorldId(null); setWorld(null); setResult(null);
-    setPhase(session ? "saves" : "auth");
+    setPhase(session || guest ? "saves" : "auth");
     setLiveSnaps([]); setRunError(null);
   }
 
@@ -187,7 +200,9 @@ export default function Page() {
     );
   }
 
-  if (phase === "auth") return <AuthScreen />;
+  if (phase === "auth") {
+    return <AuthScreen onGuest={() => { setGuest(true); setPhase("saves"); }} />;
+  }
 
   if (phase === "saves") {
     return (
@@ -197,6 +212,8 @@ export default function Page() {
           <SavesScreen
             onNewGame={() => setPhase("setup")}
             onLoad={handleLoaded}
+            guest={!session && guest}
+            onSignIn={() => setPhase("auth")}
           />
         </main>
       </>
@@ -206,6 +223,13 @@ export default function Page() {
   return (
     <>
       <div style={SCANLINE_BG} />
+
+      {showSignInToSave && (
+        <SaveSignInModal
+          onClose={() => setShowSignInToSave(false)}
+          onSuccess={() => { setShowSignInToSave(false); setShowSaveModal(true); }}
+        />
+      )}
 
       {showSaveModal && world && (
         <SaveModal
@@ -255,7 +279,7 @@ export default function Page() {
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               {worldId && (
                 <button
-                  onClick={() => setShowSaveModal(true)}
+                  onClick={() => session ? setShowSaveModal(true) : setShowSignInToSave(true)}
                   className="font-pixel"
                   style={{
                     fontSize: 8, padding: "7px 14px", cursor: "pointer",
