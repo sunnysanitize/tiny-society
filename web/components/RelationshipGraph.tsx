@@ -198,6 +198,10 @@ export function RelationshipGraph({
   const groupRef = useRef<SVGGElement>(null);
   const nodeRefs = useRef<Map<string, SVGGElement>>(new Map());
   const linkRefs = useRef<Map<string, SVGPathElement>>(new Map());
+  // Visible (colored) edge paths. Separate from linkRefs (the wide invisible hit area) so
+  // BOTH get their `d` rewritten every tick — otherwise the visible line lags behind the
+  // nodes while they move (drag / page-switch resettle) and only snaps back on re-render.
+  const edgeRefs = useRef<Map<string, SVGPathElement>>(new Map());
   const connLineRefs = useRef<Map<string, SVGLineElement>>(new Map());
   const connGlowRefs = useRef<Map<string, SVGLineElement>>(new Map());
   const connBadgeRefs = useRef<Map<string, SVGGElement>>(new Map());
@@ -265,13 +269,13 @@ export function RelationshipGraph({
           if (el) el.setAttribute("transform", `translate(${n.x ?? 0},${n.y ?? 0})`);
         });
         simLinks.current.forEach((l) => {
-          const el = linkRefs.current.get(l.key);
-          if (!el) return;
           const src = l.source as GraphNode;
           const tgt = l.target as GraphNode;
-          if (src.x != null && tgt.x != null) {
-            el.setAttribute("d", edgePath(src.x, src.y!, tgt.x, tgt.y!));
-          }
+          if (src.x == null || tgt.x == null) return;
+          const d = edgePath(src.x, src.y!, tgt.x, tgt.y!);
+          // Keep the visible line AND its invisible hit area glued to the moving nodes.
+          linkRefs.current.get(l.key)?.setAttribute("d", d);
+          edgeRefs.current.get(l.key)?.setAttribute("d", d);
         });
         // update selected-node connection lines
         const sid = selNodeIdRef.current;
@@ -298,8 +302,16 @@ export function RelationshipGraph({
       .on("end", () => { tick((t) => t + 1); fitToView(); });
 
     simRef.current = sim;
-    // Restoring a cached layout: damp the starting energy so it doesn't jump on remount.
-    if (restored) sim.alpha(0.15);
+    // Restoring a cached layout: FREEZE the physics entirely. Running it (even at low alpha)
+    // lets forceCenter/collide shove the cached nodes around when the two displays (compact
+    // Story tab vs larger Network tab) differ in size — that's the "jerk on page switch".
+    // fitToView reframes via transform instead. A stopped sim never fires "end", so trigger
+    // one re-render here so the edges mount and draw from the restored positions. Dragging
+    // (onNodeDown → alphaTarget.restart) or the LAYOUT button re-activate the sim on demand.
+    if (restored) {
+      sim.stop();
+      tick((t) => t + 1);
+    }
     // Frame once after first paint, in case the container wasn't sized yet at mount.
     const raf = requestAnimationFrame(() => fitToView());
 
@@ -607,6 +619,7 @@ export function RelationshipGraph({
                   showLabels={showLabels}
                   showConnLabel={showConnLabel}
                   simNodes={simNodes}
+                  edgeRefs={edgeRefs}
                 />
               </g>
             );
@@ -868,7 +881,7 @@ export function RelationshipGraph({
 // ─── GraphEdge sub-component (reads live sim positions) ───────────────────────
 
 function GraphEdge({
-  l, cfg, dimmed, highlighted, isConnected, showLabels, showConnLabel, simNodes,
+  l, cfg, dimmed, highlighted, isConnected, showLabels, showConnLabel, simNodes, edgeRefs,
 }: {
   l: GraphLink;
   cfg: typeof EDGE[RelationshipType];
@@ -878,6 +891,7 @@ function GraphEdge({
   showLabels: boolean;
   showConnLabel: boolean;
   simNodes: React.RefObject<GraphNode[]>;
+  edgeRefs: React.RefObject<Map<string, SVGPathElement>>;
 }) {
   // l.source / l.target are string ids here — d3 only resolves them to node objects on
   // its own private copies (simLinks.current), never on the memoized graphLinks we render
@@ -905,6 +919,10 @@ function GraphEdge({
     <>
       {/* base edge */}
       <path
+        ref={(el) => {
+          if (el) edgeRefs.current?.set(l.key, el);
+          else edgeRefs.current?.delete(l.key);
+        }}
         d={d}
         fill="none"
         stroke={cfg.color}

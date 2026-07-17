@@ -11,7 +11,7 @@ export function AuthScreen({ onGuest }: Props) {
       minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
       padding: 24,
     }}>
-      <div style={{ width: "100%", maxWidth: 400 }}>
+      <div style={{ width: "100%", maxWidth: 400, transform: "translateY(-6vh)" }}>
         {/* title */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 8 }}>
