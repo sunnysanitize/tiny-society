@@ -224,9 +224,6 @@ function WhisperAdvice({ worldId, agentId, agentName }: {
   return (
     <div>
       <Label color="var(--gold)">✦ WHISPER ADVICE — {agentName}</Label>
-      <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace", marginBottom: 6, lineHeight: 1.5 }}>
-        Privately nudge {agentName}. It is written to their memory and shapes how they act.
-      </div>
       <div style={{ display: "flex", gap: 5 }}>
         <input
           value={advice}
@@ -481,9 +478,6 @@ function AgentInspector({ agent, allAgents, worldId, currentDay, compact = false
         <>
           <Divider />
           <Label color="var(--cyan)">◌ WHAT THEY SEE</Label>
-          <div style={{ fontSize: 8, color: "var(--text-muted)", fontFamily: "ui-monospace", marginBottom: 6, lineHeight: 1.5 }}>
-            Their personal feed — what reached them, not the whole town.
-          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
             {[...agent.feed].slice(-6).reverse().map((f, i) => (
               <div key={i} style={{

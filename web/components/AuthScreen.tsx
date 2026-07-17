@@ -28,21 +28,7 @@ export function AuthScreen({ onGuest }: Props) {
 
         {/* card */}
         <div className="panel" style={{ padding: "28px 28px" }}>
-          <AuthForm />
-        </div>
-
-        {/* guest entry */}
-        <div style={{ marginTop: 16, textAlign: "center" }}>
-          <button
-            onClick={onGuest}
-            className="btn-ghost"
-            style={{ width: "100%", fontSize: 9, padding: "12px 20px" }}
-          >
-            PLAY WITHOUT AN ACCOUNT
-          </button>
-          <div style={{ marginTop: 8, fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", opacity: 0.7 }}>
-            No sign-in required. Sign in later to save your progress.
-          </div>
+          <AuthForm onGuest={onGuest} />
         </div>
       </div>
     </div>

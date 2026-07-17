@@ -51,16 +51,15 @@ export function QuestionInput({ worldId, initial, onSaved }: {
       <div className="font-pixel" style={{ fontSize: 8, color: "var(--accent)", marginBottom: 8, letterSpacing: "0.1em" }}>
         ? PREDICTION QUESTION (OPTIONAL)
       </div>
-      <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace", marginBottom: 8, lineHeight: 1.5 }}>
-        The question the forecast answers — e.g. &ldquo;Will the club survive the semester?&rdquo;. It anchors which topics the swarm forecasts.
-      </div>
       <textarea
         rows={2}
         value={text}
         onChange={e => { setText(e.target.value); setSaved(false); }}
         placeholder="ask a question the simulation should forecast..."
-        style={{ borderColor: "rgba(121,80,242,0.35)", color: "var(--accent)" }}
       />
+      <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.5, marginTop: 6 }}>
+        The main outcome you want the simulation to forecast.
+      </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
         <button className="btn-ghost" onClick={save} disabled={busy || !text.trim()}
           style={{ fontSize: 8, padding: "6px 12px" }}>
@@ -98,19 +97,18 @@ export function ProphecyInput({ worldId, initial, onSaved }: {
 
   return (
     <div style={{ marginBottom: 20 }}>
-      <div className="font-pixel" style={{ fontSize: 8, color: "var(--purple, var(--accent))", marginBottom: 8, letterSpacing: "0.1em" }}>
+      <div className="font-pixel" style={{ fontSize: 8, color: "var(--accent)", marginBottom: 8, letterSpacing: "0.1em" }}>
         ✦ YOUR PROPHECY (OPTIONAL)
-      </div>
-      <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace", marginBottom: 8, lineHeight: 1.5 }}>
-        Predict how this plays out — e.g. &ldquo;Maya and Theo end up together&rdquo;. After the run, the AI delivers a verdict.
       </div>
       <textarea
         rows={2}
         value={text}
         onChange={e => { setText(e.target.value); setSaved(false); }}
         placeholder="write a free-text prediction about the outcome..."
-        style={{ borderColor: "rgba(121,80,242,0.35)", color: "var(--accent)" }}
       />
+      <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.5, marginTop: 6 }}>
+        Your own prediction. The simulation is judged against it at the end.
+      </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
         <button className="btn-ghost" onClick={save} disabled={busy || !text.trim()}
           style={{ fontSize: 8, padding: "6px 12px" }}>
@@ -153,9 +151,6 @@ export function InjectEvent({ worldId, pending, onInjected }: {
       padding: "10px 14px",
     }}>
       <PanelLabel color="var(--gold)">⚡ INJECT AN EVENT</PanelLabel>
-      <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace", marginBottom: 8, lineHeight: 1.5 }}>
-        Drop a twist into the world. It takes effect on the next simulated day (when you continue).
-      </div>
       <div style={{ display: "flex", gap: 6 }}>
         <input
           value={text}
@@ -245,9 +240,6 @@ export function InjectCharacter({ worldId, currentDay, onInjected }: {
           ◈ ADD A CHARACTER {open ? "▾" : "▸"}
         </button>
       </PanelLabel>
-      <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace", marginBottom: open ? 12 : 0, lineHeight: 1.5 }}>
-        Drop a new character into the world. They join on day {currentDay} and start acting when you continue — their arrival can change the outcome.
-      </div>
 
       {open && (
         <>
@@ -289,7 +281,7 @@ export function InjectCharacter({ worldId, currentDay, onInjected }: {
                 style={{ fontSize: 11 }} />
             </div>
             <div style={{ gridColumn: "1 / -1" }}>
-              <FieldLabel>PIXEL LOOK (OPTIONAL — DEFAULT IS AUTO-GENERATED)</FieldLabel>
+              <FieldLabel>PIXEL LOOK (OPTIONAL, AUTO BY DEFAULT)</FieldLabel>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                 {Array.from({ length: 8 }).map((_, i) => {
                   const tag = `pixel:${i}`;
@@ -462,7 +454,7 @@ export function VerdictCard({ verdict }: { verdict?: ProphecyVerdict | null }) {
       boxShadow: `0 4px 16px ${s.color}22`, padding: "16px 20px", position: "relative",
     }}>
       <div style={{ position: "absolute", top: -2, left: -2, width: 12, height: 12, borderTop: `2px solid ${s.color}`, borderLeft: `2px solid ${s.color}` }} />
-      <PanelLabel color={s.color}>✦ THE PROPHECY — VERDICT</PanelLabel>
+      <PanelLabel color={s.color}>✦ THE PROPHECY VERDICT</PanelLabel>
 
       <div style={{
         fontSize: 11, color: "var(--text-dim)", fontFamily: "ui-monospace",
@@ -512,7 +504,7 @@ export function VignetteFeed({ vignettes, day }: { vignettes?: Vignette[]; day: 
         fontSize: 7, color: "var(--gold)", letterSpacing: "0.1em", marginBottom: 10,
         display: "flex", alignItems: "center", gap: 8,
       }}>
-        ✶ DAY {day} — WHAT HAPPENED
+        ✶ DAY {day}: WHAT HAPPENED
         <span style={{ color: "var(--text-dim)" }}>{items.length} VIGNETTE{items.length === 1 ? "" : "S"}</span>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

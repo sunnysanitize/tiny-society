@@ -41,6 +41,11 @@ body {
   position: relative;
   /* Never allow a horizontal scrollbar on small screens — vertical only. */
   overflow-x: hidden;
+  /* Global UI scale — the whole interface (layout + text) is sized in fixed px,
+     so a single zoom uniformly enlarges everything for comfortable viewing
+     without rewriting hundreds of inline sizes. Bump --ui-scale to taste. */
+  --ui-scale: 1.15;
+  zoom: var(--ui-scale);
 }
 
 /* Guard: media (svg/img) inside layout must not force the page wider. */
@@ -107,6 +112,9 @@ input, textarea, select {
   width: 100%;
   color: var(--text);
   caret-color: var(--accent);
+  /* One explicit typing font for every input box (text, textarea, select) so
+     they all read the same instead of inheriting per-context fonts. */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -120,6 +128,26 @@ input:focus, textarea:focus, select:focus {
   background: var(--surface);
 }
 
+/* Selects: strip native chrome so they match the text inputs' size, and draw a
+   custom caret. (Native selects otherwise render at their own height/width.) */
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%237a8a9e' stroke-width='1.5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+/* Keep the caret visible after the focus rule resets the background. */
+select:focus {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%237a8a9e' stroke-width='1.5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-color: var(--surface);
+}
+
 /* ── Primary button (Tomodachi push-down style) ───────────────────────────── */
 button.btn {
   background: var(--accent);
@@ -129,10 +157,10 @@ button.btn {
   padding: 10px 20px;
   cursor: pointer;
   font-family: var(--font-pixel, ui-sans-serif, sans-serif);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   box-shadow: 0 4px 0 var(--accent-dim);
   transition: transform 0.1s ease, box-shadow 0.1s ease;
   white-space: nowrap;
@@ -152,6 +180,40 @@ button.btn:disabled {
   cursor: not-allowed;
 }
 
+/* ── Secondary button ─────────────────────────────────────────────────────── */
+/* Same shape / font / push-down motion as .btn, but a soft tonal fill so it
+   reads as the lower-prominence sibling of the primary action. */
+button.btn-secondary {
+  background: var(--surface-2);
+  color: var(--accent);
+  border: 2px solid var(--border);
+  border-radius: 0;
+  padding: 9px 20px;
+  cursor: pointer;
+  font-family: var(--font-pixel, ui-sans-serif, sans-serif);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  box-shadow: 0 4px 0 var(--border);
+  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.1s;
+  white-space: nowrap;
+}
+button.btn-secondary:hover:not(:disabled) {
+  background: var(--surface);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 0 var(--border);
+}
+button.btn-secondary:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 var(--border);
+}
+button.btn-secondary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 /* ── Ghost button ─────────────────────────────────────────────────────────── */
 button.btn-ghost {
   background: var(--surface);
@@ -161,10 +223,10 @@ button.btn-ghost {
   padding: 8px 14px;
   cursor: pointer;
   font-family: var(--font-pixel, ui-sans-serif, sans-serif);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.03em;
   box-shadow: 0 4px 0 #2aa8d4;
   transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.1s;
   white-space: nowrap;
@@ -184,10 +246,65 @@ button.btn-ghost:disabled {
   box-shadow: none;
 }
 
+/* ── Volume-style range slider ────────────────────────────────────────────── */
+/* Looks like a blocky game volume bar: a segmented track whose accent-filled
+   portion is driven by the inline --fill custom property (a %). */
+input[type="range"].volume-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 18px;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+input[type="range"].volume-range::-webkit-slider-runnable-track {
+  height: 18px;
+  border: 2px solid var(--border);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 10px, rgba(255,255,255,0.7) 10px 12px),
+    linear-gradient(to right, var(--accent) var(--fill, 0%), #ebe8f8 var(--fill, 0%));
+  box-shadow: inset 0 1px 2px rgba(100,80,200,0.12);
+}
+input[type="range"].volume-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 26px;
+  margin-top: -6px;
+  background: var(--accent);
+  border: 2px solid var(--accent-dim);
+  box-shadow: 0 2px 0 var(--accent-dim);
+  cursor: pointer;
+}
+/* Firefox */
+input[type="range"].volume-range::-moz-range-track {
+  height: 18px;
+  border: 2px solid var(--border);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 10px, rgba(255,255,255,0.7) 10px 12px),
+    #ebe8f8;
+}
+input[type="range"].volume-range::-moz-range-progress {
+  height: 18px;
+  background: var(--accent);
+}
+input[type="range"].volume-range::-moz-range-thumb {
+  width: 10px;
+  height: 26px;
+  border-radius: 0;
+  background: var(--accent);
+  border: 2px solid var(--accent-dim);
+  box-shadow: 0 2px 0 var(--accent-dim);
+  cursor: pointer;
+}
+
 /* ── Tag pill ─────────────────────────────────────────────────────────────── */
 .tag {
   display: inline-block;
-  font-size: 9px;
+  font-size: 11px;
   padding: 3px 10px;
   border-radius: 0;
   background: #eef1ff;
@@ -196,8 +313,9 @@ button.btn-ghost:disabled {
   margin-right: 4px;
   margin-bottom: 4px;
   font-family: var(--font-pixel, sans-serif);
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
 }
 
 .text-muted { color: var(--text-dim); }

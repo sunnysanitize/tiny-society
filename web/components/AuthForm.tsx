@@ -10,9 +10,12 @@ interface Props {
   onSuccess?: () => void;
   // Slightly tightens spacing/labels when embedded in a modal vs. full screen.
   compact?: boolean;
+  // When provided, a "play without an account" button renders directly beneath
+  // the sign-in button. Omitted in embedded/modal contexts (no guest option).
+  onGuest?: () => void;
 }
 
-export function AuthForm({ onSuccess, compact }: Props) {
+export function AuthForm({ onSuccess, compact, onGuest }: Props) {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -80,7 +83,6 @@ export function AuthForm({ onSuccess, compact }: Props) {
             type="text"
             value={username}
             onChange={e => setUsername(e.target.value)}
-            placeholder="pixelfish"
             required
             autoComplete="username"
             autoCapitalize="none"
@@ -96,7 +98,6 @@ export function AuthForm({ onSuccess, compact }: Props) {
             type="password"
             value={password}
             onChange={e => setPassword(e.target.value)}
-            placeholder="••••••••"
             required
             minLength={6}
             autoComplete={mode === "login" ? "current-password" : "new-password"}
@@ -126,6 +127,16 @@ export function AuthForm({ onSuccess, compact }: Props) {
         <button type="submit" className="btn" disabled={loading} style={{ marginTop: 4 }}>
           {loading ? "..." : mode === "login" ? "SIGN IN" : "CREATE ACCOUNT"}
         </button>
+
+        {onGuest && (
+          <button
+            type="button"
+            onClick={onGuest}
+            className="btn-secondary"
+          >
+            PLAY WITHOUT AN ACCOUNT
+          </button>
+        )}
       </form>
 
       <div style={{ marginTop: compact ? 14 : 20, textAlign: "center" }}>

@@ -85,6 +85,13 @@ export default function Page() {
     return () => document.body.classList.remove("entry-bg");
   }, [session, phase]);
 
+  // Reset the viewport to the top on every phase change so a new screen never
+  // inherits the previous one's scroll offset — otherwise leaving the tall,
+  // vertically-centered auth screen drops you mid-page and forces a scroll up.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [phase]);
+
   function reset() {
     setWorldId(null); setWorld(null); setResult(null);
     setPhase(session || guest ? "saves" : "auth");

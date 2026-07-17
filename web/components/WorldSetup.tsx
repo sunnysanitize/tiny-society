@@ -4,9 +4,7 @@ import { api } from "@/lib/api";
 import type { World } from "@/lib/types";
 
 export function WorldSetup({ onCreated }: { onCreated: (wid: string, world: World) => void }) {
-  const [prompt, setPrompt] = useState(
-    "A small fictional university island with 25 students, a few clubs, two rival dorms, and casual campus drama."
-  );
+  const [prompt, setPrompt] = useState("");
   const [pop, setPop] = useState(25);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -69,19 +67,37 @@ export function WorldSetup({ onCreated }: { onCreated: (wid: string, world: Worl
               style={{ paddingLeft: 28, lineHeight: 1.7 }}
             />
           </div>
+          {/* description */}
+          <div style={{ marginTop: 12, fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.6 }}>
+            The setting your society grows from. Sketch the place, its groups, and the tensions between them. The AI turns it into characters, relationships, and the drama that unfolds.
+          </div>
         </div>
 
         {/* Population */}
-        <div style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 16 }}>
-          <div className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", letterSpacing: "0.1em", flexShrink: 0 }}>
-            TARGET POPULATION
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+            <div className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", letterSpacing: "0.1em" }}>
+              TARGET POPULATION
+            </div>
+            <span className="font-pixel" style={{ fontSize: 12, color: "var(--accent)", marginLeft: "auto" }}>
+              {pop}
+            </span>
           </div>
-          <input
-            type="number" min={5} max={60} value={pop}
-            onChange={(e) => setPop(parseInt(e.target.value) || 25)}
-            style={{ width: 80 }}
-          />
-          <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+
+          {/* volume-bar-style slider */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", flexShrink: 0 }}>5</span>
+            <input
+              type="range" min={5} max={60} step={1} value={pop}
+              className="volume-range"
+              onChange={(e) => setPop(parseInt(e.target.value))}
+              style={{ ["--fill" as any]: `${((pop - 5) / (60 - 5)) * 100}%` }}
+            />
+            <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", flexShrink: 0 }}>60</span>
+          </div>
+
+          {/* quick presets */}
+          <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
             {[5, 10, 25, 50].map(n => (
               <button key={n} onClick={() => setPop(n)} style={{
                 padding: "4px 10px", cursor: "pointer", fontSize: 9,
@@ -93,6 +109,11 @@ export function WorldSetup({ onCreated }: { onCreated: (wid: string, world: Worl
               }}>{n}</button>
             ))}
           </div>
+
+          {/* description */}
+          <div style={{ marginTop: 12, fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.6 }}>
+            How many characters live in your world. A larger population means more relationships and richer social drama, but each resident adds simulation time to every day.
+          </div>
         </div>
 
         <div className="game-divider" />
@@ -100,7 +121,7 @@ export function WorldSetup({ onCreated }: { onCreated: (wid: string, world: Worl
         {/* Submit */}
         <button
           className="btn"
-          disabled={loading}
+          disabled={loading || !prompt.trim()}
           onClick={submit}
           style={{ width: "100%", padding: "14px", fontSize: 10, letterSpacing: "0.15em", marginTop: 16 }}
         >

@@ -24,3 +24,6 @@ out/
 # Claude Code local state / agent memory
 .claude/projects/
 .claude/settings.local.json
+
+# Local documentation (temporarily excluded from new commits)
+/docs/

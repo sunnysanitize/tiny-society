@@ -23,7 +23,8 @@ beliefs and **plan** toward goals. Background agents evolve via deterministic ru
 engine aggregates agent stances into a **population forecast with a confidence score**, and at the
 end an LLM writes the town's story and grades the player's **prophecy**. No two runs are alike.
 
-> Deep-dive docs: **[CALCULATIONS.md](./CALCULATIONS.md)** (every metric & formula).
+> Research methods paper: **[CALCULATIONS.pdf](./docs/CALCULATIONS.pdf)** (formal definitions,
+> equations, model parameters, and methodological limitations).
 
 ---
 

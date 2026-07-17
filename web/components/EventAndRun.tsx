@@ -4,14 +4,12 @@ import { api } from "@/lib/api";
 import type { World } from "@/lib/types";
 import { ProphecyInput, QuestionInput } from "./Engagement";
 
-const DAY_OPTIONS = [7, 14, 30, 60];
-
 export function EventAndRun({ worldId, world, onWorldChange, onRun, onBegin }: {
   worldId: string; world: World; onWorldChange: (w: World) => void;
   onRun: (days: number, perDay: number) => void;
   onBegin: (perDay: number) => void;
 }) {
-  const [event, setEvent] = useState(world.starting_event || "A new entrepreneurship club launches with only 12 spots.");
+  const [event, setEvent] = useState(world.starting_event || "");
   const [days, setDays] = useState(30);
   const [perDay, setPerDay] = useState(8);
   const [saving, setSaving] = useState(false);
@@ -40,101 +38,100 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun, onBegin }: {
     <div className="panel" style={{ padding: "20px 24px" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-        <span style={{ color: "var(--gold)", fontSize: 12 }}>◉</span>
-        <span className="font-pixel" style={{ fontSize: 10, color: "var(--gold)", letterSpacing: "0.1em" }}>
+        <span style={{ color: "var(--accent)", fontSize: 12 }}>◉</span>
+        <span className="font-pixel" style={{ fontSize: 10, color: "var(--accent)", letterSpacing: "0.1em" }}>
           MISSION BRIEFING
         </span>
       </div>
-      <div style={{ height: 1, background: "linear-gradient(90deg, transparent, var(--gold), transparent)", marginBottom: 20 }} />
+      <div style={{ height: 1, background: "linear-gradient(90deg, transparent, var(--border), transparent)", marginBottom: 16 }} />
+
+      <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.6, marginBottom: 20 }}>
+        The spark that sets your world in motion, plus how long it should run. Set the opening event and the pace, then launch.
+      </div>
 
       {/* Event input */}
       <div style={{ marginBottom: 20 }}>
         <div className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", marginBottom: 8, letterSpacing: "0.1em" }}>
           STARTING EVENT
         </div>
-        <div style={{ position: "relative" }}>
-          <span style={{
-            position: "absolute", left: 12, top: 10,
-            fontSize: 12, color: "var(--gold)",
-            fontFamily: "ui-monospace, monospace", zIndex: 1, pointerEvents: "none",
-          }}>!</span>
-          <textarea
-            rows={2}
-            value={event}
-            onChange={e => setEvent(e.target.value)}
-            placeholder="describe the event that kicks off your simulation..."
-            style={{ paddingLeft: 30, borderColor: "rgba(255,215,0,0.3)", color: "var(--gold)" }}
-          />
+        <textarea
+          rows={2}
+          value={event}
+          onChange={e => setEvent(e.target.value)}
+          placeholder="describe the event that kicks off your simulation..."
+          style={{ lineHeight: 1.7 }}
+        />
+        <div style={{ marginTop: 12, fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.6 }}>
+          What your characters wake up to on day one. Everything that follows grows out of how each of them reacts to it.
         </div>
       </div>
 
-      {/* Prediction question — anchors the forecast */}
+      {/* Prediction question: anchors the forecast */}
       <QuestionInput worldId={worldId} initial={world.question}
         onSaved={q => onWorldChange({ ...world, question: q })} />
 
       {/* Prophecy */}
       <ProphecyInput worldId={worldId} initial={world.prophecy} />
 
-      {/* Options row */}
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 20 }}>
+      {/* Options */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 18, marginBottom: 20 }}>
         {/* Duration */}
         <div>
-          <div className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", marginBottom: 8, letterSpacing: "0.1em" }}>
-            FAST-FORWARD (DAYS)
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+            <div className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", letterSpacing: "0.1em" }}>
+              FAST-FORWARD (DAYS)
+            </div>
+            <span className="font-pixel" style={{ fontSize: 12, color: "var(--accent)", marginLeft: "auto" }}>{days}</span>
           </div>
-          <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-            {DAY_OPTIONS.map(d => (
-              <button key={d} onClick={() => setDays(d)} style={{
-                padding: "7px 12px", cursor: "pointer",
-                fontFamily: "var(--font-pixel, monospace)", fontSize: 9,
-                textTransform: "uppercase", letterSpacing: "0.05em",
-                border: `1px solid ${days === d ? "var(--gold)" : "var(--border)"}`,
-                background: days === d ? "rgba(255,215,0,0.08)" : "transparent",
-                color: days === d ? "var(--gold)" : "var(--text-dim)",
-                boxShadow: days === d ? "0 0 8px rgba(255,215,0,0.2)" : "none",
-                transition: "all 0.1s",
-              }}>
-                {d}D
-              </button>
-            ))}
-            {/* Free duration: type any number of days (clamped 1..1000). Highlights when
-                the value isn't one of the presets, so a custom run is visibly selected. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", flexShrink: 0 }}>1</span>
             <input
-              type="number" min={1} max={1000} value={days}
-              onChange={e => setDays(Math.max(1, Math.min(1000, parseInt(e.target.value) || 1)))}
-              aria-label="custom number of days"
-              style={{
-                width: 64, marginLeft: 3, fontSize: 11, textAlign: "center",
-                borderColor: DAY_OPTIONS.includes(days) ? "var(--border)" : "var(--gold)",
-                color: DAY_OPTIONS.includes(days) ? "var(--text-dim)" : "var(--gold)",
-              }}
+              type="range" min={1} max={60} step={1} value={days}
+              className="volume-range"
+              onChange={e => setDays(parseInt(e.target.value))}
+              style={{ ["--fill" as any]: `${((days - 1) / (60 - 1)) * 100}%` }}
             />
+            <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", flexShrink: 0 }}>60</span>
+          </div>
+          <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.5, marginTop: 6 }}>
+            How many days to run in one fast-forward.
           </div>
         </div>
 
         {/* AI per day */}
         <div>
-          <div className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", marginBottom: 8, letterSpacing: "0.1em" }}>
-            AI CHARACTERS / DAY
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+            <div className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", letterSpacing: "0.1em" }}>
+              AI CHARACTERS / DAY
+            </div>
+            <span className="font-pixel" style={{ fontSize: 12, color: "var(--accent)", marginLeft: "auto" }}>{perDay}</span>
           </div>
-          <input
-            type="number" min={1} max={20} value={perDay}
-            onChange={e => setPerDay(parseInt(e.target.value) || 8)}
-            style={{ width: 72 }}
-          />
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", flexShrink: 0 }}>1</span>
+            <input
+              type="range" min={1} max={20} step={1} value={perDay}
+              className="volume-range"
+              onChange={e => setPerDay(parseInt(e.target.value))}
+              style={{ ["--fill" as any]: `${((perDay - 1) / (20 - 1)) * 100}%` }}
+            />
+            <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", flexShrink: 0 }}>20</span>
+          </div>
+          <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.5, marginTop: 6 }}>
+            How many characters take a turn each day.
+          </div>
         </div>
 
         {/* Agent count indicator */}
-        <div style={{ marginLeft: "auto", textAlign: "right" }}>
-          <div className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", marginBottom: 4, letterSpacing: "0.1em" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", letterSpacing: "0.1em" }}>
             CHARACTERS LOADED
           </div>
-          <div className="font-pixel" style={{
-            fontSize: 18, color: world.agents.length > 0 ? "var(--accent)" : "var(--red)",
-            textShadow: "none",
+          <span className="font-pixel" style={{
+            fontSize: 18, marginLeft: "auto",
+            color: world.agents.length > 0 ? "var(--accent)" : "var(--red)",
           }}>
             {world.agents.length}
-          </div>
+          </span>
         </div>
       </div>
 
@@ -149,6 +146,10 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun, onBegin }: {
         </div>
       )}
 
+      <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.6, marginBottom: 10 }}>
+        Begin day by day to watch each day unfold and step in between days, or fast-forward to run straight through and review the outcome.
+      </div>
+
       {/* Primary: begin day-by-day. The town advances one day at a time, and you can
           nudge / inject events / add characters / set a prophecy between days. */}
       <button
@@ -157,7 +158,7 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun, onBegin }: {
         disabled={!canRun}
         style={{ width: "100%", padding: "14px", fontSize: 10, letterSpacing: "0.15em" }}
       >
-        {saving ? "SAVING EVENT..." : "▶  BEGIN — DAY BY DAY"}
+        {saving ? "SAVING EVENT..." : "▶  BEGIN DAY BY DAY"}
       </button>
 
       {/* Secondary: fast-forward straight through N days (the old batch behavior). */}
