@@ -13,18 +13,20 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Query saves table to keep the DB awake
+      - name: Call keepalive() to keep the DB awake
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           set -euo pipefail
-          status=$(curl -sS -o /dev/null -w "%{http_code}" \
-            "${SUPABASE_URL}/rest/v1/saves?select=id&limit=1" \
+          body=$(mktemp)
+          status=$(curl -sS -o "${body}" -w "%{http_code}" \
+            -X POST "${SUPABASE_URL}/rest/v1/rpc/keepalive" \
             -H "apikey: ${SUPABASE_ANON_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
-          echo "Supabase responded with HTTP ${status}"
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "Content-Type: application/json")
+          echo "Supabase responded with HTTP ${status}: $(cat "${body}")"
           if [ "${status}" -lt 200 ] || [ "${status}" -ge 300 ]; then
-            echo "Keep-alive ping failed (non-2xx). The project may be paused." >&2
+            echo "Keep-alive ping failed (non-2xx). Check the anon key, or the project may be paused." >&2
             exit 1
           fi
