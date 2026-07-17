@@ -29,7 +29,21 @@ Each run begins with a world, a population, and an event. Over 7–30 simulated 
 4. update relationships, influence, memories, and opinions; and
 5. roll those individual changes into daily social metrics and a final forecast summary.
 
-![Tiny Society AI interface](./web/public/tinysocietylanding.png)
+## What it looks like
+
+Here are the three main views you move between during a simulation.
+
+### Daily story
+
+![Daily story view](./web/public/story.png)
+
+### Relationship network
+
+![Relationship network view](./web/public/network.png)
+
+### Forecast
+
+![Population forecast view](./web/public/forecast.png)
 
 ## Run it on your machine
 
