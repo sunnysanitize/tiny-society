@@ -1,0 +1,30 @@
+name: Supabase Keep-Alive
+
+# Free-tier Supabase pauses a project after 7 days of no DB activity.
+# This runs a lightweight query every 3 days to reset that timer so the
+# project stays awake for occasional demos.
+
+on:
+  schedule:
+    - cron: "0 8 */3 * *" # every 3 days at 08:00 UTC
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query saves table to keep the DB awake
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          status=$(curl -sS -o /dev/null -w "%{http_code}" \
+            "${SUPABASE_URL}/rest/v1/saves?select=id&limit=1" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+          echo "Supabase responded with HTTP ${status}"
+          if [ "${status}" -lt 200 ] || [ "${status}" -ge 300 ]; then
+            echo "Keep-alive ping failed (non-2xx). The project may be paused." >&2
+            exit 1
+          fi
