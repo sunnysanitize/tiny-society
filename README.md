@@ -1,295 +1,316 @@
 # Tiny Society AI
 
-A multi-agent AI social simulation **and prediction engine**. Build a world, populate it with
-pixel characters (some based on real people), fire off an event, and watch a cast of LLM-driven
-agents reason, remember, reflect, form relationships, and shift opinions over 7–30 simulated days
-— then read the swarm's forecast of where it's all heading. Part living town,
-part swarm prediction engine.
+**An experimental multi-agent platform for studying memory, social structure, information
+exposure, and collective belief change in LLM-driven populations.**
 
-![Stack](https://img.shields.io/badge/backend-FastAPI-009688?style=flat-square) ![Stack](https://img.shields.io/badge/frontend-Next.js%2014-000000?style=flat-square) ![Stack](https://img.shields.io/badge/LLM-Anthropic%20%7C%20Groq%20%7C%20Mock-5A4FCF?style=flat-square) ![Stack](https://img.shields.io/badge/auth%2Bsaves-Supabase-3FCF8E?style=flat-square)
+Tiny Society AI simulates small societies of language-model agents over 7–30 virtual days.
+Agents remember events, form relationships, receive different information, revise topic stances,
+and act within a shared world. The system records how those individual changes become
+population-level patterns.
 
----
+> **Research status:** this is an exploratory simulation, not a calibrated model of human
+> behavior. Its forecasts describe simulated agents and should not be treated as real-world
+> predictions.
 
-## How it works
+**Technical supplement:** [Calculations and measurement definitions](./CALCULATIONS.pdf)
 
-Each simulated day a subset of agents is selected (weighted-probabilistic) to receive an LLM
-prompt containing their personality, **relevance-retrieved memories**, relationships, the world
-event, and their **personal feed** of what they've witnessed. They return structured JSON — an
-action (post / direct / amplify / comment), targets, emotional reaction, relationship deltas,
-influence changes, a new memory, a belief/stance shift, and an explanation — which the engine
-validates and applies. Targets reinterpret events through a **perception** layer; charged
-encounters spark **multi-turn exchanges**; agents periodically **reflect** to form higher-level
-beliefs and **plan** toward goals. Background agents evolve via deterministic rules. Every day the
-engine aggregates agent stances into a **population forecast with a confidence score**, and at the
-end an LLM writes the town's story and grades the player's **prophecy**. No two runs are alike.
+## Research overview
 
----
+The project is designed to support questions such as:
 
-## Features
+- How do memory, reflection, and planning affect an agent's later decisions?
+- How do relationships and network position change what information an agent sees?
+- When does a population converge on a shared stance, and when does it remain divided?
+- Which interactions produce the largest changes in group-level beliefs?
+- How do stochastic LLM responses interact with fixed numerical update rules?
 
-**Believable characters (Agents)**
-- **Relevance memory retrieval** — memories scored by relevance · recency · importance, not just recency.
-- **Reflection** — agents periodically synthesize higher-level insights from recent memories.
-- **Perception** — the same event lands differently depending on who receives it and their history.
-- **Goal-driven planning** + **multi-turn exchanges** for charged relationships.
+The unit of analysis is a simulated agent. Each agent has traits, goals, memories, relationships,
+influence, topic stances, and a personal feed. The main outputs are daily social metrics, stance
+means and disagreement, pivotal events, and a final narrative summary.
 
-**Living social world (OASIS style)**
-- **Real action space** — post (broadcast), direct (private), amplify (boost someone), comment.
-- **Per-agent feed** ranked by interest + influence + recency → echo chambers, virality, factions.
-- **World knowledge graph** — entities, relationships, and power structures extracted up front.
+## Relationship to prior work
 
-**Prediction engine**
-- Per-agent **belief/stance** on auto-derived topics, aggregated daily into a population distribution.
-- **Forecast** with **swarm confidence** (consensus vs. disagreement) and **pivotal-day** causal tracing.
+Tiny Society AI builds on the memory, reflection, and planning architecture introduced by Park et
+al. in *Generative Agents: Interactive Simulacra of Human Behavior* [1]. Both systems store agent
+experiences in natural language and retrieve memories using relevance, recency, and importance.
 
-**Engagement**
-- **Pixel-character avatars** (seeded, mood-driven expressions) + "based on a real person."
-- **Story view** — each day reads as a "chapter" with narrative beats.
-- **Nudges** — whisper advice to a character, inject an event, or **add a new character mid-run**
-  (a newcomer initialized for the current day whose arrival can move the forecast).
-- **Prophecy** — write a free-text prediction; the AI grades it against the outcome.
-- Responsive UI with an immersive pixel-town background.
+This implementation adds several mechanisms for population-level experiments:
 
-**Performance**
-- **Concurrent inference** — each day's agent reasoning fans out in parallel (`asyncio.gather`,
-  bounded by `LLM_MAX_CONCURRENCY`) and is applied sequentially for deterministic ordering.
-- **Tiered models** — routine turns route to a cheap model, pivotal/player-facing turns to a
-  strong one (`*_MODEL_CHEAP` / `*_MODEL_STRONG`).
+- Directed relationships with numeric strength and derived social categories
+- Per-agent information feeds based on witnesses, shared interests, influence, and recency
+- Topic-level stances and daily measures of population agreement
+- Probabilistic selection of agents for LLM reasoning
+- Fixed background updates for agents that are not selected
+- Explicit influence, relationship, and stance transition rules
+- Pivotal-day tracing and a final simulation forecast
 
----
+The Stanford study provides the architectural starting point. The
+[technical supplement](./CALCULATIONS.pdf) defines this project's formulas and implementation
+choices.
 
-## Screenshots
+## Simulation method
 
-![Story view](./web/public/story.png)
+### Initialization
 
-![Network view](./web/public/network.png)
+A run begins with a world prompt, a population of custom or generated agents, a starting event,
+and an optional prediction written by the user. The engine extracts entities, social structure,
+and stance topics before the first simulated day.
 
-![Forecast view](./web/public/forecast.png)
+### Daily update cycle
 
----
+1. **Select active agents.** A softmax-weighted sampler uses event relevance, influence, charged
+   relationships, and group membership. The default limit is eight reasoning agents per day.
+2. **Build individual context.** Each selected agent receives its traits, goals, relationships,
+   relevant memories, plan, witnessed events, and ranked personal feed.
+3. **Generate structured actions.** The LLM returns an action, targets, emotional response,
+   relationship intent, memory, explanation, and any stance shift.
+4. **Apply social interpretation.** Recipients can interpret the same action differently based on
+   personality and prior history. Charged relationships may create short multi-turn exchanges.
+5. **Update state.** The engine validates and applies relationship, influence, memory, and stance
+   changes in a fixed order.
+6. **Evolve background agents.** Agents without an LLM turn still receive deterministic bond,
+   group, stance, and influence updates.
+7. **Measure the population.** Daily metrics summarize the relationship graph, influence changes,
+   topic means, disagreement, and forecast confidence.
 
-## Architecture
+A simulated day contains morning, afternoon, evening, and night phases. Generated actions can run
+concurrently, but state changes are applied sequentially so a fixed set of outputs produces a
+consistent update order.
 
+## Measurements
+
+| Output | Interpretation |
+|---|---|
+| Relationship counts | Number of friendship, rivalry, conflict, romance, and alliance pairs |
+| Average relationship strength | Mean absolute strength across stored relationships |
+| Influence gainers and losers | Largest changes from each agent's initial influence |
+| Social fragmentation | Fraction of agents with no outgoing relationships |
+| Topic mean | Average population stance on a topic, from `-1` to `1` |
+| Topic uncertainty | Population standard deviation of stances on a topic |
+| Swarm confidence | One minus mean topic disagreement, clamped to `0–1` |
+| Pivotal days | Days with the largest aggregate movement in topic means |
+
+Swarm confidence measures agreement among simulated agents. It is **not** the probability that a
+forecast is correct. Complete definitions, equations, thresholds, and parameter ranges are in
+[CALCULATIONS.pdf](./CALCULATIONS.pdf).
+
+## Experimental use and reproducibility
+
+For a comparable set of runs, keep the following values fixed and report them with the results:
+
+- World prompt, starting event, and initial character definitions
+- LLM provider and exact model identifiers
+- Simulation length and reasoning-agent limit
+- Concurrency, model-tier, and recency settings
+- Any user interventions, injected events, or mid-run characters
+
+The `mock` provider supplies deterministic structured responses and is useful for testing the
+engine. Real LLM providers introduce run-to-run variation. Research comparisons should therefore
+use repeated runs and report distributions rather than a single outcome.
+
+## Research interface
+
+### Narrative timeline
+
+![Daily narrative and agent activity](./web/public/story.png)
+
+### Relationship network
+
+![Directed social relationship network](./web/public/network.png)
+
+### Population forecast
+
+![Topic forecast and confidence view](./web/public/forecast.png)
+
+## System architecture
+
+```text
+Next.js research interface
+    |  HTTP / Server-Sent Events
+    v
+FastAPI API  ----  optional Supabase authentication and saved runs
+    |
+    v
+Simulation engine
+  |-- World graph       entities, relationships, groups, and stance topics
+  |-- Agent selector    weighted probabilistic sampling
+  |-- Planner           short-term goal intentions
+  |-- Reasoner          LLM context and structured action generation
+  |-- Memory            relevance, recency, and importance retrieval
+  |-- Observation       witness routing and personal feed ranking
+  |-- Perception        recipient-specific interpretation
+  |-- Multi-turn        short exchanges for charged interactions
+  |-- Applicator        validated state transitions
+  |-- Deterministic     background-agent updates
+  |-- Metrics           social and belief aggregation
+  `-- Reporter          final narrative and structured forecast
+    |
+    v
+In-memory run state  ----  optional Supabase persistence
 ```
-Next.js 14 frontend (React, Tailwind, D3 force graph, pixel avatars, responsive)
-    │   HTTP / Server-Sent Events
-    ▼
-FastAPI backend  ──  Supabase (auth + saved worlds)
-    │
-    ▼
-Simulation engine (daily tick: morning → afternoon → evening → night)
-  ├── World graph      — one-time entity/relationship/power-structure + topic extraction
-  ├── Agent selector   — softmax-weighted sampling (event proximity, influence, conflict, groups)
-  ├── Planner          — short-term goal intentions, refreshed when stale
-  ├── AI reasoner      — LLM → structured action JSON (incl. action_kind + stance shift)
-  ├── Perception       — targets reinterpret incoming events through their own character
-  ├── Multi-turn       — charged encounters spark back-and-forth exchanges
-  ├── Reflector        — periodic higher-level belief synthesis
-  ├── Observation/feed — interest+hot-score routing → per-agent feeds
-  ├── Applicator       — validates + applies relationship / memory / influence / stance updates
-  ├── Deterministic    — background agents who didn't get an LLM call
-  ├── Vignettes        — occasional theatrical moments (dreams, catchphrases, announcements)
-  ├── Metrics          — relationship counts, influence, belief means + uncertainty + confidence
-  └── Reporter         — final narrative + structured forecast + prophecy grading
-    │
-    ▼
-In-memory world store (per session) · Supabase persistence for saves
-```
 
----
+## Repository structure
 
-## Project layout
-
-```
+```text
 engine/
-  main.py                 REST + SSE endpoints
-  models.py               Pydantic models (Agent, World, WorldGraph, Memory, Forecast, …)
-  state.py                In-memory world store
-  llm.py                  LLM adapter — Anthropic / OpenAI-compat / mock (marker-dispatched)
-  auth.py                 Supabase JWT auth dependency
-  supabase_db.py          Saved-world persistence (Supabase)
+  main.py                    FastAPI routes and streaming endpoints
+  models.py                  Agent, world, memory, and forecast schemas
+  llm.py                     Anthropic, OpenAI-compatible, and mock adapters
+  state.py                   In-memory run store
   simulation/
-    engine.py             Daily tick loop; orchestrates everything below
-    selector.py           Softmax-weighted probabilistic agent selection
-    reasoner.py           Builds context prompts; parses structured actions
-    perception.py         Subjective reinterpretation of incoming events
-    reflector.py          Periodic higher-level belief synthesis
-    planner.py            Goal-driven short-term intentions
-    observation.py        Witness routing + interest/hot-score feed ranking
-    worldgraph.py         Entity/relationship/power-structure + topic extraction
-    stance.py             Per-agent belief initialization
-    applicator.py         Applies relationship / memory / influence / stance updates
-    deterministic.py      Background rules for non-AI agents
-    metrics.py            Macro metrics + belief aggregation + swarm confidence
-    vignette.py           Theatrical character moments
-    prophecy.py           Grades the player's prediction against the outcome
-    digest.py             Punchy day-card assembly
-    generator.py          LLM-generates filler characters
-    reporter.py           Final narrative report + structured forecast
+    engine.py                Daily simulation loop
+    selector.py              Probabilistic active-agent selection
+    reasoner.py              Context assembly and structured actions
+    memory.py                Memory scoring and retrieval
+    observation.py           Witness routing and feed ranking
+    perception.py            Recipient-specific interpretation
+    planner.py               Short-term planning
+    reflector.py             Higher-order memory synthesis
+    applicator.py            Relationship, influence, memory, and stance updates
+    deterministic.py         Background-agent rules
+    metrics.py               Population measurements
+    reporter.py              Final report and forecast
+  tests/test_realism.py      Mock-provider simulation tests
 
 web/
-  app/page.tsx            Main flow: setup → characters → event → simulation
-  components/
-    WorldSetup, CharacterEditor, EventAndRun, SimulationView, RelationshipGraph,
-    Inspector, CharacterPanel, StoryChapter, Engagement, PixelAvatar, AuthScreen, …
-  lib/api.ts, lib/types.ts, lib/useViewport.ts
+  app/                       Next.js application routes
+  components/                Setup, simulation, network, and forecast views
+  lib/                       API client, types, authentication, and utilities
+
+CALCULATIONS.pdf             Methods and calculations supplement
 ```
 
----
+## Running locally
 
-## LLM providers
+### 1. Backend
 
-Set `LLM_PROVIDER` in `engine/.env`:
+```bash
+cd engine
+python3 -m venv venv
+source venv/bin/activate     # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn main:app --reload --port 8000
+```
 
-| Provider | Cost | Notes |
+Verify the backend:
+
+```bash
+curl http://localhost:8000/health
+```
+
+### 2. Frontend
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+The interface runs at [http://localhost:3000](http://localhost:3000). Interactive API
+documentation is available at [http://localhost:8000/docs](http://localhost:8000/docs).
+
+## LLM configuration
+
+Set `LLM_PROVIDER` in `engine/.env`.
+
+| Provider | Purpose | Key requirement |
 |---|---|---|
-| `mock` | Free, no key | Deterministic fake JSON. Full end-to-end smoke-test with no API key. |
-| `openai_compat` | Free tier available | Groq (free fast Llama), OpenRouter, or OpenAI. |
-| `anthropic` | Paid (cents per run) | Best structured-output quality. Recommended for production. |
+| `mock` | Deterministic engine tests and local development | None |
+| `openai_compat` | OpenAI-compatible services such as Groq or OpenRouter | Provider API key |
+| `anthropic` | Anthropic models | Anthropic API key |
+
+Example configurations:
 
 ```env
-# Groq (free tier, good for testing)
+# Deterministic local run
+LLM_PROVIDER=mock
+
+# OpenAI-compatible provider
 LLM_PROVIDER=openai_compat
 OPENAI_COMPAT_BASE_URL=https://api.groq.com/openai/v1
-OPENAI_COMPAT_API_KEY=gsk_...
+OPENAI_COMPAT_API_KEY=...
 OPENAI_COMPAT_MODEL=llama-3.3-70b-versatile
 
 # Anthropic
 LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_API_KEY=...
 ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
-
-# Mock (no key)
-LLM_PROVIDER=mock
 ```
 
-**Optional — performance & cost tuning** (all backward compatible; unset = previous behavior):
+Optional performance controls:
 
 ```env
-LLM_MAX_CONCURRENCY=6                 # max simultaneous LLM calls in the day fan-out
-# Tiered models — cheap for routine turns, strong for pivotal/player-facing ones.
-# Each falls back to the single *_MODEL var above if unset.
+LLM_MAX_CONCURRENCY=6
 ANTHROPIC_MODEL_STRONG=claude-sonnet-4-5-20250929
 ANTHROPIC_MODEL_CHEAP=claude-haiku-4-5-20251001
 OPENAI_COMPAT_MODEL_STRONG=llama-3.3-70b-versatile
 OPENAI_COMPAT_MODEL_CHEAP=llama-3.1-8b-instant
 ```
 
-**Optional — Supabase (auth + saved worlds).** Without these, the core simulation works fully;
-only the save/load feature is disabled.
+Supabase is optional. Without it, the simulation works but saved runs and authentication are
+disabled. Configuration variables are documented in `engine/.env.example` and
+`web/.env.local.example`.
 
-```env
-SUPABASE_URL=https://<project>.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=...        # engine only
-# web/.env.local:
-NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-# web/.env.local — optional, overrides the synthetic-email domain (default users.mirofish.app):
-NEXT_PUBLIC_AUTH_EMAIL_DOMAIN=users.mirofish.app
-```
-Run `supabase_migration.sql` in the Supabase SQL editor to create the `saves` table (incl. the
-`service_role` grants).
+## Tests
 
-**Auth is username + password.** Supabase Auth logs in by email, so each account gets a
-permanent synthetic login email (`<username>@<NEXT_PUBLIC_AUTH_EMAIL_DOMAIN>`); the username and
-an optional recovery email are stored in `user_metadata`. Because synthetic addresses can't
-receive mail, **disable email confirmation** in Supabase (Authentication → Providers → Email →
-turn off "Confirm email") so signup logs the user straight in. The recovery-email reset flow is
-not built yet — the address is collected and stored now so it works once that ships.
-
----
-
-## Getting started
+The simulation tests use the mock provider and do not require a paid API key.
 
 ```bash
-# 1 — Engine (backend)
 cd engine
-python3 -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env                                # pick your LLM provider
-uvicorn main:app --reload --port 8000
-# verify: curl http://localhost:8000/health  →  {"ok":true,"llm_provider":"..."}
-
-# 2 — Web (frontend)
-cd web
-npm install
-npm run dev          # http://localhost:3000
+pytest -q
 ```
 
----
+For frontend verification:
 
-## User flow
+```bash
+cd web
+npm run build
+```
 
-| Step | What you do |
-|---|---|
-| 1 | Write a 1-paragraph world prompt and pick a target population. |
-| 2 | Add custom characters — name, role, traits, goals, mood, groups, a **pixel avatar**, and optionally "based on a real person." |
-| 3 | Auto-generate filler characters to hit the population target. |
-| 4 | Set a starting event, and optionally write a **prophecy** (free-text prediction). |
-| 5 | Pick simulation length (7-day quick or 30-day default) and run — streams day-by-day via SSE. |
-| 6 | Follow the **story** — each day is a chapter of beats; scrub the timeline, click characters, read the **feed**, watch the **forecast** + swarm confidence move. |
-| 7 | **Nudge** — whisper advice to a character, inject an event, or add a new character mid-run. |
-| 8 | **Chat** with any character in-character. |
-| 9 | Read the final narrative report and the AI's **verdict** on your prophecy. |
-| 10 | **Continue** a finished run for more days, or **save/load** worlds (Supabase). |
+## API summary
 
----
-
-## API reference
-
-| Method | Path | Description |
+| Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/health` | LLM provider status |
-| `POST` | `/world` | Create a world |
-| `GET` | `/world/{id}` | Get world state |
-| `POST` | `/world/{id}/character` | Add a custom character (incl. avatar / based_on) |
-| `POST` | `/world/{id}/inject-character` | Add a character mid-run — initialized for the current day, joins on continue |
-| `DELETE` | `/world/{id}/character/{agent_id}` | Remove a character |
-| `POST` | `/world/{id}/generate-fillers` | LLM-generate filler characters |
-| `POST` | `/world/{id}/event` | Set the starting event |
-| `POST` | `/world/{id}/inject-event` | Queue a player-authored event for the next day |
-| `POST` | `/world/{id}/prophecy` | Set the player's free-text prediction |
-| `POST` | `/world/{id}/simulate`(`/stream`) | Run simulation (blocking / SSE). Optional `pause_on_days` stops the stream on chosen days. |
-| `POST` | `/world/{id}/simulate/continue`(`/stream`) | Continue from last day (blocking / SSE). Also honors `pause_on_days`. |
-| `GET` | `/world/{id}/result` | Fetch latest result (incl. forecast + prophecy verdict) |
-| `POST` | `/world/{id}/agent/{agent_id}/chat` | Chat with a character |
-| `POST` | `/world/{id}/agent/{agent_id}/advise` | Whisper advice (enters the character's memory) |
-| `*` | `/saves`, `/saves/{id}`, `/saves/{id}/load` | Save / list / load worlds (auth required) |
+| `GET` | `/health` | Report backend and LLM-provider status |
+| `POST` | `/world` | Create a simulated world |
+| `GET` | `/world/{id}` | Read the current world state |
+| `POST` | `/world/{id}/character` | Add an initial agent |
+| `POST` | `/world/{id}/inject-character` | Add an agent during a run |
+| `DELETE` | `/world/{id}/character/{agent_id}` | Remove an agent |
+| `POST` | `/world/{id}/generate-fillers` | Generate additional agents |
+| `POST` | `/world/{id}/event` | Set the initial event |
+| `POST` | `/world/{id}/inject-event` | Queue a new event |
+| `POST` | `/world/{id}/prophecy` | Record a user prediction |
+| `POST` | `/world/{id}/simulate/stream` | Stream a simulation run |
+| `POST` | `/world/{id}/simulate/continue/stream` | Continue an existing run |
+| `GET` | `/world/{id}/result` | Read the latest measurements and forecast |
+| `POST` | `/world/{id}/agent/{agent_id}/chat` | Interview an agent in character |
+| `POST` | `/world/{id}/agent/{agent_id}/advise` | Add user advice to an agent's memory |
+| `*` | `/saves`, `/saves/{id}`, `/saves/{id}/load` | Manage authenticated saved runs |
 
-Interactive docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+## Limitations
 
----
+- The model has not been validated against longitudinal human interaction data.
+- LLM outputs vary by provider, model version, prompt, and sampling behavior.
+- Numeric thresholds and weights are modeling assumptions, not estimated human parameters.
+- Relationship labels, influence, and confidence are simulation-specific constructs.
+- The active world store is in memory; Supabase persistence is optional.
+- The intended scale is tens of agents, not population-scale social forecasting.
+- Mock-provider tests verify software behavior but do not establish real-LLM output quality.
+- User interventions make a run path-dependent and should be reported in experimental results.
 
-## Cost notes
+## Reference
 
-The realism layers (planning, multi-turn exchanges, perception, reflection, vignettes,
-world-graph, forecasting, prophecy) add LLM calls well beyond a one-call-per-agent baseline, so
-runs are richer but heavier than earlier versions. On the **mock** provider everything is free
-and runs end-to-end with no key. Two levers keep paid runs fast and cheap (see
-[PERFORMANCE_AND_LIVE_EDITING.md](./PERFORMANCE_AND_LIVE_EDITING.md)):
-- **Concurrent inference** — each day's reasoning fans out in parallel (tune `LLM_MAX_CONCURRENCY`),
-  so a day takes ≈ one call's latency instead of N × (latency + delay).
-- **Tiered models** — route routine turns to a cheap model (`*_MODEL_CHEAP`) and reserve a strong
-  model for pivotal/player-facing ones (`*_MODEL_STRONG`).
+[1] J. S. Park, J. C. O'Brien, C. J. Cai, M. R. Morris, P. Liang, and M. S. Bernstein,
+“Generative Agents: Interactive Simulacra of Human Behavior,” *Proceedings of the 36th Annual ACM
+Symposium on User Interface Software and Technology (UIST '23)*, 2023, pp. 1–22.
+[doi:10.1145/3586183.3606763](https://doi.org/10.1145/3586183.3606763)
 
-Also tune `reasoning_agents_per_day` to trade depth for cost.
+## Technical supplement
 
----
+The research supplement contains the complete formulas for social metrics, stance aggregation,
+memory retrieval, feed ranking, agent selection, relationship and influence updates, background
+evolution, and forecast confidence:
 
-## Known limitations
-
-- **In-memory runtime store** — active worlds live in memory; persistence is via Supabase saves.
-- **Mock-verified** — the engine is verified end-to-end on the mock provider; a real-LLM quality
-  pass and an automated test suite are still open (see [BACKLOG.md](./BACKLOG.md)).
-- **Prediction `question` not yet wired to the UI** — `prophecy` is; see [BACKLOG.md](./BACKLOG.md) §③.
-- **Scale** — designed for tens of characters, not OASIS-scale millions. Concurrent inference and
-  tiered models are implemented; the distributed Environment Server / clustered inferencer for
-  true 1M-agent scale is intentionally out of scope.
-
----
-
-## Roadmap
-
-Design rationale and status: **[REALISM_ANALYSIS.md](./REALISM_ANALYSIS.md)**. Concrete next
-steps with implementation notes: **[BACKLOG.md](./BACKLOG.md)**. Original design doc:
-[projectplan.md](./projectplan.md).
+**[Tiny Society AI: Calculations and Measurements (PDF)](./CALCULATIONS.pdf)**
