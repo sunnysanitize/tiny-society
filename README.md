@@ -9,9 +9,8 @@ about real people.
 - Here is **[Calculations and Measurements](./CALCULATIONS.pdf)**. It contains the formulas,
   thresholds, and update rules that the simulation actually runs on.
 
-The project takes inspiration from Park et al.'s
-[*Generative Agents*](https://doi.org/10.1145/3586183.3606763) research. The overview explains what
-Tiny Society AI borrows from that work and what it adds.
+The project takes motivation from Park et al.'s
+[*Generative Agents*](https://doi.org/10.1145/3586183.3606763) research. 
 
 ## What happens in a run
 
@@ -147,5 +146,3 @@ CALCULATIONS.pdf         Mathematical methods supplement
 - “Swarm confidence” means the agents agree with each other. It does not mean the forecast is
   likely to be right.
 
-The [Research Overview](./RESEARCH_OVERVIEW.pdf) has the more formal version of these caveats and
-the responsible-use notes.
