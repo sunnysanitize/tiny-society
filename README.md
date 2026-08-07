@@ -6,12 +6,6 @@ relationships, see different information, and change their minds over time.
 It is a research prototype, so treat its results as behavior inside the model—not as predictions
 about real people.
 
-## Start with the two write-ups
-
-If you want the idea before digging into the code, these are the two main documents:
-
-- Here is the **[Research Overview](./RESEARCH_OVERVIEW.pdf)**. It explains what the project is
-  trying to study, how a simulation is structured, and what its limits are.
 - Here is **[Calculations and Measurements](./CALCULATIONS.pdf)**. It contains the formulas,
   thresholds, and update rules that the simulation actually runs on.
 
