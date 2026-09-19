@@ -73,11 +73,19 @@ def test_trim_leaves_short_text_untouched():
     assert reasoner._trim("I kept to myself today.", 280) == "I kept to myself today."
 
 
+def test_report_prompt_does_not_leak_section_names():
+    from simulation import reporter
+    sys_prompt = reporter.REPORT_SYSTEM
+    assert "(if given)" not in sys_prompt, "invites the model to narrate absent sections"
+    assert "never mention" in sys_prompt.lower(), "must forbid naming absent sections"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
     test_trim_never_cuts_mid_word,
     test_trim_leaves_short_text_untouched,
+    test_report_prompt_does_not_leak_section_names,
 ]
 
 
