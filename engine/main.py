@@ -365,7 +365,7 @@ def cancel_simulation(wid: str):
 
 
 class AdvanceRequest(BaseModel):
-    reasoning_agents_per_day: int = Field(default=8, ge=1, le=30)
+    reasoning_agents_per_day: int = Field(default=7, ge=1, le=7)
     seed: int = 42
 
 

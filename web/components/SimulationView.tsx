@@ -11,7 +11,7 @@ import { useViewport } from "@/lib/useViewport";
 type Selection = { kind: "node"; id: string } | { kind: "edge"; key: string } | null;
 type Tab = "story" | "network" | "forecast" | "cast";
 
-const CONTINUE_OPTIONS = [7, 14, 30];
+const CONTINUE_OPTIONS = [1, 3, 7];
 
 // Story tab (desktop): the side-by-side row is pinned to this height so the small
 // interactive display drives the length and stays uncompressed. The chapter column
@@ -133,7 +133,7 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
   }, [lastSnap?.day]);
 
   const [continueDays, setContinueDays] = useState(7);
-  const [continuePerDay, setContinuePerDay] = useState(8);
+  const [continuePerDay, setContinuePerDay] = useState(7);
   const [showContinueMenu, setShowContinueMenu] = useState(false);
   const { isNarrow } = useViewport();
 
@@ -340,11 +340,11 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
                         }}>{d}D</button>
                       ))}
                     </div>
-                    {/* Free duration: any number of days (clamped 1..1000). */}
+                    {/* Free duration: any number of days (clamped 1..7). */}
                     <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
                       <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", flexShrink: 0 }}>OR DAYS</span>
-                      <input type="number" min={1} max={1000} value={continueDays}
-                        onChange={e => setContinueDays(Math.max(1, Math.min(1000, parseInt(e.target.value) || 1)))}
+                      <input type="number" min={1} max={7} value={continueDays}
+                        onChange={e => setContinueDays(Math.max(1, Math.min(7, parseInt(e.target.value) || 1)))}
                         style={{
                           flex: 1, fontSize: 11, textAlign: "center",
                           borderColor: CONTINUE_OPTIONS.includes(continueDays) ? "var(--border)" : "var(--accent)",
@@ -353,8 +353,8 @@ export function SimulationView({ result, world, worldId, isLive = false, onConti
                     </div>
                     <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
                       <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-dim)", flexShrink: 0 }}>AI/DAY</span>
-                      <input type="number" min={1} max={20} value={continuePerDay}
-                        onChange={e => setContinuePerDay(parseInt(e.target.value) || 8)}
+                      <input type="number" min={1} max={7} value={continuePerDay}
+                        onChange={e => setContinuePerDay(Math.max(1, Math.min(7, parseInt(e.target.value) || 1)))}
                         style={{ flex: 1, fontSize: 11 }} />
                     </div>
                     <button className="btn" onClick={() => { setShowContinueMenu(false); onContinue(continueDays, continuePerDay); }}
