@@ -283,14 +283,6 @@ def _seed_relationships(agents: list[Agent], world_prompt: str) -> None:
                     strength = 0.25
                 strength = max(0.1, min(0.7, strength))
                 mutual = bool(rel.get("mutual", True))
-                # A one-sided romance seed contradicts the engine's own realism
-                # invariant (romance edges must be mutual -- see
-                # test_every_romance_edge_is_mutual). An established day-0 couple is
-                # plausible; unrequited longing is not representable as a romance
-                # edge, so it must not be seeded as one. One-sided rivalry, trust and
-                # influence stay legitimate and are still honoured.
-                if rel_type == "romance":
-                    mutual = True
                 # Seed via the consequence layer so the affinity carries the correct SIGN for
                 # its type (a seeded rivalry/conflict is negative) and survives `realize`.
                 consequence.seed_relationship(a, b, rel_type, strength, mutual)
