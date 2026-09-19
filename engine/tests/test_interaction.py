@@ -120,6 +120,50 @@ def test_blank_roles_do_not_collide():
     assert len(set(norm)) == len(norm), sorted(norm)
 
 
+def test_action_naming_nobody_is_rejected():
+    import json
+    from models import Agent
+    from simulation import reasoner
+    actor = Agent(id="id_a", name="Jasper", role="Lead Programmer")
+    raw = json.dumps({
+        "action": "work on the drone",
+        "action_kind": "interact",
+        "target_agents": [],
+        "about_agents": [],
+        "emotional_reaction": "anxious",
+        "intents": {},
+        "utterance": "I kept my head down and worked.",
+        "stance_shift": {},
+        "new_memory": "I worked on the drone's code today.",
+        "explanation": "Avoidant, so I stayed with the machine.",
+    })
+    assert reasoner._parse_action(actor, raw) is None
+
+
+def test_action_with_only_about_agents_is_accepted():
+    import json
+    from models import Agent
+    from simulation import reasoner
+    actor = Agent(id="id_a", name="Jasper", role="Lead Programmer")
+    raw = json.dumps({
+        "action": "work on the drone",
+        "action_kind": "interact",
+        "target_agents": [],
+        "about_agents": ["Milo"],
+        "emotional_reaction": "anxious",
+        "intents": {},
+        "utterance": "Milo will find it eventually. Let him look.",
+        "stance_shift": {},
+        "new_memory": "I worked alone on the drone, thinking about Milo.",
+        "explanation": "I avoid him but cannot stop competing with him.",
+    })
+    act = reasoner._parse_action(actor, raw)
+    assert act is not None
+    assert act.about_agents == ["Milo"]
+    assert act.target_agents == []
+    assert act.intents == {}, "referents must not be given intents"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -129,6 +173,8 @@ _TESTS = [
     test_roles_are_unique_across_batches,
     test_normalize_role_ignores_articles_and_case,
     test_blank_roles_do_not_collide,
+    test_action_naming_nobody_is_rejected,
+    test_action_with_only_about_agents_is_accepted,
 ]
 
 

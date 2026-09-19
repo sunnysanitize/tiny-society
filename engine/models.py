@@ -274,6 +274,11 @@ class AgentAction(BaseModel):
     # default "interact" preserves prior behavior for any caller that omits it.
     action_kind: ActionKind = "interact"
     target_agents: list[str] = []
+    # People this action is ABOUT who were not present and do not know — a referent,
+    # not an interaction. Referents get no consequence bid, no perception routing and
+    # no relationship movement; encoding them as targets would move a relationship the
+    # other agent never participated in.
+    about_agents: list[str] = []
     emotional_reaction: Mood = "calm"
     # Per-target SOCIAL INTENT verb (befriend / confide / flirt / court / ally / confront /
     # undermine / distance / …). The verb — not a number — is what the agent controls; the
