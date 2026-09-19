@@ -99,6 +99,27 @@ def test_normalize_role_ignores_articles_and_case():
     assert a == b, (a, b)
 
 
+def test_blank_roles_do_not_collide():
+    from models import World
+    from simulation import generator
+    # A provider that omits `role` entirely — reachable via the _safe_json salvage
+    # path, which accepts an object on `name` alone. Before the fix these all
+    # defaulted to "member" without ever being checked for uniqueness.
+    original = generator._fetch_batch
+    generator._fetch_batch = lambda world, count, names, roles, attempt=0: [
+        {"name": f"Blank{i}", "traits": ["quiet"], "goals": ["get by"],
+         "mood": "calm", "groups": ["club"], "memories": ["I said little."]}
+        for i in range(count)
+    ]
+    try:
+        world = World(prompt="a school club", target_population=7)
+        agents = generator.generate_fillers(world, 6)
+    finally:
+        generator._fetch_batch = original
+    norm = [generator._normalize_role(a.role) for a in agents]
+    assert len(set(norm)) == len(norm), sorted(norm)
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -107,6 +128,7 @@ _TESTS = [
     test_report_prompt_does_not_leak_section_names,
     test_roles_are_unique_across_batches,
     test_normalize_role_ignores_articles_and_case,
+    test_blank_roles_do_not_collide,
 ]
 
 

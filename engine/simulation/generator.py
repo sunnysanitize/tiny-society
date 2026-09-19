@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -133,11 +134,13 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
             for entry in entries:
                 if len(fresh) >= batch:
                     break
-                role_key = _normalize_role(entry.get("role") or "")
-                if role_key and role_key in existing_roles:
+                # Default here must match what Agent(...) will actually store below,
+                # or a blank role slips past de-duplication and materialises as a
+                # duplicate "member".
+                role_key = _normalize_role(entry.get("role") or "member")
+                if role_key in existing_roles:
                     continue
-                if role_key:
-                    existing_roles.add(role_key)
+                existing_roles.add(role_key)
                 fresh.append(entry)
             if len(fresh) >= batch:
                 break
@@ -166,9 +169,18 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
             break
 
         for entry in fresh:
-            name = (entry.get("name") or "").strip() or f"Agent-{uuid.uuid4().hex[:4]}"
+            raw_name = (entry.get("name") or "").strip()
+            if not raw_name:
+                # Deterministic placeholder. uuid4 here made two otherwise-identical
+                # runs produce different rosters.
+                stem = hashlib.sha256(f"{world.prompt}|{len(out)}".encode()).hexdigest()[:4]
+                raw_name = f"Agent-{stem}"
+            name = raw_name
             if name in existing_names:
-                name = f"{name}-{uuid.uuid4().hex[:3]}"
+                # Deterministic collision suffix, for the same reason: this fed
+                # _seed_relationships' prompt and made romance-mutuality flaky.
+                stem = hashlib.sha256(f"{name}|{len(existing_names)}".encode()).hexdigest()[:3]
+                name = f"{name}-{stem}"
             existing_names.add(name)
             raw_memories = entry.get("memories") or []
             # Backstory memories exist from before the sim (day 0). Heuristic importance.
