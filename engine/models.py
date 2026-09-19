@@ -163,7 +163,7 @@ class CharacterInput(BaseModel):
 
 class WorldInput(BaseModel):
     prompt: str
-    target_population: int = Field(default=25, ge=5, le=60)
+    target_population: int = Field(default=7, ge=5, le=7)
 
 
 class World(BaseModel):
@@ -186,8 +186,8 @@ class World(BaseModel):
 
 
 class SimulationConfig(BaseModel):
-    days: int = Field(default=30, ge=1, le=1000)
-    reasoning_agents_per_day: int = Field(default=8, ge=1, le=30)
+    days: int = Field(default=7, ge=1, le=7)
+    reasoning_agents_per_day: int = Field(default=7, ge=1, le=7)
 
 
 class RelationshipEffect(BaseModel):

@@ -307,7 +307,8 @@ def test_stance_grounded_in_disposition():
 # ── SYSTEM-LEVEL INVARIANTS (full engine on mock) ──────────────────────────────────
 
 # A modest-length run is enough for arcs to form without being expensive on mock.
-_SYS_DAYS = 18
+# Capped at 7 to match SimulationConfig.days' hard cap (engine/models.py).
+_SYS_DAYS = 7
 _SYS_POP = 12
 _SYS_RPD = 3
 _SYS_SEED = 7

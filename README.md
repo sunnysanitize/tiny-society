@@ -21,7 +21,7 @@ Tiny Society AI borrows from that work and what it adds.
 
 ## What happens in a run
 
-Each run begins with a world, a population, and an event. Over 7–30 simulated days, agents:
+Each run begins with a world, a population, and an event. Over 7 simulated days, a cast of up to 7 agents:
 
 1. pull up relevant memories and make short-term plans;
 2. see their own version of what is happening through a personal feed;
