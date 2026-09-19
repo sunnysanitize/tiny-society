@@ -5,7 +5,7 @@ import logging
 import re
 import uuid
 
-from models import Agent, World
+from models import Agent, World, normalize_mood
 from llm import call_llm
 from .memory import make_memory
 from . import consequence
@@ -102,7 +102,11 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
                 role=entry.get("role") or "citizen",
                 traits=entry.get("traits") or [],
                 goals=entry.get("goals") or [],
-                mood=entry.get("mood") or "calm",
+                # The model is given the Mood enum in FILLER_SYSTEM but still returns
+                # off-enum words (it bleeds trait vocabulary like "bitter" into this
+                # field), which made Agent() raise ValidationError and 500 the whole
+                # generate-fillers request. Normalize like the reasoner already does.
+                mood=normalize_mood(entry.get("mood")),
                 groups=entry.get("groups") or [],
                 short_term_memory=[m.model_copy() for m in memories],
                 long_term_memory=[m.model_copy() for m in memories],
@@ -158,21 +162,33 @@ def _seed_relationships(agents: list[Agent], world_prompt: str) -> None:
     try:
         raw = call_llm(RELATIONSHIP_SEED_SYSTEM, user, json_mode=True, max_tokens=1024, tier="cheap")
         data = _safe_json(raw)
+        seeded = 0
         for rel in (data.get("relationships") or []):
-            a_name = rel.get("agent_a", "")
-            b_name = rel.get("agent_b", "")
-            a = name_map.get(a_name)
-            b = name_map.get(b_name)
-            if not a or not b or a_name == b_name:
-                continue
-            rel_type = rel.get("type", "trust")
-            strength = float(rel.get("strength", 0.25))
-            strength = max(0.1, min(0.7, strength))
-            mutual = bool(rel.get("mutual", True))
-            # Seed via the consequence layer so the affinity carries the correct SIGN for
-            # its type (a seeded rivalry/conflict is negative) and survives `realize`.
-            consequence.seed_relationship(a, b, rel_type, strength, mutual)
-        logging.info(f"Seeded relationships for {len(agents)} agents")
+            # Per-entry guard. A single malformed entry (non-numeric strength, or an
+            # entry that isn't even a dict) used to raise out to the batch-level handler
+            # below, silently discarding every relationship after it. Skip the bad one
+            # and keep the rest.
+            try:
+                a_name = rel.get("agent_a", "")
+                b_name = rel.get("agent_b", "")
+                a = name_map.get(a_name)
+                b = name_map.get(b_name)
+                if not a or not b or a_name == b_name:
+                    continue
+                rel_type = rel.get("type", "trust")
+                try:
+                    strength = float(rel.get("strength", 0.25))
+                except (TypeError, ValueError):
+                    strength = 0.25
+                strength = max(0.1, min(0.7, strength))
+                mutual = bool(rel.get("mutual", True))
+                # Seed via the consequence layer so the affinity carries the correct SIGN for
+                # its type (a seeded rivalry/conflict is negative) and survives `realize`.
+                consequence.seed_relationship(a, b, rel_type, strength, mutual)
+                seeded += 1
+            except Exception as e:  # noqa: BLE001 — drop this entry, not the batch
+                logging.warning(f"Skipped malformed relationship entry {rel!r}: {e}")
+        logging.info(f"Seeded {seeded} relationships for {len(agents)} agents")
     except Exception as e:
         logging.warning(f"Relationship seeding failed: {e}")
 

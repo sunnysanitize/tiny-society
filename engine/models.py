@@ -240,6 +240,7 @@ _MOOD_SYNONYMS: Dict[str, str] = {
     "scared": "anxious", "afraid": "anxious", "nervous": "anxious", "worried": "anxious", "fearful": "anxious",
     "mad": "angry", "furious": "angry", "enraged": "angry", "livid": "angry", "irate": "angry",
     "irritated": "frustrated", "annoyed": "frustrated", "exasperated": "frustrated", "agitated": "frustrated",
+    "bitter": "frustrated", "resentful": "frustrated", "jaded": "frustrated", "cynical": "frustrated",
     "determined": "ambitious", "driven": "ambitious", "motivated": "ambitious", "eager": "ambitious",
     "proud": "confident", "assured": "confident", "self-assured": "confident", "bold": "confident",
     "isolated": "lonely", "alone": "lonely", "abandoned": "lonely", "withdrawn": "lonely",
