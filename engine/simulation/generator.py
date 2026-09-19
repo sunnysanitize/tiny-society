@@ -78,17 +78,50 @@ BATCH_SIZE = 3  # agents per LLM call — smaller batches keep each response wel
                 # the model's output budget (rich memories make 5 agents overflow / truncate)
 
 
+_ROLE_NOISE_RE = re.compile(r"\b(the|a|an|of|for|at)\b")
+
+
+def _normalize_role(role: str) -> str:
+    """Compare roles case-, article- and punctuation-insensitively, so
+    'Lead Programmer for Robotics Club' and 'Lead Programmer for the Robotics Club'
+    are recognised as the same role."""
+    r = (role or "").strip().lower()
+    r = _ROLE_NOISE_RE.sub(" ", r)
+    r = re.sub(r"[^a-z0-9 ]+", " ", r)
+    return re.sub(r"\s+", " ", r).strip()
+
+
 def generate_fillers(world: World, count: int) -> list[Agent]:
     if count <= 0:
         return []
     existing_names = {a.name for a in world.agents}
+    existing_roles = {_normalize_role(a.role) for a in world.agents if a.role}
     out: list[Agent] = []
     remaining = count
 
     while remaining > 0:
         batch = min(BATCH_SIZE, remaining)
-        entries = _fetch_batch(world, batch, existing_names)
+        entries = _fetch_batch(world, batch, existing_names, existing_roles)
+        # Drop entries whose role duplicates one already taken, and retry the batch once
+        # with the collision now listed in the prompt. Bounded: after one retry accept
+        # what we get, rather than looping forever on a provider that keeps repeating.
+        fresh: list[dict] = []
         for entry in entries:
+            role_key = _normalize_role(entry.get("role") or "")
+            if role_key and role_key in existing_roles:
+                continue
+            if role_key:
+                existing_roles.add(role_key)
+            fresh.append(entry)
+        if not fresh and entries:
+            entries = _fetch_batch(world, batch, existing_names, existing_roles)
+            for entry in entries:
+                role_key = _normalize_role(entry.get("role") or "")
+                if role_key:
+                    existing_roles.add(role_key)
+                fresh.append(entry)
+
+        for entry in fresh:
             name = (entry.get("name") or "").strip() or f"Agent-{uuid.uuid4().hex[:4]}"
             if name in existing_names:
                 name = f"{name}-{uuid.uuid4().hex[:3]}"
@@ -99,7 +132,7 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
             out.append(Agent(
                 id=f"a_{uuid.uuid4().hex[:8]}",
                 name=name,
-                role=entry.get("role") or "citizen",
+                role=entry.get("role") or "member",
                 traits=entry.get("traits") or [],
                 goals=entry.get("goals") or [],
                 # The model is given the Mood enum in FILLER_SYSTEM but still returns
@@ -120,11 +153,15 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
     return out
 
 
-def _fetch_batch(world: World, count: int, existing_names: set[str]) -> list[dict]:
+def _fetch_batch(world: World, count: int, existing_names: set[str],
+                 existing_roles: set[str]) -> list[dict]:
     user = (
         f"World prompt:\n{world.prompt}\n\n"
         f"Generate {count} fictional agents that fit this world. "
-        f"Avoid these existing names: {sorted(existing_names) or 'none'}."
+        f"Avoid these existing names: {sorted(existing_names) or 'none'}. "
+        f"These roles are already taken — every new agent must have a clearly "
+        f"different role, not a rewording of one of these: "
+        f"{sorted(existing_roles) or 'none'}."
     )
     try:
         raw = call_llm(FILLER_SYSTEM, user, json_mode=True, max_tokens=4096, tier="cheap")

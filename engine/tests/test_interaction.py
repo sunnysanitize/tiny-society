@@ -80,12 +80,33 @@ def test_report_prompt_does_not_leak_section_names():
     assert "never mention" in sys_prompt.lower(), "must forbid naming absent sections"
 
 
+def test_roles_are_unique_across_batches():
+    from models import World
+    from simulation import generator
+    # BATCH_SIZE is 3, so 7 agents means three separate LLM calls that cannot
+    # see each other's output — the source of two "Lead Programmer" characters.
+    world = World(prompt="a high school robotics and debate club", target_population=7)
+    agents = generator.generate_fillers(world, 7)
+    assert len(agents) == 7, len(agents)
+    norm = [generator._normalize_role(a.role) for a in agents]
+    assert len(set(norm)) == len(norm), sorted(norm)
+
+
+def test_normalize_role_ignores_articles_and_case():
+    from simulation import generator
+    a = generator._normalize_role("Lead Programmer for Robotics Club")
+    b = generator._normalize_role("Lead Programmer for the Robotics Club")
+    assert a == b, (a, b)
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
     test_trim_never_cuts_mid_word,
     test_trim_leaves_short_text_untouched,
     test_report_prompt_does_not_leak_section_names,
+    test_roles_are_unique_across_batches,
+    test_normalize_role_ignores_articles_and_case,
 ]
 
 
