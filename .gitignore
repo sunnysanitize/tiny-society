@@ -27,3 +27,6 @@ out/
 
 # Local documentation (temporarily excluded from new commits)
 /docs/
+
+# Claude Code worktrees (isolated workspaces, never committed)
+.claude/worktrees/
