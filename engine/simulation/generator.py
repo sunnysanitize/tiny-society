@@ -91,6 +91,27 @@ def _normalize_role(role: str) -> str:
     return re.sub(r"\s+", " ", r).strip()
 
 
+# How many times to re-ask the provider for a non-duplicate role before falling back
+# to deterministic disambiguation.
+_MAX_ROLE_ATTEMPTS = 3
+
+
+def _disambiguate_role(role: str, existing_roles: set[str]) -> str:
+    """Last-resort deterministic uniqueness.
+
+    Only reached when the provider returned an already-taken role on every attempt.
+    Qualifying the title is worse prose than a fresh role but better than shipping two
+    characters with identical jobs, which is the bug this task exists to fix.
+    """
+    base = (role or "member").strip()
+    candidate = base
+    n = 2
+    while _normalize_role(candidate) in existing_roles:
+        candidate = f"{base} ({n})"
+        n += 1
+    return candidate
+
+
 def generate_fillers(world: World, count: int) -> list[Agent]:
     if count <= 0:
         return []
@@ -101,25 +122,48 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
 
     while remaining > 0:
         batch = min(BATCH_SIZE, remaining)
-        entries = _fetch_batch(world, batch, existing_names, existing_roles)
-        # Drop entries whose role duplicates one already taken, and retry the batch once
-        # with the collision now listed in the prompt. Bounded: after one retry accept
-        # what we get, rather than looping forever on a provider that keeps repeating.
         fresh: list[dict] = []
-        for entry in entries:
-            role_key = _normalize_role(entry.get("role") or "")
-            if role_key and role_key in existing_roles:
-                continue
-            if role_key:
-                existing_roles.add(role_key)
-            fresh.append(entry)
-        if not fresh and entries:
-            entries = _fetch_batch(world, batch, existing_names, existing_roles)
+
+        # Ask up to _MAX_ROLE_ATTEMPTS times, keeping only non-duplicate roles. Each
+        # attempt sends a different prompt, so a deterministic provider still varies.
+        for attempt in range(_MAX_ROLE_ATTEMPTS):
+            entries = _fetch_batch(world, batch, existing_names, existing_roles, attempt)
+            if not entries:
+                break
             for entry in entries:
+                if len(fresh) >= batch:
+                    break
                 role_key = _normalize_role(entry.get("role") or "")
+                if role_key and role_key in existing_roles:
+                    continue
                 if role_key:
                     existing_roles.add(role_key)
                 fresh.append(entry)
+            if len(fresh) >= batch:
+                break
+
+        # Still short: the provider kept returning taken roles. Disambiguate
+        # deterministically rather than shipping duplicate titles.
+        if len(fresh) < batch:
+            entries = _fetch_batch(world, batch, existing_names, existing_roles,
+                                   _MAX_ROLE_ATTEMPTS)
+            for entry in entries:
+                if len(fresh) >= batch:
+                    break
+                role = _disambiguate_role(entry.get("role") or "member", existing_roles)
+                entry["role"] = role
+                existing_roles.add(_normalize_role(role))
+                fresh.append(entry)
+
+        # Guarantees termination: without this, a provider returning nothing usable
+        # would spin `while remaining > 0` forever, since `remaining` only decrements
+        # for entries that survive.
+        if not fresh:
+            logging.warning(
+                "Filler generation produced no usable entries; stopping at %d of %d",
+                count - remaining, count,
+            )
+            break
 
         for entry in fresh:
             name = (entry.get("name") or "").strip() or f"Agent-{uuid.uuid4().hex[:4]}"
@@ -154,7 +198,14 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
 
 
 def _fetch_batch(world: World, count: int, existing_names: set[str],
-                 existing_roles: set[str]) -> list[dict]:
+                 existing_roles: set[str], attempt: int = 0) -> list[dict]:
+    retry_note = ""
+    if attempt:
+        retry_note = (
+            f"\n\nATTEMPT {attempt + 1}: your previous response reused a role that is "
+            f"already taken. Invent clearly different roles this time — a different "
+            f"function in this world, not a reworded version of the same job."
+        )
     user = (
         f"World prompt:\n{world.prompt}\n\n"
         f"Generate {count} fictional agents that fit this world. "
@@ -162,6 +213,7 @@ def _fetch_batch(world: World, count: int, existing_names: set[str],
         f"These roles are already taken — every new agent must have a clearly "
         f"different role, not a rewording of one of these: "
         f"{sorted(existing_roles) or 'none'}."
+        f"{retry_note}"
     )
     try:
         raw = call_llm(FILLER_SYSTEM, user, json_mode=True, max_tokens=4096, tier="cheap")
