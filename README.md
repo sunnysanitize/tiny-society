@@ -47,17 +47,48 @@ Here are the three main views you move between during a simulation.
 
 ## Run it on your machine
 
-You will need Python 3.11+ and Node.js 20+. Open two terminals at the repository root—one for the
-backend and one for the frontend.
+You will need Python 3.11–3.13 and Node.js 20+. Open two terminals at the repository root—one
+for the backend and one for the frontend.
+
+> **Python 3.14 is not supported yet.** `requirements.txt` pins `pydantic==2.9.2`, whose
+> `pydantic-core` wheel builds against PyO3 0.22, which supports 3.13 at most. On 3.14 the install
+> fails with `Failed building wheel for pydantic-core`. Check with `python3 --version` first, and if
+> it reports 3.14, create the virtualenv from an explicit 3.13 interpreter (see below).
 
 ### Terminal 1 — backend
 
 ```bash
 cd engine
-python3 -m venv .venv
-source .venv/bin/activate             # Windows PowerShell: .venv\Scripts\Activate.ps1
+python3 --version                     # must report 3.11-3.13
+python3 -m venv venv
+source venv/bin/activate              # Windows PowerShell: venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 cp .env.example .env                  # skip this if engine/.env already exists
+```
+
+If `python3 --version` reported 3.14, build the virtualenv from a 3.13 interpreter instead of the
+default one. Installing 3.13 does not replace 3.14 — the two coexist.
+
+```bash
+# macOS (Homebrew). `brew --prefix` resolves correctly on both Apple Silicon and Intel,
+# which a hard-coded /opt/homebrew path does not.
+brew install python@3.13
+"$(brew --prefix python@3.13)/bin/python3.13" -m venv venv
+
+# Debian/Ubuntu (deadsnakes PPA)
+sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt update
+sudo apt install python3.13 python3.13-venv
+python3.13 -m venv venv
+
+# Windows (PowerShell), via the py launcher
+py -3.13 -m venv venv
+```
+
+Then activate it and install the dependencies:
+
+```bash
+source venv/bin/activate              # Windows PowerShell: venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 ```
 
 The quickest setup uses the mock provider, so no LLM key is needed. Edit `engine/.env` and clear
