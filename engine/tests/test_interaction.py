@@ -52,9 +52,32 @@ def test_caps_defaults_are_seven():
     assert WorldInput(prompt="x").target_population == 7
 
 
+def test_trim_never_cuts_mid_word():
+    from simulation import reasoner
+    source = (
+        "Given my avoidant and self-sabotaging traits, and my goal to maintain control "
+        "while avoiding public failure, I am introducing a minor flaw into the code that "
+        "I can fix later, subtly asserting my continued importance and control over the "
+        "project without having to present it publicly to the club."
+    )
+    out = reasoner._trim(source, 280)
+    assert len(out) <= 281, len(out)          # 280 + optional ellipsis
+    tail = out.rstrip("…").strip()
+    assert not tail.endswith("publi"), out    # the observed real-world failure
+    # every word kept must be a whole word from the source
+    assert tail.split()[-1] in source.split(), tail.split()[-1]
+
+
+def test_trim_leaves_short_text_untouched():
+    from simulation import reasoner
+    assert reasoner._trim("I kept to myself today.", 280) == "I kept to myself today."
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
+    test_trim_never_cuts_mid_word,
+    test_trim_leaves_short_text_untouched,
 ]
 
 

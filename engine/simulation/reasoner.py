@@ -134,8 +134,8 @@ def _parse_action(agent: Agent, raw: str) -> Optional[AgentAction]:
             intents=intents,
             utterance=str(data.get("utterance", "")).strip()[:400],
             stance_shift=stance_shift,
-            new_memory=str(data.get("new_memory", "")).strip()[:280],
-            explanation=str(data.get("explanation", "")).strip()[:280],
+            new_memory=_trim(str(data.get("new_memory", "")), 280),
+            explanation=_trim(str(data.get("explanation", "")), 280),
         )
     except Exception:
         return None
@@ -302,3 +302,22 @@ def _safe_json(raw: str) -> dict:
 
 def _clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
+
+
+def _trim(text: str, limit: int = 280) -> str:
+    """Trim to `limit` characters on a word boundary.
+
+    A bare `text[:280]` slice produced cuts like "...present it publi" in the UI.
+    Prefer ending on a sentence; otherwise drop the partial word and mark the cut.
+    """
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    for end in (". ", "! ", "? "):
+        idx = cut.rfind(end)
+        if idx >= limit // 2:
+            return cut[:idx + 1].strip()
+    idx = cut.rfind(" ")
+    trimmed = cut[:idx] if idx > 0 else cut
+    return trimmed.rstrip(" ,;:—-") + "…"
