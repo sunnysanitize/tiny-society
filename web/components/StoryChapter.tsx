@@ -115,7 +115,7 @@ export function StoryChapter({
 
   const beats = useMemo<Beat[]>(() => {
     const out: Beat[] = [];
-    const seen: string[] = [];
+    const seen: { agent: string; text: string }[] = [];
 
     // 1) Lead with the highlights — these carry the agent's own words.
     for (const h of highlights ?? []) {
@@ -129,8 +129,7 @@ export function StoryChapter({
         said: said ? summary : undefined,
         why: (h?.explanation ?? "").trim() || undefined,
       });
-      if (summary) seen.push(summary.toLowerCase());
-      if (said) seen.push(said.toLowerCase());
+      if (summary) seen.push({ agent: h.agent ?? "", text: summary.toLowerCase() });
     }
 
     // 2) Fold in vignettes (dreams / catchphrases / announcements).
@@ -141,15 +140,18 @@ export function StoryChapter({
     }
 
     // 3) Backfill with event-log lines the highlights did not already cover.
-    //    The log line is "[Name] <new_memory> (<explanation>)" while the highlight is
-    //    just <new_memory>, so an exact-match check never fired and every action
-    //    rendered twice. Match on CONTAINMENT of an already-shown line instead.
     for (const raw of eventLog ?? []) {
       const { name, text } = parseLogLine(raw ?? "");
       if (!text) continue;
       const lower = text.toLowerCase();
-      if (seen.some(s => s && lower.includes(s))) continue;
-      seen.push(lower);
+      // The backend builds a log line as "[Name] <new_memory> (<explanation>)", so a
+      // genuine duplicate is the SAME agent's line STARTING WITH their summary. Matching
+      // an arbitrary substring instead dropped unrelated beats from other agents whose
+      // text happened to contain a short summary like "left."
+      const dup = seen.some(
+        s => s.text && (name ?? "") === s.agent && lower.startsWith(s.text)
+      );
+      if (dup) continue;
       if (name) out.push({ kind: "highlight", agent: name, text });
       else out.push({ kind: "event", text });
     }
