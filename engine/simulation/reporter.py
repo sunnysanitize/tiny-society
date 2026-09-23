@@ -14,8 +14,9 @@ Write a 4-6 paragraph summary in plain prose covering:
 - how the injected event reshaped the society
 - which agents gained or lost influence and why
 - which factions, romances, rivalries, or alliances formed
-- the RELATIONSHIP TURNING POINTS (if given) — trace these as the spine of the story: who
-  changed toward whom, and what it set in motion. Do not just list activity; show the arc.
+- the relationship turning points, when the input includes them — trace these as the spine
+  of the story: who changed toward whom, and what it set in motion. Do not just list
+  activity; show the arc.
 - any surprising emergent dynamics
 - the final social shape compared to Day 0
 
@@ -24,6 +25,8 @@ grounded in the final population belief means, the quantified confidence, and th
 pivotal days (what happened on each that moved sentiment).
 
 Do not invent agent names that weren't in the data. Keep tone analytical, not gamey.
+Write about what IS in the input. Never mention a section, heading, or category that
+was not provided, and never state that information was missing or not detailed.
 """
 
 # How many pivotal days to surface in the forecast/report.

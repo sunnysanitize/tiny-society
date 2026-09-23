@@ -148,7 +148,7 @@ class Agent(BaseModel):
 
 class CharacterInput(BaseModel):
     name: str
-    role: str = "citizen"
+    role: str = "member"
     traits: list[str] = []
     goals: list[str] = []
     mood: Mood = "calm"
@@ -163,7 +163,7 @@ class CharacterInput(BaseModel):
 
 class WorldInput(BaseModel):
     prompt: str
-    target_population: int = Field(default=25, ge=5, le=60)
+    target_population: int = Field(default=7, ge=5, le=7)
 
 
 class World(BaseModel):
@@ -186,8 +186,8 @@ class World(BaseModel):
 
 
 class SimulationConfig(BaseModel):
-    days: int = Field(default=30, ge=1, le=1000)
-    reasoning_agents_per_day: int = Field(default=8, ge=1, le=30)
+    days: int = Field(default=7, ge=1, le=7)
+    reasoning_agents_per_day: int = Field(default=7, ge=1, le=7)
 
 
 class RelationshipEffect(BaseModel):
@@ -274,6 +274,11 @@ class AgentAction(BaseModel):
     # default "interact" preserves prior behavior for any caller that omits it.
     action_kind: ActionKind = "interact"
     target_agents: list[str] = []
+    # People this action is ABOUT who were not present and do not know — a referent,
+    # not an interaction. Referents get no consequence bid, no perception routing and
+    # no relationship movement; encoding them as targets would move a relationship the
+    # other agent never participated in.
+    about_agents: list[str] = []
     emotional_reaction: Mood = "calm"
     # Per-target SOCIAL INTENT verb (befriend / confide / flirt / court / ally / confront /
     # undermine / distance / …). The verb — not a number — is what the agent controls; the
@@ -293,6 +298,10 @@ class AgentAction(BaseModel):
 class DayHighlight(BaseModel):
     agent: str
     summary: str
+    # The agent's own words. Generated on every action and, before this, discarded at
+    # the display layer — the UI rendered `summary` (the diary line) instead.
+    utterance: str = ""
+    explanation: str = ""
 
 
 class Vignette(BaseModel):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -11,7 +12,7 @@ from .memory import make_memory
 from . import consequence
 
 FILLER_SYSTEM = """FILLER_AGENT_GENERATION
-You generate fictional citizens for a multi-agent social simulation. Return STRICT JSON only.
+You generate fictional characters for a multi-agent social simulation. Return STRICT JSON only.
 
 Schema:
 {
@@ -78,20 +79,108 @@ BATCH_SIZE = 3  # agents per LLM call — smaller batches keep each response wel
                 # the model's output budget (rich memories make 5 agents overflow / truncate)
 
 
+_ROLE_NOISE_RE = re.compile(r"\b(the|a|an|of|for|at)\b")
+
+
+def _normalize_role(role: str) -> str:
+    """Compare roles case-, article- and punctuation-insensitively, so
+    'Lead Programmer for Robotics Club' and 'Lead Programmer for the Robotics Club'
+    are recognised as the same role."""
+    r = (role or "").strip().lower()
+    r = _ROLE_NOISE_RE.sub(" ", r)
+    r = re.sub(r"[^a-z0-9 ]+", " ", r)
+    return re.sub(r"\s+", " ", r).strip()
+
+
+# How many times to re-ask the provider for a non-duplicate role before falling back
+# to deterministic disambiguation.
+_MAX_ROLE_ATTEMPTS = 3
+
+
+def _disambiguate_role(role: str, existing_roles: set[str]) -> str:
+    """Last-resort deterministic uniqueness.
+
+    Only reached when the provider returned an already-taken role on every attempt.
+    Qualifying the title is worse prose than a fresh role but better than shipping two
+    characters with identical jobs, which is the bug this task exists to fix.
+    """
+    base = (role or "member").strip()
+    candidate = base
+    n = 2
+    while _normalize_role(candidate) in existing_roles:
+        candidate = f"{base} ({n})"
+        n += 1
+    return candidate
+
+
 def generate_fillers(world: World, count: int) -> list[Agent]:
     if count <= 0:
         return []
     existing_names = {a.name for a in world.agents}
+    existing_roles = {_normalize_role(a.role) for a in world.agents if a.role}
     out: list[Agent] = []
     remaining = count
 
     while remaining > 0:
         batch = min(BATCH_SIZE, remaining)
-        entries = _fetch_batch(world, batch, existing_names)
-        for entry in entries:
-            name = (entry.get("name") or "").strip() or f"Agent-{uuid.uuid4().hex[:4]}"
+        fresh: list[dict] = []
+
+        # Ask up to _MAX_ROLE_ATTEMPTS times, keeping only non-duplicate roles. Each
+        # attempt sends a different prompt, so a deterministic provider still varies.
+        for attempt in range(_MAX_ROLE_ATTEMPTS):
+            entries = _fetch_batch(world, batch, existing_names, existing_roles, attempt)
+            if not entries:
+                break
+            for entry in entries:
+                if len(fresh) >= batch:
+                    break
+                # Default here must match what Agent(...) will actually store below,
+                # or a blank role slips past de-duplication and materialises as a
+                # duplicate "member".
+                role_key = _normalize_role(entry.get("role") or "member")
+                if role_key in existing_roles:
+                    continue
+                existing_roles.add(role_key)
+                fresh.append(entry)
+            if len(fresh) >= batch:
+                break
+
+        # Still short: the provider kept returning taken roles. Disambiguate
+        # deterministically rather than shipping duplicate titles.
+        if len(fresh) < batch:
+            entries = _fetch_batch(world, batch, existing_names, existing_roles,
+                                   _MAX_ROLE_ATTEMPTS)
+            for entry in entries:
+                if len(fresh) >= batch:
+                    break
+                role = _disambiguate_role(entry.get("role") or "member", existing_roles)
+                entry["role"] = role
+                existing_roles.add(_normalize_role(role))
+                fresh.append(entry)
+
+        # Guarantees termination: without this, a provider returning nothing usable
+        # would spin `while remaining > 0` forever, since `remaining` only decrements
+        # for entries that survive.
+        if not fresh:
+            logging.warning(
+                "Filler generation produced no usable entries; stopping at %d of %d",
+                count - remaining, count,
+            )
+            break
+
+        for entry in fresh:
+            raw_name = (entry.get("name") or "").strip()
+            if not raw_name:
+                # Deterministic placeholder. uuid4 here made two otherwise-identical
+                # runs produce different rosters.
+                stem = hashlib.sha256(f"{world.prompt}|{len(out)}".encode()).hexdigest()[:4]
+                raw_name = f"Agent-{stem}"
+            name = raw_name
             if name in existing_names:
-                name = f"{name}-{uuid.uuid4().hex[:3]}"
+                # Deterministic collision suffix, for the same reason: this fed
+                # _seed_relationships' prompt and made romance-mutuality flaky.
+                stem = hashlib.sha256(f"{name}|{len(existing_names)}".encode()).hexdigest()[:3]
+                name = f"{name}-{stem}"
             existing_names.add(name)
             raw_memories = entry.get("memories") or []
             # Backstory memories exist from before the sim (day 0). Heuristic importance.
@@ -99,7 +188,7 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
             out.append(Agent(
                 id=f"a_{uuid.uuid4().hex[:8]}",
                 name=name,
-                role=entry.get("role") or "citizen",
+                role=entry.get("role") or "member",
                 traits=entry.get("traits") or [],
                 goals=entry.get("goals") or [],
                 # The model is given the Mood enum in FILLER_SYSTEM but still returns
@@ -116,15 +205,31 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
             if remaining <= 0:
                 break
 
-    _seed_relationships(out, world.prompt)
+    # Seed across the ENTIRE cast, not just the fillers. Custom characters arrive with
+    # starting_relationships={} (CharacterEditor sends no relationships and exposes no UI
+    # for them), so passing `out` alone left every hand-made character isolated on day 1 —
+    # the precise failure this seeding exists to prevent.
+    _seed_relationships(list(world.agents) + out, world.prompt)
     return out
 
 
-def _fetch_batch(world: World, count: int, existing_names: set[str]) -> list[dict]:
+def _fetch_batch(world: World, count: int, existing_names: set[str],
+                 existing_roles: set[str], attempt: int = 0) -> list[dict]:
+    retry_note = ""
+    if attempt:
+        retry_note = (
+            f"\n\nATTEMPT {attempt + 1}: your previous response reused a role that is "
+            f"already taken. Invent clearly different roles this time — a different "
+            f"function in this world, not a reworded version of the same job."
+        )
     user = (
         f"World prompt:\n{world.prompt}\n\n"
         f"Generate {count} fictional agents that fit this world. "
-        f"Avoid these existing names: {sorted(existing_names) or 'none'}."
+        f"Avoid these existing names: {sorted(existing_names) or 'none'}. "
+        f"These roles are already taken — every new agent must have a clearly "
+        f"different role, not a rewording of one of these: "
+        f"{sorted(existing_roles) or 'none'}."
+        f"{retry_note}"
     )
     try:
         raw = call_llm(FILLER_SYSTEM, user, json_mode=True, max_tokens=4096, tier="cheap")
@@ -139,6 +244,55 @@ def _fetch_batch(world: World, count: int, existing_names: set[str]) -> list[dic
         raw = _mock(FILLER_SYSTEM, user, json_mode=True)
         data = _safe_json(raw)
         return (data.get("agents") or [])[:count]
+
+
+# Day-1 coverage: a cast where some agents know nobody produces a day of solo
+# monologues, because an agent with no relationships has nobody to act on. After the
+# LLM seeding pass, connect anyone still isolated and guarantee some friction.
+# Day-1 friction: how many CHARGED PAIRS to guarantee. Counted as pairs, not directed
+# edges — a mutual seed creates two directed edges, and conflating the two is what made
+# this loop seed double its apparent target.
+_MIN_CHARGED_PAIRS = 2
+_CHARGED_SEED_TYPES = ("rivalry", "conflict")
+
+
+def _ensure_coverage(agents: list[Agent]) -> None:
+    """Connect isolated agents and guarantee at least `_MIN_CHARGED_PAIRS` charged
+    pairs. Deterministic: pairing is by sorted name and a stable hash, never by
+    `random`, so a replayed run seeds identically."""
+    if len(agents) < 2:
+        return
+    ordered = sorted(agents, key=lambda a: a.name)
+
+    def _partner_for(a: Agent) -> Agent:
+        pool = [o for o in ordered if o.id != a.id]
+        idx = int(hashlib.sha256(a.name.encode()).hexdigest()[:8], 16) % len(pool)
+        return pool[idx]
+
+    for a in ordered:
+        if not a.relationships:
+            consequence.seed_relationship(a, _partner_for(a), "trust", 0.25, True)
+
+    def _charged_pairs() -> int:
+        """Distinct unordered pairs joined by a charged bond, counted off the live
+        relationship table rather than tracked in a local counter."""
+        pairs = set()
+        for x in ordered:
+            for name, r in x.relationships.items():
+                if r.type in ("rivalry", "conflict", "romance"):
+                    pairs.add(tuple(sorted((x.name, name))))
+        return len(pairs)
+
+    seeded_pairs = 0
+    i = 0
+    while _charged_pairs() < _MIN_CHARGED_PAIRS and i + 1 < len(ordered):
+        a, b = ordered[i], ordered[i + 1]
+        # Cycle on pairs seeded, not on `i` — `i` advances by 2, so indexing with it
+        # pinned this to index 0 and "conflict" was never reachable.
+        rel_type = _CHARGED_SEED_TYPES[seeded_pairs % len(_CHARGED_SEED_TYPES)]
+        consequence.seed_relationship(a, b, rel_type, 0.35, True)
+        seeded_pairs += 1
+        i += 2
 
 
 def _seed_relationships(agents: list[Agent], world_prompt: str) -> None:
@@ -191,6 +345,8 @@ def _seed_relationships(agents: list[Agent], world_prompt: str) -> None:
         logging.info(f"Seeded {seeded} relationships for {len(agents)} agents")
     except Exception as e:
         logging.warning(f"Relationship seeding failed: {e}")
+
+    _ensure_coverage(agents)
 
 
 def _safe_json(raw: str) -> dict:

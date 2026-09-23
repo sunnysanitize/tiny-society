@@ -307,7 +307,8 @@ def test_stance_grounded_in_disposition():
 # ── SYSTEM-LEVEL INVARIANTS (full engine on mock) ──────────────────────────────────
 
 # A modest-length run is enough for arcs to form without being expensive on mock.
-_SYS_DAYS = 18
+# Capped at 7 to match SimulationConfig.days' hard cap (engine/models.py).
+_SYS_DAYS = 7
 _SYS_POP = 12
 _SYS_RPD = 3
 _SYS_SEED = 7
@@ -321,24 +322,29 @@ def _run_system(seed: int = _SYS_SEED, days: int = _SYS_DAYS):
 
 
 def test_every_romance_edge_is_mutual():
-    """#5: if A->B is romance then B->A is romance too (scan final snapshot)."""
-    _, result = _run_system()
-    final = result.snapshots[-1].agents
-    by_name = {a.name: a for a in final}
-    romance_edges = 0
-    for a, other, rel in _all_rel_pairs(final):
-        if rel.type == "romance":
-            romance_edges += 1
-            partner = by_name.get(other)
-            assert partner is not None, other
-            back = partner.relationships.get(a.name)
-            assert back is not None and back.type == "romance", (
-                f"{a.name}->{other} is romance but {other}->{a.name} is "
-                f"{getattr(back, 'type', None)}"
-            )
-    # The assertion is meaningful whether or not romance occurred on this seed; we just
-    # record the count for visibility. (Observed: 0 romance edges on mock seed 7.)
-    print(f"  [#5] romance edges (must be mutual): {romance_edges}")
+    """#5: if A->B is romance then B->A is romance too (scan final snapshot).
+
+    Runs the same seed list as its siblings (#6, #7): the default seed 7 alone produces
+    ZERO romance edges, so a single-seed version of this test asserts nothing about
+    mutuality — it only ever exercises the vacuous "no romance edges found" path. Seeds
+    21 and 99 are each known to carry 2 romance edges on mock, so looping over all three
+    is what gives the mutuality assertion actual coverage."""
+    for seed in (7, 21, 99):
+        _, result = _run_system(seed=seed)
+        final = result.snapshots[-1].agents
+        by_name = {a.name: a for a in final}
+        romance_edges = 0
+        for a, other, rel in _all_rel_pairs(final):
+            if rel.type == "romance":
+                romance_edges += 1
+                partner = by_name.get(other)
+                assert partner is not None, other
+                back = partner.relationships.get(a.name)
+                assert back is not None and back.type == "romance", (
+                    f"seed={seed}: {a.name}->{other} is romance but {other}->{a.name} is "
+                    f"{getattr(back, 'type', None)}"
+                )
+        print(f"  [#5] seed={seed} romance edges (must be mutual): {romance_edges}")
 
 
 def test_changes_are_slow_base_rate():

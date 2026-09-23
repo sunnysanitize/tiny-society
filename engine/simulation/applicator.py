@@ -140,14 +140,26 @@ def apply_action(
 
     # ANTI-REPETITION: record this action on the actor's rolling history so the
     # reasoner can show the agent its own recent pattern and push it to vary.
-    tgt = ", ".join(action.target_agents) if action.target_agents else "no one"
+    # Rolling action history. Referents are recorded distinctly from targets so the
+    # agent's own history shows who a solo day was ABOUT, not just that it happened.
+    if action.target_agents:
+        tgt = ", ".join(action.target_agents)
+    elif action.about_agents:
+        tgt = "about " + ", ".join(action.about_agents)
+    else:
+        tgt = "no one"
     actor.recent_actions.append(f"day {day}: {action.action_kind}/{action.action} → {tgt}")
     actor.recent_actions = actor.recent_actions[-6:]
 
     if action.new_memory:
         log_line = f"[{actor.name}] {action.new_memory} ({action.explanation})"
     else:
-        target_str = ", ".join(action.target_agents) if action.target_agents else "alone"
+        if action.target_agents:
+            target_str = ", ".join(action.target_agents)
+        elif action.about_agents:
+            target_str = "alone, about " + ", ".join(action.about_agents)
+        else:
+            target_str = "alone"
         log_line = f"[{actor.name}] chose to {action.action} {target_str}. {action.explanation}"
 
     return log_line, perception_notes, milestones

@@ -10,8 +10,8 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun, onBegin }: {
   onBegin: (perDay: number) => void;
 }) {
   const [event, setEvent] = useState(world.starting_event || "");
-  const [days, setDays] = useState(30);
-  const [perDay, setPerDay] = useState(8);
+  const [days, setDays] = useState(7);
+  const [perDay, setPerDay] = useState(7);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -86,12 +86,12 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun, onBegin }: {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", flexShrink: 0 }}>1</span>
             <input
-              type="range" min={1} max={60} step={1} value={days}
+              type="range" min={1} max={7} step={1} value={days}
               className="volume-range"
               onChange={e => setDays(parseInt(e.target.value))}
-              style={{ ["--fill" as any]: `${((days - 1) / (60 - 1)) * 100}%` }}
+              style={{ ["--fill" as any]: `${((days - 1) / (7 - 1)) * 100}%` }}
             />
-            <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", flexShrink: 0 }}>60</span>
+            <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", flexShrink: 0 }}>7</span>
           </div>
           <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.5, marginTop: 6 }}>
             How many days to run in one fast-forward.
@@ -109,12 +109,12 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun, onBegin }: {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", flexShrink: 0 }}>1</span>
             <input
-              type="range" min={1} max={20} step={1} value={perDay}
+              type="range" min={1} max={7} step={1} value={perDay}
               className="volume-range"
               onChange={e => setPerDay(parseInt(e.target.value))}
-              style={{ ["--fill" as any]: `${((perDay - 1) / (20 - 1)) * 100}%` }}
+              style={{ ["--fill" as any]: `${((perDay - 1) / (7 - 1)) * 100}%` }}
             />
-            <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", flexShrink: 0 }}>20</span>
+            <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", flexShrink: 0 }}>7</span>
           </div>
           <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.5, marginTop: 6 }}>
             How many characters take a turn each day.

@@ -98,6 +98,10 @@ export interface ProphecyVerdict {
 export interface DayHighlight {
   agent: string;
   summary: string;
+  /** What the character actually said, in their own voice. Optional so older saves,
+   *  written before dialogue was carried through, still deserialize. */
+  utterance?: string;
+  explanation?: string;
 }
 
 /** How a character subjectively internalized an incoming event (perception layer).
