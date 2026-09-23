@@ -209,7 +209,15 @@ def run_simulation(
             day_perception_notes.extend(notes)
             day_highlights.append(DayHighlight(
                 agent=actor.name,
-                summary=action.new_memory or f"{action.action} {', '.join(action.target_agents) or '(no one)'} — {action.explanation}",
+                summary=action.new_memory or (
+                    f"{action.action} {', '.join(action.target_agents)} — {action.explanation}"
+                    if action.target_agents else
+                    f"{action.action} about {', '.join(action.about_agents)} — {action.explanation}"
+                    if action.about_agents else
+                    f"{action.action} (no one) — {action.explanation}"
+                ),
+                utterance=action.utterance,
+                explanation=action.explanation,
             ))
             # Volatility = realized significant relationship changes this action, i.e.
             # the milestones the consequence layer actually produced (earned transitions),
@@ -251,7 +259,7 @@ def run_simulation(
                 # The LLM call failed or returned unparseable JSON. Rather than silently
                 # dropping the agent's whole turn (which flatlines the story), commit a
                 # neutral "kept to themselves" beat so the day still reflects them.
-                action = _fallback_action(actor)
+                action = _fallback_action(actor, agents)
             log_line = _commit_action(actor, action)
 
             # MULTI-TURN EXCHANGES (⑤): if this was a CHARGED interaction with a
@@ -402,18 +410,47 @@ def _generate_dynamic_event(recent_log: list[str], agents: list[Agent]) -> Optio
     return None
 
 
-def _fallback_action(actor: Agent) -> AgentAction:
-    """A neutral, target-less 'observe' action used when reasoning failed to produce a
-    valid one — keeps the agent present in the day's log without inventing interactions."""
+def _fallback_action(actor: Agent, roster: list[Agent]) -> AgentAction:
+    """A neutral action used when reasoning failed to produce a valid one.
+
+    It names someone as a REFERENT rather than a target: the agent kept to themselves,
+    but the day is still about somebody, so it is not socially inert. Choice is
+    deterministic — strongest existing bond, else a group-mate, else the first other
+    agent by name — because the determinism test compares a batch run byte-for-byte
+    against a day-by-day run.
+    """
+    others = [a for a in roster if a.id != actor.id]
+    if not others:
+        # No one else on the roster — the single-agent case. Still cannot return
+        # both fields empty (spec §2's invariant), so the day is about the actor
+        # themselves rather than nobody.
+        referents: list[str] = [actor.name]
+    else:
+        bonded = sorted(
+            (a for a in others if a.name in actor.relationships),
+            key=lambda a: (-abs(actor.relationships[a.name].strength), a.name),
+        )
+        if bonded:
+            referents = [bonded[0].name]
+        else:
+            groups = set(actor.groups)
+            mates = sorted((a for a in others if groups & set(a.groups)), key=lambda a: a.name)
+            referents = [(mates or sorted(others, key=lambda a: a.name))[0].name]
+    referent = referents[0] if referents and referents[0] != actor.name else None
+    memory = (
+        f"I kept to myself today, thinking about {referent}."
+        if referent else "I kept to myself today."
+    )
     return AgentAction(
         action="observe",
         action_kind="interact",
         target_agents=[],
+        about_agents=referents,
         emotional_reaction=actor.mood,
         intents={},
         utterance="",
         stance_shift={},
-        new_memory="",
+        new_memory=memory,
         explanation="kept to themselves today",
     )
 

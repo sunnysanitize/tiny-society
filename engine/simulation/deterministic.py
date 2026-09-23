@@ -56,6 +56,16 @@ def apply_background_rules(
             elif r.strength < 0:
                 r.strength = round(min(0.0, r.strength + DECAY), 3)
             consequence.realize(a, name, other)
+            # Re-derive the PARTNER's view too. Mutual bonds (romance/alliance) are
+            # defined bilaterally -- `realize` demotes them when either side stops
+            # qualifying -- so a one-sided decay here can invalidate the partner's
+            # stored type. Only background agents run this loop, so a reasoning
+            # agent's side would otherwise keep a stale "romance" label pointing at a
+            # partner the engine has already demoted to friendship (breaking the
+            # romance-is-mutual invariant). Every other realize call site in the
+            # engine (applicator, the group drip below) already does both directions.
+            if other is not None:
+                consequence.realize(other, a.name, a)
 
         # Isolation drift
         if is_isolating and not a.relationships:

@@ -5,7 +5,7 @@ import type { World } from "@/lib/types";
 
 export function WorldSetup({ onCreated }: { onCreated: (wid: string, world: World) => void }) {
   const [prompt, setPrompt] = useState("");
-  const [pop, setPop] = useState(25);
+  const [pop, setPop] = useState(7);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -88,17 +88,17 @@ export function WorldSetup({ onCreated }: { onCreated: (wid: string, world: Worl
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", flexShrink: 0 }}>5</span>
             <input
-              type="range" min={5} max={60} step={1} value={pop}
+              type="range" min={5} max={7} step={1} value={pop}
               className="volume-range"
               onChange={(e) => setPop(parseInt(e.target.value))}
-              style={{ ["--fill" as any]: `${((pop - 5) / (60 - 5)) * 100}%` }}
+              style={{ ["--fill" as any]: `${((pop - 5) / (7 - 5)) * 100}%` }}
             />
-            <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", flexShrink: 0 }}>60</span>
+            <span className="font-pixel" style={{ fontSize: 7, color: "var(--text-muted)", flexShrink: 0 }}>7</span>
           </div>
 
           {/* quick presets */}
           <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-            {[5, 10, 25, 50].map(n => (
+            {[5, 6, 7].map(n => (
               <button key={n} onClick={() => setPop(n)} style={{
                 padding: "4px 10px", cursor: "pointer", fontSize: 9,
                 fontFamily: "var(--font-pixel, monospace)", textTransform: "uppercase",
@@ -112,7 +112,7 @@ export function WorldSetup({ onCreated }: { onCreated: (wid: string, world: Worl
 
           {/* description */}
           <div style={{ marginTop: 12, fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.6 }}>
-            How many characters live in your world. A larger population means more relationships and richer social drama, but each resident adds simulation time to every day.
+            How many characters live in your world. A small cast means everyone acts every day, so relationships actually develop instead of thinning out across a crowd.
           </div>
         </div>
 

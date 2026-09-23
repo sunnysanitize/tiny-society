@@ -38,9 +38,9 @@ def _disposition(agent: Agent) -> float:
     return (pos - neg) / (pos + neg)
 
 
-def _jitter(agent_id: str, topic: str) -> float:
+def _jitter(agent_key: str, topic: str) -> float:
     """Deterministic small per-(agent, topic) noise in [-0.2, 0.2]."""
-    h = hashlib.sha256(f"{agent_id}|{topic}".encode()).hexdigest()
+    h = hashlib.sha256(f"{agent_key}|{topic}".encode()).hexdigest()
     frac = int(h[:8], 16) / 0xFFFFFFFF
     return (frac * 0.4) - 0.2
 
@@ -54,7 +54,7 @@ def _seed_position(agent: Agent, topic: str, disposition: float) -> float:
         agent_tokens |= set(_WORD_RE.findall((phrase or "").lower()))
     engaged = bool(topic_tokens & agent_tokens)
     base = disposition * (0.6 if engaged else 0.4)
-    pos = base + _jitter(agent.id, topic)
+    pos = base + _jitter(agent.name, topic)
     return round(max(-0.6, min(0.6, pos)), 3)
 
 

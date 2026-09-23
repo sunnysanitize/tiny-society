@@ -30,6 +30,7 @@ JSON schema:
   "action": "short verb phrase summarizing the move (e.g. 'confront', 'open up to', 'rally')",
   "action_kind": "post | direct | amplify | comment | interact",
   "target_agents": ["Name", ...],
+  "about_agents": ["Name", ...],
   "utterance": "what you actually say or do, in your own voice (1-2 sentences)",
   "intents": {
     "TargetName": "one intent verb from the list below"
@@ -39,6 +40,11 @@ JSON schema:
   "new_memory": "first-person past-tense sentence describing what you did today",
   "explanation": "one sentence linking your traits and memories to this specific action"
 }
+
+  target_agents : people you actually interacted with today — they were there.
+  about_agents  : people this was ABOUT who were not there and do not know. Working
+                  alone on something because of someone, avoiding them, preparing for
+                  them, stewing about them. They do not learn anything from this.
 
 INTENT VERBS (pick the one that matches your true intent toward each target):
   warmth:     befriend, support, comfort, praise, reconcile, confide, trust
@@ -64,6 +70,9 @@ CRITICAL RULES:
 - Only reference agent names from the roster — never invent names. Put each target in BOTH
   target_agents and intents.
 - stance_shift: ONLY topics you actually engaged with today, small magnitudes (-0.3..0.3), else {}.
+- NAME SOMEONE. Every action names at least one person — in target_agents if you
+  actually dealt with them, in about_agents if it was about them but they were not
+  there. Never leave both empty. A day spent alone is fine; a day about nobody is not.
 - Output only JSON. No markdown, no commentary, no preamble.
 """
 
@@ -117,6 +126,12 @@ def _parse_action(agent: Agent, raw: str) -> Optional[AgentAction]:
             if isinstance(verb, str) and verb.strip()
         }
         targets = [str(t) for t in (data.get("target_agents") or [])][:5]
+        about = [str(t) for t in (data.get("about_agents") or [])][:5]
+        # Someone named in both is an interaction, not a referent.
+        about = [a for a in about if a not in targets]
+        if not targets and not about:
+            logging.warning(f"Action from {agent.name} named nobody; rejecting")
+            return None
         # Be forgiving: if intents are missing but targets exist, default to neutral contact
         # so the action still has consequence-layer effects.
         for t in targets:
@@ -130,12 +145,13 @@ def _parse_action(agent: Agent, raw: str) -> Optional[AgentAction]:
             action=str(data.get("action", "observe"))[:60],
             action_kind=normalize_action_kind(data.get("action_kind", "interact")),
             target_agents=targets,
+            about_agents=about,
             emotional_reaction=normalize_mood(data.get("emotional_reaction"), default=agent.mood),
             intents=intents,
-            utterance=str(data.get("utterance", "")).strip()[:400],
+            utterance=_trim(str(data.get("utterance", "")), 400),
             stance_shift=stance_shift,
-            new_memory=str(data.get("new_memory", "")).strip()[:280],
-            explanation=str(data.get("explanation", "")).strip()[:280],
+            new_memory=_trim(str(data.get("new_memory", "")), 280),
+            explanation=_trim(str(data.get("explanation", "")), 280),
         )
     except Exception:
         return None
@@ -302,3 +318,22 @@ def _safe_json(raw: str) -> dict:
 
 def _clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
+
+
+def _trim(text: str, limit: int = 280) -> str:
+    """Trim to `limit` characters on a word boundary.
+
+    A bare `text[:280]` slice produced cuts like "...present it publi" in the UI.
+    Prefer ending on a sentence; otherwise drop the partial word and mark the cut.
+    """
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    for end in (". ", "! ", "? "):
+        idx = cut.rfind(end)
+        if idx >= limit // 2:
+            return cut[:idx + 1].strip()
+    idx = cut.rfind(" ")
+    trimmed = cut[:idx] if idx > 0 else cut
+    return trimmed.rstrip(" ,;:—-") + "…"

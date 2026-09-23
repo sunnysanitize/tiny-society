@@ -258,8 +258,8 @@ def set_event(wid: str, body: EventInput):
 
 
 class SimulateRequest(BaseModel):
-    days: int = Field(default=30, ge=1, le=1000)
-    reasoning_agents_per_day: int = Field(default=8, ge=1, le=30)
+    days: int = Field(default=7, ge=1, le=7)
+    reasoning_agents_per_day: int = Field(default=7, ge=1, le=7)
     seed: int = 42
     # MID-RUN PAUSE (Part C, Level 2): absolute days on which the stream stops early
     # (after saving that day's snapshot), so the player can inject a character/event and
@@ -298,8 +298,8 @@ async def simulate_stream(wid: str, body: SimulateRequest):
 
 
 class ContinueRequest(BaseModel):
-    days: int = Field(default=7, ge=1, le=1000)
-    reasoning_agents_per_day: int = Field(default=8, ge=1, le=30)
+    days: int = Field(default=7, ge=1, le=7)
+    reasoning_agents_per_day: int = Field(default=7, ge=1, le=7)
     seed: int = 42
     # See SimulateRequest.pause_on_days.
     pause_on_days: Optional[list[int]] = None
@@ -365,7 +365,7 @@ def cancel_simulation(wid: str):
 
 
 class AdvanceRequest(BaseModel):
-    reasoning_agents_per_day: int = Field(default=8, ge=1, le=30)
+    reasoning_agents_per_day: int = Field(default=7, ge=1, le=7)
     seed: int = 42
 
 

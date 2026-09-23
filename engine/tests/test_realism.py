@@ -307,7 +307,8 @@ def test_stance_grounded_in_disposition():
 # ── SYSTEM-LEVEL INVARIANTS (full engine on mock) ──────────────────────────────────
 
 # A modest-length run is enough for arcs to form without being expensive on mock.
-_SYS_DAYS = 18
+# Capped at 7 to match SimulationConfig.days' hard cap (engine/models.py).
+_SYS_DAYS = 7
 _SYS_POP = 12
 _SYS_RPD = 3
 _SYS_SEED = 7
@@ -321,24 +322,29 @@ def _run_system(seed: int = _SYS_SEED, days: int = _SYS_DAYS):
 
 
 def test_every_romance_edge_is_mutual():
-    """#5: if A->B is romance then B->A is romance too (scan final snapshot)."""
-    _, result = _run_system()
-    final = result.snapshots[-1].agents
-    by_name = {a.name: a for a in final}
-    romance_edges = 0
-    for a, other, rel in _all_rel_pairs(final):
-        if rel.type == "romance":
-            romance_edges += 1
-            partner = by_name.get(other)
-            assert partner is not None, other
-            back = partner.relationships.get(a.name)
-            assert back is not None and back.type == "romance", (
-                f"{a.name}->{other} is romance but {other}->{a.name} is "
-                f"{getattr(back, 'type', None)}"
-            )
-    # The assertion is meaningful whether or not romance occurred on this seed; we just
-    # record the count for visibility. (Observed: 0 romance edges on mock seed 7.)
-    print(f"  [#5] romance edges (must be mutual): {romance_edges}")
+    """#5: if A->B is romance then B->A is romance too (scan final snapshot).
+
+    Runs the same seed list as its siblings (#6, #7): the default seed 7 alone produces
+    ZERO romance edges, so a single-seed version of this test asserts nothing about
+    mutuality — it only ever exercises the vacuous "no romance edges found" path. Seeds
+    21 and 99 are each known to carry 2 romance edges on mock, so looping over all three
+    is what gives the mutuality assertion actual coverage."""
+    for seed in (7, 21, 99):
+        _, result = _run_system(seed=seed)
+        final = result.snapshots[-1].agents
+        by_name = {a.name: a for a in final}
+        romance_edges = 0
+        for a, other, rel in _all_rel_pairs(final):
+            if rel.type == "romance":
+                romance_edges += 1
+                partner = by_name.get(other)
+                assert partner is not None, other
+                back = partner.relationships.get(a.name)
+                assert back is not None and back.type == "romance", (
+                    f"seed={seed}: {a.name}->{other} is romance but {other}->{a.name} is "
+                    f"{getattr(back, 'type', None)}"
+                )
+        print(f"  [#5] seed={seed} romance edges (must be mutual): {romance_edges}")
 
 
 def test_changes_are_slow_base_rate():
@@ -460,6 +466,61 @@ def test_influence_stays_bounded():
 
 # ── plain-script fallback (used when pytest is not installed) ──────────────────────
 
+def test_filler_mood_off_enum_does_not_crash():
+    """#16: a filler agent whose LLM-supplied mood falls outside the Mood enum (e.g.
+    "bitter" — a word the FILLER prompt itself lists among traits, so the model bleeds it
+    into the mood field) must be normalized, not raise a ValidationError out of
+    /world/{id}/generate-fillers. Regression: production 500 on 2026-09-18."""
+    import json as _json
+    from models import MOODS
+
+    payload = _json.dumps({"agents": [{
+        "name": "Dock Hand",
+        "role": "harbor dockhand",
+        "traits": ["guarded", "proud"],
+        "goals": ["get even"],
+        "mood": "bitter",
+        "groups": ["dockworkers"],
+        "memories": ["I was passed over for the promotion and said nothing."],
+    }]})
+
+    orig = generator.call_llm
+    generator.call_llm = lambda *a, **k: payload
+    try:
+        world = World(prompt="a harbor town", target_population=1)
+        agents = generator.generate_fillers(world, 1)
+    finally:
+        generator.call_llm = orig
+
+    assert len(agents) == 1, len(agents)
+    assert agents[0].mood in MOODS, agents[0].mood
+
+
+def test_one_bad_relationship_entry_does_not_discard_the_rest():
+    """#17: relationship seeding is per-entry fault-tolerant. A malformed entry (here a
+    non-numeric `strength`, which float() raises on BEFORE consequence.seed_relationship
+    gets a chance to clamp it) must not abort the batch and silently discard every
+    remaining relationship."""
+    import json as _json
+
+    payload = _json.dumps({"relationships": [
+        {"agent_a": "A", "agent_b": "B", "type": "rivalry", "strength": "very strong"},
+        {"agent_a": "C", "agent_b": "D", "type": "friendship", "strength": 0.5},
+    ]})
+
+    a, b, c, d = _agent("A"), _agent("B"), _agent("C"), _agent("D")
+    orig = generator.call_llm
+    generator.call_llm = lambda *args, **kw: payload
+    try:
+        generator._seed_relationships([a, b, c, d], "a harbor town")
+    finally:
+        generator.call_llm = orig
+
+    # The good entry that came AFTER the malformed one must still have been applied.
+    assert "D" in c.relationships, sorted(c.relationships)
+    assert "C" in d.relationships, sorted(d.relationships)
+
+
 _TESTS = [
     test_romance_requires_sustained_mutual_bids,
     test_alliance_requires_mutual_ally_bids,
@@ -476,6 +537,8 @@ _TESTS = [
     test_no_thin_air_drama,
     test_determinism_day_by_day_equals_batch,
     test_influence_stays_bounded,
+    test_filler_mood_off_enum_does_not_crash,
+    test_one_bad_relationship_entry_does_not_discard_the_rest,
 ]
 
 
