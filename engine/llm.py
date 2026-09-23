@@ -1257,10 +1257,19 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
         intent = _RTYPE_TO_INTENT.get(rtype, "talk")
         # Roughly one action in four is a referent-only action: the agent acts alone,
         # about someone who is not there. Exercises the about_agents path in tests.
+        # Distinct from new_memory: new_memory is the diary line ("I did X"), the
+        # utterance is what the character actually said. Tests assert they differ.
+        _LINES = [
+            f"You and I both know how this ends, {target}.",
+            f"I'd rather do it myself than explain it to {target} again.",
+            f"Say what you want about me, {target} — I showed up.",
+            f"{target}, don't pretend you didn't see it.",
+            f"I'm not doing this for {target}. I'm doing it because it's right.",
+        ]
+        utterance = rng.choice(_LINES)
         # (Drawn after every other rng call in this branch, so it never shifts the
         # random stream consumed by action_verb/new_memory/stance_shift/action_kind.)
         _about_only = rng.random() < 0.25
-        utterance = new_memory
         return json.dumps({
             "action": action_verb,
             "action_kind": "interact" if _about_only else action_kind,

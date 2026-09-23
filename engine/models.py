@@ -298,6 +298,10 @@ class AgentAction(BaseModel):
 class DayHighlight(BaseModel):
     agent: str
     summary: str
+    # The agent's own words. Generated on every action and, before this, discarded at
+    # the display layer — the UI rendered `summary` (the diary line) instead.
+    utterance: str = ""
+    explanation: str = ""
 
 
 class Vignette(BaseModel):

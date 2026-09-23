@@ -286,6 +286,28 @@ def test_seeding_is_deterministic():
         assert build() == first
 
 
+def test_highlights_carry_dialogue():
+    from models import World, SimulationConfig
+    from simulation import generator, engine as eng
+    world = World(prompt="a high school robotics club", target_population=7)
+    world.agents = generator.generate_fillers(world, 7)
+    world.starting_event = "The regional competition is announced."
+    result = eng.run_simulation(world, SimulationConfig(days=1, reasoning_agents_per_day=7), seed=7)
+    highlights = [h for s in result.snapshots for h in s.highlights]
+    assert highlights, "a day must produce highlights"
+    assert any(h.utterance for h in highlights), "no highlight carried an utterance"
+
+
+def test_mock_utterance_differs_from_memory():
+    import json
+    from llm import _mock
+    from simulation.reasoner import REASONER_SYSTEM
+    raw = _mock(REASONER_SYSTEM, "YOUR CHARACTER\nName: Ana\n", json_mode=True)
+    data = json.loads(raw)
+    assert data["utterance"], "mock must emit an utterance"
+    assert data["utterance"] != data["new_memory"], "utterance must be distinct dialogue"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -305,6 +327,8 @@ _TESTS = [
     test_planner_prompt_includes_relationships,
     test_every_agent_starts_connected,
     test_seeding_is_deterministic,
+    test_highlights_carry_dialogue,
+    test_mock_utterance_differs_from_memory,
 ]
 
 
