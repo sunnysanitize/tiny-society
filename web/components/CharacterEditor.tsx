@@ -6,6 +6,12 @@ import { PixelAvatar, isEmojiAvatar, pixelVariant } from "./PixelAvatar";
 
 const MOODS: Mood[] = ["calm","excited","frustrated","ambitious","anxious","content","hopeful","confident","lonely","angry","heartbroken"];
 
+// Mirrors the backend's hard cap (SimulationConfig.reasoning_agents_per_day, le=7).
+// Past this, select_reasoning_agents stops returning everyone and the rotating cast
+// silently returns — the continuity leak spec §1 exists to eliminate, with no signal
+// in the UI if the roster is allowed to grow past it.
+const MAX_AGENTS = 7;
+
 const MOOD_COLOR: Record<Mood, string> = {
   calm: "#6b7785", excited: "#f59e0b", frustrated: "#ef4444",
   heartbroken: "#ec4899", ambitious: "#a855f7", anxious: "#f97316",
@@ -150,6 +156,7 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
 
   const needed = Math.max(0, world.target_population - world.agents.length);
   const rosterPct = Math.round((world.agents.length / world.target_population) * 100);
+  const atCap = world.agents.length >= MAX_AGENTS;
 
   return (
     <div className="panel" style={{ padding: "20px 24px" }}>
@@ -314,13 +321,19 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <button className="btn" onClick={addCharacter} disabled={busy || !name.trim()}>
+        <button className="btn" onClick={addCharacter} disabled={busy || !name.trim() || atCap}>
           {busy ? "ADDING..." : "▶ ADD CHARACTER"}
         </button>
         <button className="btn-ghost" onClick={generateFillers} disabled={genBusy || needed === 0}>
           {genBusy ? "GENERATING..." : `AUTO-FILL ${needed} CHARACTER${needed === 1 ? "" : "S"}`}
         </button>
       </div>
+
+      {atCap && (
+        <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace", marginBottom: 8, letterSpacing: "0.04em" }}>
+          Roster is full at {MAX_AGENTS} — remove someone before adding another.
+        </div>
+      )}
 
       {err && (
         <div style={{ fontSize: 10, color: "var(--red)", fontFamily: "ui-monospace", marginBottom: 8, letterSpacing: "0.04em" }}>
