@@ -245,13 +245,16 @@ def _fetch_batch(world: World, count: int, existing_names: set[str],
 # Day-1 coverage: a cast where some agents know nobody produces a day of solo
 # monologues, because an agent with no relationships has nobody to act on. After the
 # LLM seeding pass, connect anyone still isolated and guarantee some friction.
-_MIN_CHARGED_EDGES = 2
+# Day-1 friction: how many CHARGED PAIRS to guarantee. Counted as pairs, not directed
+# edges — a mutual seed creates two directed edges, and conflating the two is what made
+# this loop seed double its apparent target.
+_MIN_CHARGED_PAIRS = 2
 _CHARGED_SEED_TYPES = ("rivalry", "conflict")
 
 
 def _ensure_coverage(agents: list[Agent]) -> None:
-    """Connect isolated agents and guarantee at least `_MIN_CHARGED_EDGES` charged
-    edges. Deterministic: pairing is by sorted name and a stable hash, never by
+    """Connect isolated agents and guarantee at least `_MIN_CHARGED_PAIRS` charged
+    pairs. Deterministic: pairing is by sorted name and a stable hash, never by
     `random`, so a replayed run seeds identically."""
     if len(agents) < 2:
         return
@@ -266,16 +269,25 @@ def _ensure_coverage(agents: list[Agent]) -> None:
         if not a.relationships:
             consequence.seed_relationship(a, _partner_for(a), "trust", 0.25, True)
 
-    charged = sum(
-        1 for a in ordered for r in a.relationships.values()
-        if r.type in ("rivalry", "conflict", "romance")
-    )
+    def _charged_pairs() -> int:
+        """Distinct unordered pairs joined by a charged bond, counted off the live
+        relationship table rather than tracked in a local counter."""
+        pairs = set()
+        for x in ordered:
+            for name, r in x.relationships.items():
+                if r.type in ("rivalry", "conflict", "romance"):
+                    pairs.add(tuple(sorted((x.name, name))))
+        return len(pairs)
+
+    seeded_pairs = 0
     i = 0
-    while charged < _MIN_CHARGED_EDGES and i + 1 < len(ordered):
+    while _charged_pairs() < _MIN_CHARGED_PAIRS and i + 1 < len(ordered):
         a, b = ordered[i], ordered[i + 1]
-        rel_type = _CHARGED_SEED_TYPES[i % len(_CHARGED_SEED_TYPES)]
+        # Cycle on pairs seeded, not on `i` — `i` advances by 2, so indexing with it
+        # pinned this to index 0 and "conflict" was never reachable.
+        rel_type = _CHARGED_SEED_TYPES[seeded_pairs % len(_CHARGED_SEED_TYPES)]
         consequence.seed_relationship(a, b, rel_type, 0.35, True)
-        charged += 1
+        seeded_pairs += 1
         i += 2
 
 

@@ -265,8 +265,12 @@ def test_every_agent_starts_connected():
 
 
 def test_seeding_is_deterministic():
-    """Two casts with identical names but different (uuid-style) ids must seed
-    identically. Keying pairing on a random id would fail this."""
+    """Casts with identical names but different (uuid-style) ids must seed identically.
+
+    Draws many independent casts rather than two: keying pairing on a random id fails
+    this only probabilistically per draw, so a two-draw version missed the regression
+    roughly one run in six.
+    """
     import uuid
     from models import Agent
     from simulation import generator
@@ -277,7 +281,9 @@ def test_seeding_is_deterministic():
         generator._seed_relationships(agents, "a high school club")
         return [(a.name, sorted(a.relationships.keys())) for a in agents]
 
-    assert build() == build()
+    first = build()
+    for _ in range(19):
+        assert build() == first
 
 
 _TESTS = [
