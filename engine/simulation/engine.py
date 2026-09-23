@@ -251,7 +251,7 @@ def run_simulation(
                 # The LLM call failed or returned unparseable JSON. Rather than silently
                 # dropping the agent's whole turn (which flatlines the story), commit a
                 # neutral "kept to themselves" beat so the day still reflects them.
-                action = _fallback_action(actor)
+                action = _fallback_action(actor, agents)
             log_line = _commit_action(actor, action)
 
             # MULTI-TURN EXCHANGES (⑤): if this was a CHARGED interaction with a
@@ -402,13 +402,34 @@ def _generate_dynamic_event(recent_log: list[str], agents: list[Agent]) -> Optio
     return None
 
 
-def _fallback_action(actor: Agent) -> AgentAction:
-    """A neutral, target-less 'observe' action used when reasoning failed to produce a
-    valid one — keeps the agent present in the day's log without inventing interactions."""
+def _fallback_action(actor: Agent, roster: list[Agent]) -> AgentAction:
+    """A neutral action used when reasoning failed to produce a valid one.
+
+    It names someone as a REFERENT rather than a target: the agent kept to themselves,
+    but the day is still about somebody, so it is not socially inert. Choice is
+    deterministic — strongest existing bond, else a group-mate, else the first other
+    agent by name — because the determinism test compares a batch run byte-for-byte
+    against a day-by-day run.
+    """
+    others = [a for a in roster if a.id != actor.id]
+    if not others:
+        referents: list[str] = []
+    else:
+        bonded = sorted(
+            (a for a in others if a.name in actor.relationships),
+            key=lambda a: (-abs(actor.relationships[a.name].strength), a.name),
+        )
+        if bonded:
+            referents = [bonded[0].name]
+        else:
+            groups = set(actor.groups)
+            mates = sorted((a for a in others if groups & set(a.groups)), key=lambda a: a.name)
+            referents = [(mates or sorted(others, key=lambda a: a.name))[0].name]
     return AgentAction(
         action="observe",
         action_kind="interact",
         target_agents=[],
+        about_agents=referents,
         emotional_reaction=actor.mood,
         intents={},
         utterance="",

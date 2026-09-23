@@ -164,6 +164,49 @@ def test_action_with_only_about_agents_is_accepted():
     assert act.intents == {}, "referents must not be given intents"
 
 
+def test_referent_moves_no_relationship():
+    from models import Agent, AgentAction
+    from simulation.applicator import apply_action
+    jasper = Agent(id="id_j", name="Jasper", role="Lead Programmer")
+    milo = Agent(id="id_m", name="Milo", role="Reviewer")
+    action = AgentAction(
+        action="work on the drone",
+        action_kind="interact",
+        target_agents=[],
+        about_agents=["Milo"],
+        emotional_reaction="anxious",
+        intents={},
+        utterance="Milo will find it eventually.",
+        stance_shift={},
+        new_memory="I worked alone on the drone, thinking about Milo.",
+        explanation="I avoid him but cannot stop competing with him.",
+    )
+    log_line, notes, milestones = apply_action(jasper, action, [jasper, milo], day=1)
+    assert jasper.relationships == {}, jasper.relationships
+    assert milo.relationships == {}, milo.relationships
+    assert notes == [] and milestones == []
+    assert jasper.short_term_memory, "the actor must still remember their own day"
+    assert "Milo" in log_line
+
+
+def test_fallback_action_names_someone():
+    from models import Agent
+    from simulation import engine as eng
+    a = Agent(id="id_a", name="Ana", role="Captain")
+    b = Agent(id="id_b", name="Ben", role="Editor")
+    act = eng._fallback_action(a, [a, b])
+    assert act.target_agents or act.about_agents, "fallback must never be inert"
+
+
+def test_fallback_action_is_deterministic():
+    from models import Agent
+    from simulation import engine as eng
+    roster = [Agent(id=f"id_{n}", name=n, role="member") for n in ("Ana", "Ben", "Cy")]
+    first = eng._fallback_action(roster[0], roster)
+    second = eng._fallback_action(roster[0], roster)
+    assert first.about_agents == second.about_agents
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -175,6 +218,9 @@ _TESTS = [
     test_blank_roles_do_not_collide,
     test_action_naming_nobody_is_rejected,
     test_action_with_only_about_agents_is_accepted,
+    test_referent_moves_no_relationship,
+    test_fallback_action_names_someone,
+    test_fallback_action_is_deterministic,
 ]
 
 
