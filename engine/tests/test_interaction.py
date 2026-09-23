@@ -265,11 +265,14 @@ def test_every_agent_starts_connected():
 
 
 def test_seeding_is_deterministic():
+    """Two casts with identical names but different (uuid-style) ids must seed
+    identically. Keying pairing on a random id would fail this."""
+    import uuid
     from models import Agent
     from simulation import generator
 
     def build():
-        agents = [Agent(id=f"id_{n}", name=n, role="member")
+        agents = [Agent(id=f"a_{uuid.uuid4().hex[:8]}", name=n, role="member")
                   for n in ("Ana", "Ben", "Cy", "Dee", "Eve", "Fay", "Gus")]
         generator._seed_relationships(agents, "a high school club")
         return [(a.name, sorted(a.relationships.keys())) for a in agents]

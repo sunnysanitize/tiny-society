@@ -259,7 +259,7 @@ def _ensure_coverage(agents: list[Agent]) -> None:
 
     def _partner_for(a: Agent) -> Agent:
         pool = [o for o in ordered if o.id != a.id]
-        idx = int(hashlib.sha256(a.id.encode()).hexdigest()[:8], 16) % len(pool)
+        idx = int(hashlib.sha256(a.name.encode()).hexdigest()[:8], 16) % len(pool)
         return pool[idx]
 
     for a in ordered:
