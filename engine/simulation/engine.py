@@ -421,7 +421,10 @@ def _fallback_action(actor: Agent, roster: list[Agent]) -> AgentAction:
     """
     others = [a for a in roster if a.id != actor.id]
     if not others:
-        referents: list[str] = []
+        # No one else on the roster — the single-agent case. Still cannot return
+        # both fields empty (spec §2's invariant), so the day is about the actor
+        # themselves rather than nobody.
+        referents: list[str] = [actor.name]
     else:
         bonded = sorted(
             (a for a in others if a.name in actor.relationships),
@@ -433,6 +436,11 @@ def _fallback_action(actor: Agent, roster: list[Agent]) -> AgentAction:
             groups = set(actor.groups)
             mates = sorted((a for a in others if groups & set(a.groups)), key=lambda a: a.name)
             referents = [(mates or sorted(others, key=lambda a: a.name))[0].name]
+    referent = referents[0] if referents and referents[0] != actor.name else None
+    memory = (
+        f"I kept to myself today, thinking about {referent}."
+        if referent else "I kept to myself today."
+    )
     return AgentAction(
         action="observe",
         action_kind="interact",
@@ -442,7 +450,7 @@ def _fallback_action(actor: Agent, roster: list[Agent]) -> AgentAction:
         intents={},
         utterance="",
         stance_shift={},
-        new_memory="",
+        new_memory=memory,
         explanation="kept to themselves today",
     )
 

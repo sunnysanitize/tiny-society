@@ -258,6 +258,37 @@ def test_fallback_action_names_someone():
     assert act.target_agents or act.about_agents, "fallback must never be inert"
 
 
+def test_fallback_action_yields_one_beat():
+    """Replicates StoryChapter's beat dedup (same agent AND startsWith) against the
+    REAL log_line from apply_action and the REAL highlight summary the engine builds,
+    to catch the fallback action rendering twice (once as a highlight, once as an
+    undeduped event-log line) because the two strings shared no common prefix."""
+    import re
+    from models import Agent
+    from simulation import engine as eng
+    from simulation.applicator import apply_action
+    a = Agent(id="id_a", name="Ana", role="Captain")
+    b = Agent(id="id_b", name="Ben", role="Editor")
+    action = eng._fallback_action(a, [a, b])
+    log_line, _notes, _milestones = apply_action(a, action, [a, b], day=1)
+    # Mirrors engine.py's DayHighlight.summary construction exactly.
+    summary = action.new_memory or (
+        f"{action.action} {', '.join(action.target_agents)} — {action.explanation}"
+        if action.target_agents else
+        f"{action.action} about {', '.join(action.about_agents)} — {action.explanation}"
+        if action.about_agents else
+        f"{action.action} (no one) — {action.explanation}"
+    )
+    # Mirrors StoryChapter.tsx's parseLogLine (strip "[Name] " prefix, capitalise) +
+    # its dedup rule (same agent AND the log text starts with the summary).
+    m = re.match(r"^\s*\[([^\]]+)\]\s*(.*)$", log_line)
+    assert m, log_line
+    log_name, log_text = m.group(1).strip(), m.group(2).strip()
+    log_text = log_text[:1].upper() + log_text[1:]
+    dup = bool(summary) and log_name == a.name and log_text.lower().startswith(summary.strip().lower())
+    assert dup, f"fallback action would render twice: summary={summary!r} log_line={log_line!r}"
+
+
 def test_fallback_action_is_deterministic():
     from models import Agent
     from simulation import engine as eng
@@ -375,6 +406,7 @@ _TESTS = [
     test_referent_moves_no_relationship,
     test_referent_named_in_log_line_when_no_memory,
     test_fallback_action_names_someone,
+    test_fallback_action_yields_one_beat,
     test_fallback_action_is_deterministic,
     test_planner_prompt_demands_a_person,
     test_planner_prompt_includes_relationships,
