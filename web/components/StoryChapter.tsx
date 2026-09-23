@@ -5,7 +5,7 @@ import { PixelAvatar, isEmojiAvatar } from "./PixelAvatar";
 
 /**
  * StoryChapter — turns one day's raw data (highlights + vignettes + event_log)
- * into a single, followable "chapter" of the town's unfolding saga.
+ * into a single, followable "chapter" of the story so far.
  *
  * Each beat leads with a human-readable line and carries the character's pixel
  * avatar + name, so a day reads like a story rather than a terse log. Vignettes
@@ -32,7 +32,7 @@ const KIND_STYLE: Record<VignetteKind, { color: string; label: string; symbol: s
 
 // A unified story beat the chapter renders.
 type Beat =
-  | { kind: "highlight"; agent: string; text: string }
+  | { kind: "highlight"; agent: string; text: string; said?: string; why?: string }
   | { kind: "vignette"; agent: string; text: string; vk: VignetteKind }
   | { kind: "event"; text: string };
 
@@ -58,8 +58,8 @@ function chapterMood(agents: Agent[], beatCount: number, hasEvent: boolean): str
   if (tense / total > 0.45) return "tensions rise";
   if (bright / total > 0.55) return "spirits lift";
   if (beatCount === 0) return "a quiet day";
-  if (beatCount > 6) return "a busy day in town";
-  return "the town stirs";
+  if (beatCount > 6) return "a crowded day";
+  return "things stir";
 }
 
 function findAgent(agents: Agent[], name: string): Agent | undefined {
@@ -115,14 +115,22 @@ export function StoryChapter({
 
   const beats = useMemo<Beat[]>(() => {
     const out: Beat[] = [];
-    const seen = new Set<string>();
+    const seen: string[] = [];
 
-    // 1) Lead with the human-readable highlights (best summaries available).
+    // 1) Lead with the highlights — these carry the agent's own words.
     for (const h of highlights ?? []) {
-      const text = (h?.summary ?? "").trim();
-      if (!text) continue;
-      out.push({ kind: "highlight", agent: h.agent ?? "", text });
-      seen.add(text.toLowerCase());
+      const summary = (h?.summary ?? "").trim();
+      const said = (h?.utterance ?? "").trim();
+      if (!summary && !said) continue;
+      out.push({
+        kind: "highlight",
+        agent: h.agent ?? "",
+        text: said || summary,
+        said: said ? summary : undefined,
+        why: (h?.explanation ?? "").trim() || undefined,
+      });
+      if (summary) seen.push(summary.toLowerCase());
+      if (said) seen.push(said.toLowerCase());
     }
 
     // 2) Fold in vignettes (dreams / catchphrases / announcements).
@@ -132,12 +140,16 @@ export function StoryChapter({
       out.push({ kind: "vignette", agent: v.agent ?? "", text, vk: v.kind });
     }
 
-    // 3) Backfill with cleaned event-log lines the highlights didn't already cover,
-    //    so nothing is lost but the feed stays digestible.
+    // 3) Backfill with event-log lines the highlights did not already cover.
+    //    The log line is "[Name] <new_memory> (<explanation>)" while the highlight is
+    //    just <new_memory>, so an exact-match check never fired and every action
+    //    rendered twice. Match on CONTAINMENT of an already-shown line instead.
     for (const raw of eventLog ?? []) {
       const { name, text } = parseLogLine(raw ?? "");
       if (!text) continue;
-      if (seen.has(text.toLowerCase())) continue;
+      const lower = text.toLowerCase();
+      if (seen.some(s => s && lower.includes(s))) continue;
+      seen.push(lower);
       if (name) out.push({ kind: "highlight", agent: name, text });
       else out.push({ kind: "event", text });
     }
@@ -210,7 +222,7 @@ export function StoryChapter({
       <div style={{ marginTop: 14 }}>
         {beats.length === 0 ? (
           <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.6, fontStyle: "italic", fontFamily: "ui-monospace, monospace" }}>
-            A calm day in town — nothing of note was recorded.
+            A quiet day — nothing of note was recorded.
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: fillHeight ? undefined : 340, overflowY: fillHeight ? "visible" : "auto" }}>
@@ -239,7 +251,7 @@ export function StoryChapter({
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, flexWrap: "wrap" }}>
                       <span className="font-pixel" style={{ fontSize: 9, color: "var(--text)", letterSpacing: "0.04em" }}>
-                        {b.agent || "The town"}
+                        {b.agent || "Someone"}
                       </span>
                       {agent && (
                         <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace" }}>
@@ -259,8 +271,24 @@ export function StoryChapter({
                       fontFamily: "ui-monospace, monospace",
                       fontStyle: vk === "catchphrase" ? "italic" : "normal",
                     }}>
-                      {b.text}
+                      {b.kind === "highlight" && b.said ? `“${b.text}”` : b.text}
                     </div>
+                    {b.kind === "highlight" && b.said && (
+                      <div style={{
+                        fontSize: 11.5, color: "var(--text-dim)", lineHeight: 1.5,
+                        fontFamily: "ui-monospace, monospace", marginTop: 3,
+                      }}>
+                        {b.said}
+                      </div>
+                    )}
+                    {b.kind === "highlight" && b.why && (
+                      <div style={{
+                        fontSize: 11, color: "var(--text-muted)", lineHeight: 1.45,
+                        fontFamily: "ui-monospace, monospace", marginTop: 3, fontStyle: "italic",
+                      }}>
+                        {b.why}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -313,14 +341,14 @@ export function StoryChapter({
         </div>
       )}
 
-      {/* ── The stakes: where the town is heading ────────────────────── */}
+      {/* ── The stakes: where this is heading ────────────────────────── */}
       {forecast?.narrative && (
         <div style={{
           marginTop: 14, padding: "10px 12px",
           background: "var(--surface-2)", borderLeft: "3px solid var(--accent)",
         }}>
           <div className="font-pixel" style={{ fontSize: 7, color: "var(--accent)", letterSpacing: "0.1em", marginBottom: 5 }}>
-            ◇ WHERE THE TOWN IS HEADING
+            ◇ WHERE THIS IS HEADING
           </div>
           <div style={{ fontSize: 12.5, color: "var(--text-dim)", lineHeight: 1.7, fontFamily: "ui-monospace, monospace", fontStyle: "italic" }}>
             {forecast.narrative}
