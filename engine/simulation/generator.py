@@ -242,6 +242,43 @@ def _fetch_batch(world: World, count: int, existing_names: set[str],
         return (data.get("agents") or [])[:count]
 
 
+# Day-1 coverage: a cast where some agents know nobody produces a day of solo
+# monologues, because an agent with no relationships has nobody to act on. After the
+# LLM seeding pass, connect anyone still isolated and guarantee some friction.
+_MIN_CHARGED_EDGES = 2
+_CHARGED_SEED_TYPES = ("rivalry", "conflict")
+
+
+def _ensure_coverage(agents: list[Agent]) -> None:
+    """Connect isolated agents and guarantee at least `_MIN_CHARGED_EDGES` charged
+    edges. Deterministic: pairing is by sorted name and a stable hash, never by
+    `random`, so a replayed run seeds identically."""
+    if len(agents) < 2:
+        return
+    ordered = sorted(agents, key=lambda a: a.name)
+
+    def _partner_for(a: Agent) -> Agent:
+        pool = [o for o in ordered if o.id != a.id]
+        idx = int(hashlib.sha256(a.id.encode()).hexdigest()[:8], 16) % len(pool)
+        return pool[idx]
+
+    for a in ordered:
+        if not a.relationships:
+            consequence.seed_relationship(a, _partner_for(a), "trust", 0.25, True)
+
+    charged = sum(
+        1 for a in ordered for r in a.relationships.values()
+        if r.type in ("rivalry", "conflict", "romance")
+    )
+    i = 0
+    while charged < _MIN_CHARGED_EDGES and i + 1 < len(ordered):
+        a, b = ordered[i], ordered[i + 1]
+        rel_type = _CHARGED_SEED_TYPES[i % len(_CHARGED_SEED_TYPES)]
+        consequence.seed_relationship(a, b, rel_type, 0.35, True)
+        charged += 1
+        i += 2
+
+
 def _seed_relationships(agents: list[Agent], world_prompt: str) -> None:
     """Ask the LLM to generate initial relationship pairs and apply them to the agents."""
     if len(agents) < 2:
@@ -292,6 +329,8 @@ def _seed_relationships(agents: list[Agent], world_prompt: str) -> None:
         logging.info(f"Seeded {seeded} relationships for {len(agents)} agents")
     except Exception as e:
         logging.warning(f"Relationship seeding failed: {e}")
+
+    _ensure_coverage(agents)
 
 
 def _safe_json(raw: str) -> dict:

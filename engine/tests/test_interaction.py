@@ -249,6 +249,34 @@ def test_planner_prompt_includes_relationships():
     assert "Ben" in prompt, "the planner cannot name a person it never sees"
 
 
+def test_every_agent_starts_connected():
+    from models import Agent
+    from simulation import generator
+    agents = [Agent(id=f"id_{n}", name=n, role="member")
+              for n in ("Ana", "Ben", "Cy", "Dee", "Eve", "Fay", "Gus")]
+    generator._seed_relationships(agents, "a high school club")
+    for a in agents:
+        assert a.relationships, f"{a.name} starts with nobody"
+    charged = sum(
+        1 for a in agents for r in a.relationships.values()
+        if r.type in ("rivalry", "conflict", "romance")
+    )
+    assert charged >= 2, f"only {charged} charged edges; day 1 has no friction"
+
+
+def test_seeding_is_deterministic():
+    from models import Agent
+    from simulation import generator
+
+    def build():
+        agents = [Agent(id=f"id_{n}", name=n, role="member")
+                  for n in ("Ana", "Ben", "Cy", "Dee", "Eve", "Fay", "Gus")]
+        generator._seed_relationships(agents, "a high school club")
+        return [(a.name, sorted(a.relationships.keys())) for a in agents]
+
+    assert build() == build()
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -266,6 +294,8 @@ _TESTS = [
     test_fallback_action_is_deterministic,
     test_planner_prompt_demands_a_person,
     test_planner_prompt_includes_relationships,
+    test_every_agent_starts_connected,
+    test_seeding_is_deterministic,
 ]
 
 
