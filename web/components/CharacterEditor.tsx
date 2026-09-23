@@ -118,7 +118,7 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
     setBusy(true); setErr(null);
     try {
       await api.addCharacter(worldId, {
-        name: name.trim(), role: role.trim() || "citizen",
+        name: name.trim(), role: role.trim() || "member",
         traits: splitCsv(traits), goals: splitCsv(goals),
         mood, groups: splitCsv(groups),
         starting_memories: memory.trim() ? [memory.trim()] : [],

@@ -148,7 +148,7 @@ class Agent(BaseModel):
 
 class CharacterInput(BaseModel):
     name: str
-    role: str = "citizen"
+    role: str = "member"
     traits: list[str] = []
     goals: list[str] = []
     mood: Mood = "calm"

@@ -12,7 +12,7 @@ from .memory import make_memory
 from . import consequence
 
 FILLER_SYSTEM = """FILLER_AGENT_GENERATION
-You generate fictional citizens for a multi-agent social simulation. Return STRICT JSON only.
+You generate fictional characters for a multi-agent social simulation. Return STRICT JSON only.
 
 Schema:
 {
