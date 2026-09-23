@@ -286,6 +286,23 @@ def test_seeding_is_deterministic():
         assert build() == first
 
 
+def test_custom_characters_are_not_left_isolated():
+    """Customs + fillers is the real UI flow: the user names some characters, then
+    generates the rest. Seeding only the fillers left every named character with nobody
+    to act on — a uniform hand-built cast cannot catch that, so build the mixed shape."""
+    from models import Agent, World
+    from simulation import generator
+    world = World(prompt="a high school robotics and debate club", target_population=7)
+    world.agents = [
+        Agent(id=f"c_{n}", name=n, role=r, is_custom=True)
+        for n, r in (("Jasper", "Lead Programmer"), ("Milo", "Reviewer"), ("Nina", "Captain"))
+    ]
+    fillers = generator.generate_fillers(world, 4)
+    everyone = list(world.agents) + fillers
+    isolated = [a.name for a in everyone if not a.relationships]
+    assert not isolated, f"isolated after setup: {isolated}"
+
+
 def test_highlights_carry_dialogue():
     from models import World, SimulationConfig
     from simulation import generator, engine as eng
@@ -327,6 +344,7 @@ _TESTS = [
     test_planner_prompt_includes_relationships,
     test_every_agent_starts_connected,
     test_seeding_is_deterministic,
+    test_custom_characters_are_not_left_isolated,
     test_highlights_carry_dialogue,
     test_mock_utterance_differs_from_memory,
 ]

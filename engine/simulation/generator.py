@@ -205,7 +205,11 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
             if remaining <= 0:
                 break
 
-    _seed_relationships(out, world.prompt)
+    # Seed across the ENTIRE cast, not just the fillers. Custom characters arrive with
+    # starting_relationships={} (CharacterEditor sends no relationships and exposes no UI
+    # for them), so passing `out` alone left every hand-made character isolated on day 1 —
+    # the precise failure this seeding exists to prevent.
+    _seed_relationships(list(world.agents) + out, world.prompt)
     return out
 
 
