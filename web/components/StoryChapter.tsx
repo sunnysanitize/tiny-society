@@ -149,7 +149,7 @@ export function StoryChapter({
       // an arbitrary substring instead dropped unrelated beats from other agents whose
       // text happened to contain a short summary like "left."
       const dup = seen.some(
-        s => s.text && (name ?? "") === s.agent && lower.startsWith(s.text)
+        s => s.text && s.agent && (name ?? "") === s.agent && lower.startsWith(s.text)
       );
       if (dup) continue;
       if (name) out.push({ kind: "highlight", agent: name, text });
