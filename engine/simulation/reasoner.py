@@ -148,7 +148,7 @@ def _parse_action(agent: Agent, raw: str) -> Optional[AgentAction]:
             about_agents=about,
             emotional_reaction=normalize_mood(data.get("emotional_reaction"), default=agent.mood),
             intents=intents,
-            utterance=str(data.get("utterance", "")).strip()[:400],
+            utterance=_trim(str(data.get("utterance", "")), 400),
             stance_shift=stance_shift,
             new_memory=_trim(str(data.get("new_memory", "")), 280),
             explanation=_trim(str(data.get("explanation", "")), 280),

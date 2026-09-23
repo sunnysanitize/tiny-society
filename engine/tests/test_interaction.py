@@ -68,6 +68,41 @@ def test_trim_never_cuts_mid_word():
     assert tail.split()[-1] in source.split(), tail.split()[-1]
 
 
+def test_long_utterance_is_not_cut_mid_word():
+    """utterance became the primary quoted beat text (Tasks 9/10) but was never moved
+    off the old hard [:400] slice, so a long line renders with a word sheared in half."""
+    import json
+    from models import Agent
+    from simulation import reasoner
+    actor = Agent(id="id_a", name="Jasper", role="Lead Programmer")
+    long_utterance = (
+        "We should just talk about the problem honestly instead of pretending the drone "
+        "code review went fine, because Milo already knows I rewrote his section without "
+        "telling him first and if I keep dodging this conversation it is only going to get "
+        "worse between us before regionals even start, so let's just talk about the pro"
+        "totype failures directly, figure out who actually owns which module, stop "
+        "pretending the schedule is fine when it clearly is not, and settle this before "
+        "Friday's judging panel arrives and asks us questions neither of us can answer."
+    )
+    assert len(long_utterance) > 400, len(long_utterance)
+    raw = json.dumps({
+        "action": "confront Milo",
+        "action_kind": "interact",
+        "target_agents": ["Milo"],
+        "about_agents": [],
+        "emotional_reaction": "anxious",
+        "intents": {"Milo": "talk"},
+        "utterance": long_utterance,
+        "stance_shift": {},
+        "new_memory": "I finally talked to Milo about the code review.",
+        "explanation": "Avoidant but ran out of road.",
+    })
+    act = reasoner._parse_action(actor, raw)
+    assert act is not None
+    tail = act.utterance.rstrip("…").strip()
+    assert tail.split()[-1] in long_utterance.split(), tail.split()[-1]
+
+
 def test_trim_leaves_short_text_untouched():
     from simulation import reasoner
     assert reasoner._trim("I kept to myself today.", 280) == "I kept to myself today."
@@ -329,6 +364,7 @@ _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
     test_trim_never_cuts_mid_word,
+    test_long_utterance_is_not_cut_mid_word,
     test_trim_leaves_short_text_untouched,
     test_report_prompt_does_not_leak_section_names,
     test_roles_are_unique_across_batches,
