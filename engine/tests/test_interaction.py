@@ -189,6 +189,31 @@ def test_referent_moves_no_relationship():
     assert "Milo" in log_line
 
 
+def test_referent_named_in_log_line_when_no_memory():
+    """With new_memory empty the log line must still name the referent, which is
+    only true if the applicator's about_agents branch runs."""
+    from models import Agent, AgentAction
+    from simulation.applicator import apply_action
+    jasper = Agent(id="id_j", name="Jasper", role="Lead Programmer")
+    milo = Agent(id="id_m", name="Milo", role="Reviewer")
+    action = AgentAction(
+        action="work on the drone",
+        action_kind="interact",
+        target_agents=[],
+        about_agents=["Milo"],
+        emotional_reaction="anxious",
+        intents={},
+        utterance="",
+        stance_shift={},
+        new_memory="",
+        explanation="I avoid him but cannot stop competing with him.",
+    )
+    log_line, notes, milestones = apply_action(jasper, action, [jasper, milo], day=1)
+    assert "Milo" in log_line, log_line
+    assert "alone, about" in log_line, log_line
+    assert jasper.relationships == {} and milo.relationships == {}
+
+
 def test_fallback_action_names_someone():
     from models import Agent
     from simulation import engine as eng
@@ -219,6 +244,7 @@ _TESTS = [
     test_action_naming_nobody_is_rejected,
     test_action_with_only_about_agents_is_accepted,
     test_referent_moves_no_relationship,
+    test_referent_named_in_log_line_when_no_memory,
     test_fallback_action_names_someone,
     test_fallback_action_is_deterministic,
 ]
