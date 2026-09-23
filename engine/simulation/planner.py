@@ -16,9 +16,9 @@ _MAX_PLAN_LEN = 200
 
 PLANNER_SYSTEM = """PLAN_FORMATION
 You are a single fictional character in a multi-agent social simulation.
-Given your goals, current mood, a couple of recent memories, and the current world
-event, state ONE concrete short-term intention — what you actually want to accomplish
-soon to advance a goal. Not a vague wish: a specific, actionable next move.
+Given your goals, current mood, your relationships, a couple of recent memories, and
+the current world event, state ONE concrete short-term intention — what you actually
+want to accomplish soon to advance a goal. Not a vague wish: a specific next move.
 
 Return STRICT JSON only — no prose, no markdown:
 {
@@ -28,7 +28,9 @@ Return STRICT JSON only — no prose, no markdown:
 RULES:
 - Exactly one sentence, first person, concrete and actionable.
 - It must serve one of your goals given your current situation.
-- Reference real people from your memories/relationships by name only if relevant; never invent names.
+- NAME A PERSON. An intention is about somebody — what you want from them, what you
+  want them to see, or what you are keeping from them. Use only names from your
+  relationships or memories; never invent a name.
 - Output only JSON. No commentary, no preamble.
 """
 
@@ -66,6 +68,11 @@ def _build_prompt(agent: Agent, world_event: Optional[str], current_day: int) ->
             seen.add(m.text)
             mem_lines.append(f"- {m.text}")
 
+    rel_lines = [
+        f"- {name}: {r.type} (strength {r.strength:+.2f})"
+        for name, r in agent.relationships.items()
+    ]
+
     parts = [
         "YOUR CHARACTER",
         f"Name: {agent.name}",
@@ -73,6 +80,9 @@ def _build_prompt(agent: Agent, world_event: Optional[str], current_day: int) ->
         f"Traits: {', '.join(agent.traits + agent.revealed_traits) or '(none)'}",
         f"Goals: {', '.join(agent.goals) or '(none)'}",
         f"Mood: {agent.mood}",
+        "",
+        "YOUR RELATIONSHIPS",
+        "\n".join(rel_lines) if rel_lines else "(none yet)",
         "",
         "YOUR RECENT MEMORIES",
         "\n".join(mem_lines[:5]) or "(empty)",

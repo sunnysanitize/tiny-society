@@ -232,6 +232,23 @@ def test_fallback_action_is_deterministic():
     assert first.about_agents == second.about_agents
 
 
+def test_planner_prompt_demands_a_person():
+    from simulation import planner
+    sys_prompt = planner.PLANNER_SYSTEM
+    low = sys_prompt.lower()
+    assert "name" in low and "person" in low, "plan must be about somebody"
+    assert "relationships" in low or "who" in low
+
+
+def test_planner_prompt_includes_relationships():
+    from models import Agent, Relationship
+    from simulation import planner
+    a = Agent(id="id_a", name="Ana", role="Captain", goals=["win regionals"])
+    a.relationships["Ben"] = Relationship(type="rivalry", strength=-0.4)
+    prompt = planner._build_prompt(a, "the club vote is tomorrow", 1)
+    assert "Ben" in prompt, "the planner cannot name a person it never sees"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -247,6 +264,8 @@ _TESTS = [
     test_referent_named_in_log_line_when_no_memory,
     test_fallback_action_names_someone,
     test_fallback_action_is_deterministic,
+    test_planner_prompt_demands_a_person,
+    test_planner_prompt_includes_relationships,
 ]
 
 
