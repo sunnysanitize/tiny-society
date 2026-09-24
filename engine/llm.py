@@ -759,7 +759,48 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
 
         # 3-6 topics
         topics = topics[:5]
+
+        if is_fantasy:
+            nouns = ("brother", "brothers", "the house")
+            places = ["the chapter house", "the refectory", "the cloister walk"]
+            afford = ["word travels on foot", "letters take weeks", "the stores are counted daily"]
+            register = "Plain, concrete, of its century. Name the hours and the work."
+        elif is_scifi:
+            nouns = ("crew member", "crew", "the ship")
+            places = ["the mess", "the observation deck", "engineering"]
+            afford = ["comms are logged", "no contact with home", "air and water are rationed"]
+            register = "Clipped and procedural. Distance and dwindling supply shape everything."
+        elif is_corp:
+            nouns = ("employee", "employees", "the company")
+            places = ["the open floor", "the kitchen", "the Monday all-hands"]
+            afford = ["everything is on Slack", "calendars are public", "the org chart is known"]
+            register = "Dry and specific. Real work, real deadlines, no motivational abstractions."
+        elif is_school:
+            nouns = ("student", "students", "the cohort")
+            places = ["the dining hall", "the quad", "the group chat"]
+            afford = ["everyone shares a timetable", "term deadlines are fixed"]
+            register = "Close and immediate. Term time, coursework, and small rooms."
+        else:
+            nouns = ("member", "members", "the group")
+            places = ["the usual meeting place"]
+            afford = ["people speak face to face"]
+            register = "Concrete and specific to this setting."
+
+        lens = {
+            "premise_summary": " ".join(user.split())[:300],
+            "actor_noun": nouns[0],
+            "actor_noun_plural": nouns[1],
+            "collective_noun": nouns[2],
+            "affordances": afford,
+            "gathering_places": places,
+            "register_notes": register,
+            "banned_vocabulary": ["team-building", "stakeholder", "holistic",
+                                  "strategic discussions", "posted"],
+            "central_stake": f"who controls {place}",
+        }
+
         return json.dumps({
+            "lens": lens,
             "entities": entities,
             "relationships": relationships,
             "power_structures": power_structures,

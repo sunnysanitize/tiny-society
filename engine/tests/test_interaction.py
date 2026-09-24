@@ -467,6 +467,47 @@ def test_report_prompt_does_not_forbid_the_world_voice():
     assert "vocabulary" in low, "the report must be told to speak the world's own language"
 
 
+def test_world_context_returns_graph_and_lens():
+    from models import World
+    from simulation.worldgraph import extract_world_context, extract_world_graph
+    w = World(
+        prompt="A besieged Cistercian monastery in 1340; the grain is running out.",
+        target_population=5,
+    )
+    graph, lens = extract_world_context(w)
+    assert graph.topics, "the graph must still be extracted"
+    assert not lens.is_empty(), "a real premise must yield a populated lens"
+    assert lens.actor_noun, "actors need a name in this world"
+    # The old entry point must keep working for every existing caller.
+    assert extract_world_graph(w).topics
+
+
+def test_created_world_carries_a_lens():
+    from fastapi.testclient import TestClient
+    import main
+    client = TestClient(main.app)
+    r = client.post("/world", json={
+        "prompt": "A besieged Cistercian monastery in 1340; the grain is running out.",
+        "target_population": 5,
+    })
+    assert r.status_code == 200, r.text
+    world = r.json()["world"]
+    assert world["lens"]["actor_noun"], "the created world must carry its interpretation"
+    assert world["world_graph"]["topics"], "the graph must still be its own field"
+
+
+def test_world_lens_survives_a_setting_less_prompt():
+    """Review Focus #1: a one-word, non-English or mashed prompt must degrade to a
+    usable-or-empty lens, never an exception."""
+    from models import World
+    from simulation.worldgraph import extract_world_context
+    for prompt in ("cats", "asdkjhasd kjhasd", "五人の友達", "", "   "):
+        graph, lens = extract_world_context(World(prompt=prompt, target_population=5))
+        assert lens is not None and graph is not None   # must not raise
+        for item in lens.affordances + lens.gathering_places + lens.banned_vocabulary:
+            assert len(item) <= 120
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -498,6 +539,9 @@ _TESTS = [
     test_premise_block_is_omitted_when_absent,
     test_premise_is_capped,
     test_report_prompt_does_not_forbid_the_world_voice,
+    test_world_context_returns_graph_and_lens,
+    test_created_world_carries_a_lens,
+    test_world_lens_survives_a_setting_less_prompt,
 ]
 
 

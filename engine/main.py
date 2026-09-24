@@ -35,6 +35,7 @@ from models import (
 from state import store
 from simulation.engine import run_simulation
 from simulation.generator import generate_fillers
+from simulation.worldgraph import extract_world_context
 from simulation.memory import make_memory
 
 
@@ -119,6 +120,10 @@ class CreateWorldResponse(BaseModel):
 @app.post("/world", response_model=CreateWorldResponse)
 def create_world(body: WorldInput):
     world = World(prompt=body.prompt, target_population=body.target_population)
+    # Interpret the premise up front: the fitting and surprise endpoints run long
+    # before any simulation does, and both need the lens. Best-effort — an empty lens
+    # means every consumer falls back to the raw prompt.
+    world.world_graph, world.lens = extract_world_context(world)
     wid = store.create(world)
     return CreateWorldResponse(world_id=wid, world=world)
 

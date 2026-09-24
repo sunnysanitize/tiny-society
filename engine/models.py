@@ -53,6 +53,34 @@ class WorldRelationship(BaseModel):
     relation: str = "related to"
 
 
+class WorldLens(BaseModel):
+    """How THIS world must be written, so a run reads like it and no other.
+
+    Not factual graph data — `WorldGraph` holds that, and stays its own field. This is
+    the register: what the actors are called, what can and cannot exist here, where
+    people meet, how narration should sound, which words would break the world.
+
+    Every field degrades to empty. An empty lens means consumers fall back to the raw
+    world prompt, i.e. the behavior before this existed.
+    """
+    premise_summary: str = ""
+    actor_noun: str = ""               # "brother", "nation", "deckhand"
+    actor_noun_plural: str = ""
+    collective_noun: str = ""          # "the community" — replaces "society"/"population"
+    affordances: list[str] = []        # "word travels on foot", "no telephones"
+    gathering_places: list[str] = []
+    register_notes: str = ""
+    banned_vocabulary: list[str] = []  # "posted", "stakeholder", "team-building"
+    central_stake: str = ""
+
+    def is_empty(self) -> bool:
+        return not any([
+            self.premise_summary, self.actor_noun, self.actor_noun_plural,
+            self.collective_noun, self.affordances, self.gathering_places,
+            self.register_notes, self.banned_vocabulary, self.central_stake,
+        ])
+
+
 class WorldGraph(BaseModel):
     """Shared factual ground truth for the world (a lightweight GraphRAG layer).
 
@@ -176,6 +204,9 @@ class World(BaseModel):
     # Shared factual ground truth (entities/relationships/power structures/topics),
     # populated once at simulation start by simulation/worldgraph.py.
     world_graph: WorldGraph = Field(default_factory=WorldGraph)
+    # Derived interpretation of `prompt` (see simulation/worldgraph.extract_world_context).
+    # Empty on worlds created before this existed; every consumer falls back to `prompt`.
+    lens: WorldLens = Field(default_factory=WorldLens)
     # PROPHECY (Slice E): player's free-text prediction, graded by the AI at the end of
     # a run against the actual outcome. None = no prophecy made.
     prophecy: Optional[str] = None

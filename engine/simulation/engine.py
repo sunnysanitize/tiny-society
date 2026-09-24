@@ -20,7 +20,7 @@ from .persona import vet_action
 from .observation import distribute_observation
 from .metrics import compute_metrics, snapshot_influence
 from .reporter import generate_final_report
-from .worldgraph import extract_world_graph
+from .worldgraph import extract_world_context
 from .stance import initialize_stances
 from .vignette import generate_vignette_struct
 from .prophecy import grade_prophecy
@@ -70,7 +70,7 @@ def run_simulation(
     # structures, and the stance topics the society will divide on). Stored on the
     # world object so snapshots/saves carry it.
     if world.world_graph is None or world.world_graph.is_empty():
-        world.world_graph = extract_world_graph(world)
+        world.world_graph, world.lens = extract_world_context(world)
     topics = world.world_graph.topics
 
     # PER-AGENT STANCE: seed each agent with a mild, varied starting position on each
