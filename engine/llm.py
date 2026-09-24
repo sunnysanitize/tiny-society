@@ -807,6 +807,27 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
             "topics": topics,
         })
 
+    # ── character world-fitting (suggest, don't rewrite) ───────────────────────
+    if "CHARACTER_WORLD_FIT" in system:
+        ctx = user.lower()
+        if any(w in ctx for w in ("monastery", "abbey", "medieval", "1340", "kingdom", "realm")):
+            role, groups = "kitchener", ["the kitchen", "the lay brothers"]
+            goals = ["keep the house fed through the siege"]
+            mems = ["I argued with the cellarer over the last of the salt pork."]
+        elif any(w in ctx for w in ("ship", "colony", "station", "crew")):
+            role, groups = "galley hand", ["the mess crew"]
+            goals = ["stretch the rations another month"]
+            mems = ["I watched the quartermaster shave the portions again and said nothing."]
+        else:
+            role, groups = "cook", ["the kitchen"]
+            goals = ["feed everyone properly"]
+            mems = ["I have been feeding this lot longer than any of them remember."]
+        return json.dumps({
+            "role": role, "groups": groups, "goals": goals,
+            "starting_memories": mems,
+            "note": f"Their stubbornness and their cooking make them the {role} here.",
+        })
+
     # ── perception narration ───────────────────────────────────────────────────
     if "PERCEPTION_NARRATION" in system:
         perceiver_name, actor_name, rel_type, raw_delta_str = "", "", "trust", "0.1"

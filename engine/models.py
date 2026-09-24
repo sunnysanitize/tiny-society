@@ -172,6 +172,9 @@ class Agent(BaseModel):
     avatar: Optional[str] = None
     # Free text noting a real person the character is based on (e.g. "my friend Sam").
     based_on: Optional[str] = None
+    # True only when the user ACCEPTED a world-fitting proposal. A blank role is
+    # indistinguishable from a deliberate one, so "who is unfitted" needs its own flag.
+    fitted_to_world: bool = False
 
 
 class CharacterInput(BaseModel):
@@ -187,6 +190,23 @@ class CharacterInput(BaseModel):
     # person" free text. Both optional so existing callers are unaffected.
     avatar: Optional[str] = None
     based_on: Optional[str] = None
+    # True only when the user ACCEPTED a world-fitting proposal. A blank role is
+    # indistinguishable from a deliberate one, so "who is unfitted" needs its own flag.
+    fitted_to_world: bool = False
+
+
+class CharacterFit(BaseModel):
+    """A PROPOSED world-fitting for an authored character. Never applied automatically.
+
+    Carries only the SITUATIONAL fields — where a person stands in a world. Identity
+    (name, traits, mood, avatar, based_on) is what the user came to see dropped into a
+    world, and is never proposed against.
+    """
+    role: str = ""
+    groups: list[str] = []
+    goals: list[str] = []
+    starting_memories: list[str] = []
+    note: str = ""
 
 
 class WorldInput(BaseModel):

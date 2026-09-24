@@ -649,6 +649,62 @@ def test_banned_vocabulary_instructs_but_never_filters():
     assert "stakeholder" in text and "guild" in text, "banned list is named, not applied"
 
 
+def test_fit_preserves_identity_and_proposes_situation():
+    from models import World, CharacterInput
+    from simulation.fitting import fit_character
+    w = World(prompt="A besieged Cistercian monastery in 1340.", target_population=5)
+    from simulation.worldgraph import extract_world_context
+    w.world_graph, w.lens = extract_world_context(w)
+    body = CharacterInput(name="Dave", role="", traits=["stubborn", "broke"], mood="calm")
+    fit = fit_character(w, body)
+    assert fit.role, "fitting must propose a role"
+    assert not hasattr(fit, "name"), "fitting must never propose a name"
+    assert not hasattr(fit, "traits"), "fitting must never propose traits"
+    assert not hasattr(fit, "mood"), "fitting must never propose a mood"
+
+
+def test_fit_endpoint_mutates_nothing():
+    from fastapi.testclient import TestClient
+    import main
+    client = TestClient(main.app)
+    wid = client.post("/world", json={
+        "prompt": "A besieged Cistercian monastery in 1340.", "target_population": 5,
+    }).json()["world_id"]
+    before = client.get(f"/world/{wid}").json()
+    r = client.post(f"/world/{wid}/character/fit", json={
+        "name": "Dave", "role": "", "traits": ["stubborn"], "mood": "calm",
+    })
+    assert r.status_code == 200, r.text
+    after = client.get(f"/world/{wid}").json()
+    assert before["agents"] == after["agents"], "fit must not touch the roster"
+
+
+def test_added_character_is_unfitted_by_default():
+    from models import CharacterInput
+    from main import _build_agent_from_input
+    a = _build_agent_from_input(CharacterInput(name="Dave"), day=0)
+    assert a.fitted_to_world is False
+    b = _build_agent_from_input(CharacterInput(name="Ana", fitted_to_world=True), day=0)
+    assert b.fitted_to_world is True
+
+
+def test_fit_on_a_lensless_world_returns_200_not_500():
+    """Review Focus #5: worlds created before the lens existed have an empty lens and
+    are loaded from saves every day. Asking to fit a character in one must degrade to
+    an explanatory empty proposal, never an error."""
+    from models import World, WorldLens, CharacterInput
+    from simulation.fitting import fit_character
+    w = World(prompt="", target_population=5)
+    w.lens = WorldLens()
+    fit = fit_character(w, CharacterInput(name="Dave"))
+    assert fit.role == "" and fit.note, "empty proposal must explain itself"
+
+    w2 = World(prompt="A monastery in 1340.", target_population=5)
+    w2.lens = WorldLens()   # pre-lens save: prompt present, lens empty
+    fit2 = fit_character(w2, CharacterInput(name="Dave"))
+    assert fit2.role, "a raw prompt is enough to fit against"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -689,6 +745,10 @@ _TESTS = [
     test_realistic_lens_banned_vocabulary_survives_into_prompt,
     test_report_prompt_carries_lens_vocabulary,
     test_banned_vocabulary_instructs_but_never_filters,
+    test_fit_preserves_identity_and_proposes_situation,
+    test_fit_endpoint_mutates_nothing,
+    test_added_character_is_unfitted_by_default,
+    test_fit_on_a_lensless_world_returns_200_not_500,
 ]
 
 

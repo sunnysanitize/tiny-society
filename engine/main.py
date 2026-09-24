@@ -29,7 +29,7 @@ logging.basicConfig(
 log = logging.getLogger("tiny_society")
 
 from models import (
-    Agent, CharacterInput, World, WorldInput,
+    Agent, CharacterFit, CharacterInput, World, WorldInput,
     SimulationConfig, SimulationResult, DaySnapshot,
 )
 from state import store
@@ -37,6 +37,7 @@ from simulation.engine import run_simulation
 from simulation.generator import generate_fillers
 from simulation.worldgraph import extract_world_context
 from simulation.memory import make_memory
+from simulation.fitting import fit_character
 
 
 def _validate_config() -> None:
@@ -154,6 +155,7 @@ def _build_agent_from_input(body: CharacterInput, *, day: int = 0) -> Agent:
         is_custom=True,
         avatar=body.avatar,
         based_on=body.based_on,
+        fitted_to_world=body.fitted_to_world,
     )
 
 
@@ -164,6 +166,15 @@ def add_character(wid: str, body: CharacterInput):
     w.agents.append(agent)
     store.update(wid, w)
     return agent
+
+
+@app.post("/world/{wid}/character/fit", response_model=CharacterFit)
+def fit_character_to_world(wid: str, body: CharacterInput):
+    """Propose this character's situation in this world. Writes NOTHING — the client
+    shows the proposal beside what the user typed and only an explicit accept, via the
+    ordinary add-character call, turns it into an agent."""
+    w = _require(wid)
+    return fit_character(w, body)
 
 
 @app.post("/world/{wid}/inject-character", response_model=Agent)
