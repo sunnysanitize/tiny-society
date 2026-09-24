@@ -24,6 +24,7 @@ from .worldgraph import extract_world_context
 from .stance import initialize_stances
 from .vignette import generate_vignette_struct
 from .prophecy import grade_prophecy
+from .premise import render_premise
 
 # Run a reflection pass (Stanford "Generative Agents" style) every N sim days for
 # the agents reasoning that day, so the day's reasoning can use fresh reflections.
@@ -107,6 +108,10 @@ def run_simulation(
     if pending_event:
         world.pending_event = None
 
+    # Render the world's premise ONCE per run: every per-day call gets the same text,
+    # so day 6 cannot drift to a different reading of the world than day 1.
+    premise_text = render_premise(world.lens, world.prompt)
+
     for day in range(1, config.days + 1):
         abs_day = day + day_offset
         # USER CANCEL: stop before starting a new day if the player asked to halt the run.
@@ -173,7 +178,7 @@ def run_simulation(
         if abs_day > 1 and abs_day % REFLECT_EVERY_DAYS == 0:
             for actor in selected:
                 new_reflections = reflect(
-                    actor, current_day=abs_day, world_premise=world.prompt
+                    actor, current_day=abs_day, world_premise=premise_text
                 )
                 if new_reflections:
                     logging.info(
@@ -235,7 +240,7 @@ def run_simulation(
             # missing or stale, BEFORE reasoning, so today's action can pursue it.
             if actor.plan is None or (abs_day - actor.plan_day) >= PLAN_REFRESH_DAYS:
                 new_plan = await asyncio.to_thread(
-                    form_plan, actor, active_event, abs_day, world.prompt
+                    form_plan, actor, active_event, abs_day, premise_text
                 )
                 if new_plan:
                     actor.plan = new_plan
@@ -247,7 +252,7 @@ def run_simulation(
                 event=active_event,
                 current_day=abs_day,
                 world_graph=world.world_graph,
-                world_premise=world.prompt,
+                world_premise=premise_text,
             )
 
         async def _gather_day_actions(actors):
@@ -290,7 +295,7 @@ def run_simulation(
                         current_day=abs_day,
                         world_graph=world.world_graph,
                         tier="strong",
-                        world_premise=world.prompt,
+                        world_premise=premise_text,
                     )
                     if resp is None:
                         break
@@ -309,7 +314,7 @@ def run_simulation(
             vig_actors = day_rng.sample(selected, day_rng.randint(1, n_vig))
             for actor in vig_actors:
                 struct = generate_vignette_struct(
-                    actor, active_event, abs_day, world.prompt
+                    actor, active_event, abs_day, premise_text
                 )
                 if struct:
                     kind, text = struct

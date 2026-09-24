@@ -508,6 +508,51 @@ def test_world_lens_survives_a_setting_less_prompt():
             assert len(item) <= 120
 
 
+def test_render_premise_uses_lens_fields():
+    from models import WorldLens
+    from simulation.premise import render_premise
+    lens = WorldLens(
+        premise_summary="A besieged Cistercian monastery in 1340; the grain is running out.",
+        actor_noun="brother",
+        affordances=["word travels on foot"],
+        gathering_places=["the chapter house"],
+        register_notes="Plain, concrete, of its century.",
+        banned_vocabulary=["team-building", "stakeholder"],
+        central_stake="who controls the failing grain stores",
+    )
+    text = render_premise(lens, "ignored raw prompt")
+    assert "1340" in text
+    assert "word travels on foot" in text
+    assert "the chapter house" in text
+    assert "team-building" in text, "banned words must be named so the model can avoid them"
+    assert "ignored raw prompt" not in text, "the lens supersedes the raw prompt"
+
+
+def test_render_premise_falls_back_to_raw_prompt():
+    from models import WorldLens
+    from simulation.premise import render_premise
+    assert "a raw world" in render_premise(WorldLens(), "a raw world")
+    assert "a raw world" in render_premise(None, "a raw world")
+
+
+def test_premise_block_size_does_not_track_input_length():
+    """Review Focus #2: the premise rides on every per-agent call every day. A user
+    pasting an essay must not multiply the cost of the entire run."""
+    from models import World, WorldLens
+    from simulation.premise import render_premise, premise_lines
+    from simulation.worldgraph import extract_world_context
+
+    essay = "The kingdom of Valmere endures a long winter. " * 250   # ~11k chars
+    _graph, lens = extract_world_context(World(prompt=essay, target_population=5))
+    block = "\n".join(premise_lines(render_premise(lens, essay)))
+    assert len(block) < 2200, f"premise block grew to {len(block)} chars"
+
+    longer = "The kingdom of Valmere endures a long winter. " * 2000
+    _graph2, lens2 = extract_world_context(World(prompt=longer, target_population=5))
+    block2 = "\n".join(premise_lines(render_premise(lens2, longer)))
+    assert len(block2) < 2200, f"premise block grew to {len(block2)} chars"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -542,6 +587,9 @@ _TESTS = [
     test_world_context_returns_graph_and_lens,
     test_created_world_carries_a_lens,
     test_world_lens_survives_a_setting_less_prompt,
+    test_render_premise_uses_lens_fields,
+    test_render_premise_falls_back_to_raw_prompt,
+    test_premise_block_size_does_not_track_input_length,
 ]
 
 
