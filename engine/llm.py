@@ -1375,9 +1375,21 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
         # (Drawn after every other rng call in this branch, so it never shifts the
         # random stream consumed by action_verb/new_memory/stance_shift/action_kind.)
         _about_only = rng.random() < 0.25
+        # AUDIENCE (Task 6): the mock used to emit the legacy action_kind directly. The
+        # reasoner prompt no longer offers that menu, so emit the world-native audience
+        # shape instead — mapping the same deterministically-picked kind onto an
+        # equivalent (who, reach) pair, so downstream variety (and determinism) is
+        # unchanged.
+        _effective_kind = "interact" if _about_only else action_kind
+        if _effective_kind == "post":
+            audience = {"who": "in front of everyone", "reach": "everyone"}
+        elif _effective_kind == "direct":
+            audience = {"who": "quietly, just the two of us", "reach": "one person"}
+        else:
+            audience = {"who": "in front of the others", "reach": "those present"}
         return json.dumps({
             "action": action_verb,
-            "action_kind": "interact" if _about_only else action_kind,
+            "audience": audience,
             "target_agents": [] if _about_only else [target],
             "about_agents": [target] if _about_only else [],
             "emotional_reaction": new_mood,

@@ -124,7 +124,12 @@ class FeedEntry(BaseModel):
     author: str = ""
     author_influence: float = 0.0
     day: int = 0
+    # LEGACY. Kept only so entries written before the audience model still load; new
+    # entries carry `reach` instead. See simulation/audience.py.
     action_kind: str = "interact"
+    # Fixed physical audience scale ("everyone" | "those present" | "one person") that
+    # replaces action_kind as the reach signal. See simulation/audience.py.
+    reach: str = "those present"
 
 
 class Agent(BaseModel):
@@ -256,6 +261,9 @@ class PerceptionNote(BaseModel):
     revealed_trait: Optional[str] = None
 
 
+# LEGACY. Retained so saved runs written before the audience model still load. New
+# actions carry `Audience` instead; see simulation/audience.py.
+#
 # Real action space (Phase 2 #5, modeled on OASIS's distinct social actions). The
 # action_kind drives REACH (who witnesses it) and side-effects, layered on top of the
 # free-text `action` verb. Unknown values are clamped to "interact" (current behavior).
@@ -312,6 +320,18 @@ def normalize_mood(value: object, default: str = "calm") -> str:
     return default if default in MOODS else "calm"
 
 
+class Audience(BaseModel):
+    """Who was around when an action happened.
+
+    `who` is free text in the WORLD's own vocabulary ("said it loud enough for the whole
+    chapter house to hear") and is what the story renders. `reach` is a fixed physical
+    scale that drives the witness model. See simulation/audience.py for why this is a
+    scale rather than a channel.
+    """
+    who: str = ""
+    reach: str = "those present"
+
+
 class AgentAction(BaseModel):
     """Structured output contract returned by the AI reasoning layer.
 
@@ -321,9 +341,19 @@ class AgentAction(BaseModel):
     so bonds are earned rather than asserted. (Stage 2 of the realism re-architecture.)
     """
     action: str
-    # Social-action type driving reach + side-effects (see ActionKind above). Safe
+    # LEGACY / INTERNAL. This used to be agent-authored, offered as a post/direct/amplify/
+    # comment/interact menu that made every world read like a social network. The menu is
+    # gone from the reasoner prompt — agents now narrate `audience` instead. This field
+    # survives only because the internal influence math (consequence.derive_influence) and
+    # the amplify standing-boost (applicator.py) still key off it; reasoner._parse_action
+    # now DERIVES it deterministically from the parsed audience + intents (see
+    # simulation/audience.derive_action_kind) rather than reading it from the model. Safe
     # default "interact" preserves prior behavior for any caller that omits it.
     action_kind: ActionKind = "interact"
+    # Who witnessed this, in the world's own words plus a fixed scale. Replaces the
+    # former `action_kind` channel menu as what the agent actually supplies; see
+    # simulation/audience.py.
+    audience: Audience = Field(default_factory=Audience)
     target_agents: list[str] = []
     # People this action is ABOUT who were not present and do not know — a referent,
     # not an interaction. Referents get no consequence bid, no perception routing and

@@ -6,8 +6,9 @@ import random as _random
 import re
 from typing import Optional
 
-from models import Agent, AgentAction, WorldGraph, normalize_action_kind, normalize_mood
+from models import Agent, AgentAction, Audience, WorldGraph, normalize_mood
 from llm import call_llm, acall_llm
+from .audience import derive_action_kind, normalize_reach
 from .memory import retrieve
 from .observation import rank_feed
 from .premise import premise_lines
@@ -29,7 +30,10 @@ sustained, mutual behavior (a romance can't happen in a day, or one-sidedly).
 JSON schema:
 {
   "action": "short verb phrase summarizing the move (e.g. 'confront', 'open up to', 'rally')",
-  "action_kind": "post | direct | amplify | comment | interact",
+  "audience": {
+    "who": "who was around when you did this, in this world's own words",
+    "reach": "everyone | those present | one person"
+  },
   "target_agents": ["Name", ...],
   "about_agents": ["Name", ...],
   "utterance": "what you actually say or do, in your own voice (1-2 sentences)",
@@ -42,6 +46,10 @@ JSON schema:
   "explanation": "one sentence linking your traits and memories to this specific action"
 }
 
+  audience : who witnessed this. `who` is your own phrasing — where you were, who could
+             hear. `reach` is how far it carried: "everyone" if the whole world learns of
+             it, "those present" if your circle saw it, "one person" if it was private
+             between you and your named target. Most days are "those present".
   target_agents : people you actually interacted with today — they were there.
   about_agents  : people this was ABOUT who were not there and do not know. Working
                   alone on something because of someone, avoiding them, preparing for
@@ -53,13 +61,6 @@ INTENT VERBS (pick the one that matches your true intent toward each target):
   strategic:  ally, collaborate
   antagonism: confront, rebuke, reject, undermine, challenge, compete, distance
   neutral:    talk, observe
-
-action_kind — how you act, which decides who sees it:
-  - post     : a public broadcast everyone in the world sees (use for big statements).
-  - direct   : a private exchange only your named target(s) witness.
-  - amplify  : you boost/repost another agent — raises THEIR standing. (target_agents = who you boost.)
-  - comment  : a reply, seen by your usual circle (medium reach).
-  - interact : default — an ordinary interaction (your circle + public if you're prominent).
 
 CRITICAL RULES:
 - ANTI-REPETITION: read YOUR RECENT ACTIONS. If you keep engaging the same person the same way,
@@ -144,9 +145,25 @@ def _parse_action(agent: Agent, raw: str) -> Optional[AgentAction]:
             for k, v in (data.get("stance_shift") or {}).items()
             if isinstance(v, (int, float))
         }
+        # AUDIENCE (Task 6): the agent narrates who was around instead of picking a
+        # channel. `aud` is the new shape; its absence means either an old save or a
+        # model that answered in the pre-audience schema, so fall back to mapping its
+        # legacy `action_kind` onto the equivalent reach.
+        aud = data.get("audience")
+        if isinstance(aud, dict):
+            who = str(aud.get("who") or "").strip()[:160]
+            reach = normalize_reach(aud.get("reach"))
+        else:
+            who = ""
+            reach = normalize_reach(data.get("action_kind"))
+        audience = Audience(who=who, reach=reach)
         return AgentAction(
             action=str(data.get("action", "observe"))[:60],
-            action_kind=normalize_action_kind(data.get("action_kind", "interact")),
+            # action_kind is no longer agent-authored (see models.AgentAction and
+            # simulation/audience.py) — it's derived here from the audience + intents
+            # this agent actually supplied, so the internal influence math keeps working.
+            action_kind=derive_action_kind(reach, intents),
+            audience=audience,
             target_agents=targets,
             about_agents=about,
             emotional_reaction=normalize_mood(data.get("emotional_reaction"), default=agent.mood),

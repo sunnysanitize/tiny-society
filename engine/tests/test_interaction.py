@@ -725,6 +725,95 @@ def test_surprise_character_fits_the_world_and_avoids_existing_names():
     assert before == after, "surprise must not touch the world"
 
 
+def test_reach_normalization():
+    from simulation.audience import normalize_reach, REACH_EVERYONE, REACH_PRESENT, REACH_ONE
+    assert normalize_reach("everyone") == REACH_EVERYONE
+    assert normalize_reach("those present") == REACH_PRESENT
+    assert normalize_reach("one person") == REACH_ONE
+    assert normalize_reach("ONE PERSON") == REACH_ONE
+    assert normalize_reach(None) == REACH_PRESENT, "missing must default like 'interact' did"
+    assert normalize_reach("gibberish") == REACH_PRESENT
+    assert normalize_reach(7) == REACH_PRESENT
+
+
+def test_legacy_action_kind_maps_to_reach():
+    from simulation.audience import reach_from_action_kind, REACH_EVERYONE, REACH_PRESENT, REACH_ONE
+    assert reach_from_action_kind("post") == REACH_EVERYONE
+    assert reach_from_action_kind("direct") == REACH_ONE
+    for k in ("amplify", "comment", "interact", "", "nonsense"):
+        assert reach_from_action_kind(k) == REACH_PRESENT
+
+
+def test_reasoner_parses_audience_and_trims_who():
+    from models import Agent
+    from simulation import reasoner
+    a = Agent(id="a1", name="Kai", role="jungler")
+    raw = __import__("json").dumps({
+        "action": "confront", "target_agents": ["Lena"],
+        "intents": {"Lena": "confront"},
+        "audience": {"who": "x" * 400, "reach": "everyone"},
+        "utterance": "We need to talk about last night.",
+        "new_memory": "I confronted Lena in front of everyone.",
+        "explanation": "My pride would not let it go.",
+    })
+    action = reasoner._parse_action(a, raw)
+    assert action is not None
+    assert action.audience.reach == "everyone"
+    assert len(action.audience.who) <= 160, "free text must be trimmed like every other field"
+
+
+def test_legacy_saved_action_and_feed_entry_still_load():
+    """Review Focus #4: saves written before the audience model carry action_kind on
+    both stored actions and feed entries. Loading one and continuing must work."""
+    from models import AgentAction, FeedEntry, Agent
+    from simulation import reasoner
+    from simulation.audience import REACH_EVERYONE, REACH_PRESENT
+
+    legacy_entry = FeedEntry(text="x", author="Ana", day=1, action_kind="post")
+    assert legacy_entry.reach == REACH_PRESENT, "legacy entries take the safe default"
+
+    a = Agent(id="a1", name="Kai", role="jungler")
+    raw = __import__("json").dumps({
+        "action": "announce", "target_agents": ["Lena"],
+        "intents": {"Lena": "talk"}, "action_kind": "post",
+        "utterance": "Everyone should hear this.",
+        "new_memory": "I announced it.", "explanation": "Pride.",
+    })
+    action = reasoner._parse_action(a, raw)
+    assert action is not None
+    assert action.audience.reach == REACH_EVERYONE, "legacy action_kind must map to reach"
+
+    legacy_action = AgentAction(
+        action="x", target_agents=["Lena"], new_memory="I did x.", explanation="testing",
+    )
+    assert legacy_action.audience.reach == REACH_PRESENT
+
+
+def test_action_kind_derived_from_audience_not_agent_authored():
+    """Correction to Task 6's brief: action_kind is kept (consequence.py, applicator.py
+    and the realism suite key off it) but is no longer agent-authored — it is derived
+    from the parsed audience + intents, matching the rule Task 7 uses for standing-spread."""
+    import json
+    from models import Agent
+    from simulation import reasoner
+
+    def _act(reach, intents):
+        a = Agent(id="a1", name="Kai", role="jungler")
+        raw = json.dumps({
+            "action": "act", "target_agents": list(intents),
+            "intents": intents,
+            "audience": {"who": "nearby", "reach": reach},
+            "new_memory": "I acted.", "explanation": "because.",
+        })
+        return reasoner._parse_action(a, raw)
+
+    assert _act("everyone", {"Lena": "praise"}).action_kind == "amplify"
+    assert _act("everyone", {"Lena": "support"}).action_kind == "amplify"
+    assert _act("everyone", {"Lena": "confront"}).action_kind == "post"
+    assert _act("one person", {"Lena": "confide"}).action_kind == "direct"
+    assert _act("those present", {"Lena": "talk"}).action_kind == "interact"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -770,6 +859,11 @@ _TESTS = [
     test_added_character_is_unfitted_by_default,
     test_fit_on_a_lensless_world_returns_200_not_500,
     test_surprise_character_fits_the_world_and_avoids_existing_names,
+    test_reach_normalization,
+    test_legacy_action_kind_maps_to_reach,
+    test_reasoner_parses_audience_and_trims_who,
+    test_legacy_saved_action_and_feed_entry_still_load,
+    test_action_kind_derived_from_audience_not_agent_authored,
 ]
 
 
