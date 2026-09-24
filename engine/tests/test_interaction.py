@@ -713,6 +713,7 @@ def test_surprise_character_fits_the_world_and_avoids_existing_names():
         "prompt": "A besieged Cistercian monastery in 1340.", "target_population": 5,
     }).json()["world_id"]
     client.post(f"/world/{wid}/character", json={"name": "Anselm", "role": "cellarer"})
+    before = client.get(f"/world/{wid}").json()
     r = client.post(f"/world/{wid}/character/surprise")
     assert r.status_code == 200, r.text
     ch = r.json()
@@ -720,6 +721,8 @@ def test_surprise_character_fits_the_world_and_avoids_existing_names():
     assert ch["role"] and ch["role"] != "member", "a surprise must belong to this world"
     roster = client.get(f"/world/{wid}").json()["agents"]
     assert len(roster) == 1, "surprise must not add anyone"
+    after = client.get(f"/world/{wid}").json()
+    assert before == after, "surprise must not touch the world"
 
 
 _TESTS = [
