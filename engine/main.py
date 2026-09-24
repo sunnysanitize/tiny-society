@@ -37,7 +37,7 @@ from simulation.engine import run_simulation
 from simulation.generator import generate_fillers
 from simulation.worldgraph import extract_world_context
 from simulation.memory import make_memory
-from simulation.fitting import fit_character
+from simulation.fitting import fit_character, surprise_character
 
 
 def _validate_config() -> None:
@@ -175,6 +175,17 @@ def fit_character_to_world(wid: str, body: CharacterInput):
     ordinary add-character call, turns it into an agent."""
     w = _require(wid)
     return fit_character(w, body)
+
+
+@app.post("/world/{wid}/character/surprise", response_model=CharacterInput)
+def surprise_character_for_world(wid: str):
+    """Roll one world-appropriate character. Writes NOTHING — the client fills its form
+    with the result and the user still presses add."""
+    w = _require(wid)
+    ch = surprise_character(w)
+    if ch is None:
+        raise HTTPException(503, "could not invent a character for this world")
+    return ch
 
 
 @app.post("/world/{wid}/inject-character", response_model=Agent)

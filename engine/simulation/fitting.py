@@ -95,6 +95,71 @@ def fit_character(world: World, body: CharacterInput) -> CharacterFit:
     )
 
 
+CHARACTER_SURPRISE_SYSTEM = """CHARACTER_SURPRISE
+You invent ONE character who plainly belongs in the world you are given — someone a
+reader would accept instantly as part of it. Return STRICT JSON only — no prose.
+
+{
+  "name": "a name that fits this world",
+  "role": "specific and of this world, never a generic label",
+  "traits": ["2-4 psychologically specific traits", ...],
+  "goals": ["1-2 concrete goals", ...],
+  "groups": ["1-2 groups of this world", ...],
+  "mood": "calm|excited|frustrated|heartbroken|ambitious|anxious|content|angry|hopeful|lonely|confident",
+  "starting_memories": ["1-2 first-person past-tense memories, specific and loaded", ...]
+}
+
+Rules:
+- The name, role and groups must come from THIS world, not a generic modern one.
+- Never reuse a name from EXISTING NAMES.
+- Traits must be specific ("quietly vengeful", "people-pleasing"), not "nice" or "smart".
+- Output only JSON. No markdown, no commentary, no preamble.
+"""
+
+
+def surprise_character(world: World) -> Optional[CharacterInput]:
+    """Roll ONE world-appropriate character. Writes nothing; returns None on failure so
+    the client can fall back to its own static pools rather than show an error."""
+    from llm import call_llm
+    from models import normalize_mood
+
+    premise = render_premise(world.lens, world.prompt)
+    if not premise.strip():
+        return None
+
+    existing = ", ".join(a.name for a in world.agents) or "(none)"
+    user = "\n".join([
+        "WORLD", premise, "",
+        "EXISTING NAMES", existing, "",
+        "Invent one character as JSON now.",
+    ])
+
+    try:
+        raw = call_llm(CHARACTER_SURPRISE_SYSTEM, user, json_mode=True, max_tokens=500, tier="cheap")
+    except Exception as e:
+        logging.warning(f"Character surprise failed: {e}")
+        return None
+
+    data = _safe_json(raw)
+    name = str(data.get("name") or "").strip()[:60]
+    if not name:
+        return None
+    taken = {a.name.lower() for a in world.agents}
+    if name.lower() in taken:
+        name = f"{name} the younger"
+
+    return CharacterInput(
+        name=name,
+        role=str(data.get("role") or "").strip()[:80] or "member",
+        traits=_str_list(data.get("traits")),
+        goals=_str_list(data.get("goals")),
+        groups=_str_list(data.get("groups")),
+        mood=normalize_mood(data.get("mood")),
+        starting_memories=_str_list(data.get("starting_memories")),
+        fitted_to_world=True,
+    )
+
+
 def _str_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []

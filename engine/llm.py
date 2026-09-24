@@ -828,6 +828,49 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
             "note": f"Their stubbornness and their cooking make them the {role} here.",
         })
 
+    # ── character surprise (roll one world-appropriate character) ──────────────
+    if "CHARACTER_SURPRISE" in system:
+        ctx = user.lower()
+        if any(w in ctx for w in ("monastery", "abbey", "medieval", "1340", "kingdom", "realm")):
+            pool = [("Anselm", "cellarer"), ("Gilbert", "infirmarian"), ("Odo", "novice master"),
+                    ("Wulfric", "porter"), ("Baldwin", "sacrist"), ("Edmund", "almoner")]
+            groups, goal = ["the choir monks"], "keep the rule while the grain lasts"
+            mem = "I kept the gate shut the night the villagers came asking."
+        elif any(w in ctx for w in ("ship", "colony", "station", "crew", "space")):
+            pool = [("Vess", "hydroponics tech"), ("Ilan", "flight engineer"), ("Rook", "quartermaster"),
+                    ("Siu", "comms officer"), ("Dara", "ship's medic"), ("Pell", "cargo master")]
+            groups, goal = ["the day watch"], "get the ship somewhere worth arriving at"
+            mem = "I falsified a pressure reading once and nobody ever checked."
+        else:
+            pool = [("Ren", "organiser"), ("Mira", "quiet one"), ("Tovan", "newcomer"),
+                    ("Juno", "old hand"), ("Sasha", "fixer"), ("Bo", "outsider")]
+            groups, goal = ["the regulars"], "be taken seriously here"
+            mem = "I said the wrong thing in front of everyone and never lived it down."
+
+        # Pull the EXISTING NAMES line straight out of the prompt (built by
+        # surprise_character as "EXISTING NAMES\n<comma-separated names>\n") rather than
+        # regexing the whole user block — the section is single-line and self-delimited,
+        # so a plain scan is both simpler and correct.
+        existing_names: set[str] = set()
+        lines = user.split("\n")
+        for i, line in enumerate(lines):
+            if line.strip() == "EXISTING NAMES" and i + 1 < len(lines):
+                existing_names = {n.strip().lower() for n in lines[i + 1].split(",") if n.strip()}
+                break
+
+        name, role = pool[seed % len(pool)]
+        for cand_name, cand_role in pool:
+            if cand_name.lower() not in existing_names:
+                name, role = cand_name, cand_role
+                break
+
+        return json.dumps({
+            "name": name, "role": role,
+            "traits": ["stubborn", "watchful", "proud"],
+            "goals": [goal], "groups": groups, "mood": "anxious",
+            "starting_memories": [mem],
+        })
+
     # ── perception narration ───────────────────────────────────────────────────
     if "PERCEPTION_NARRATION" in system:
         perceiver_name, actor_name, rel_type, raw_delta_str = "", "", "trust", "0.1"

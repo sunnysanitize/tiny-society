@@ -705,6 +705,23 @@ def test_fit_on_a_lensless_world_returns_200_not_500():
     assert fit2.role, "a raw prompt is enough to fit against"
 
 
+def test_surprise_character_fits_the_world_and_avoids_existing_names():
+    from fastapi.testclient import TestClient
+    import main
+    client = TestClient(main.app)
+    wid = client.post("/world", json={
+        "prompt": "A besieged Cistercian monastery in 1340.", "target_population": 5,
+    }).json()["world_id"]
+    client.post(f"/world/{wid}/character", json={"name": "Anselm", "role": "cellarer"})
+    r = client.post(f"/world/{wid}/character/surprise")
+    assert r.status_code == 200, r.text
+    ch = r.json()
+    assert ch["name"] and ch["name"] != "Anselm", "must not collide with the roster"
+    assert ch["role"] and ch["role"] != "member", "a surprise must belong to this world"
+    roster = client.get(f"/world/{wid}").json()["agents"]
+    assert len(roster) == 1, "surprise must not add anyone"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -749,6 +766,7 @@ _TESTS = [
     test_fit_endpoint_mutates_nothing,
     test_added_character_is_unfitted_by_default,
     test_fit_on_a_lensless_world_returns_200_not_500,
+    test_surprise_character_fits_the_world_and_avoids_existing_names,
 ]
 
 
