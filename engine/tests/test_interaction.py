@@ -535,22 +535,62 @@ def test_render_premise_falls_back_to_raw_prompt():
     assert "a raw world" in render_premise(None, "a raw world")
 
 
-def test_premise_block_size_does_not_track_input_length():
-    """Review Focus #2: the premise rides on every per-agent call every day. A user
-    pasting an essay must not multiply the cost of the entire run."""
-    from models import World, WorldLens
+def test_render_premise_caps_a_large_lens_block():
+    """Review Focus #2: the premise rides on every per-agent call every day. A rich
+    lens (long summary plus many affordances/gathering places) must not multiply the
+    cost of the entire run. Drives render_premise's own cap directly — routing through
+    premise_lines would hide a regression there, since premise_lines truncates again on
+    top of whatever render_premise returns."""
+    from models import WorldLens
+    from simulation.premise import render_premise, MAX_PREMISE_CHARS
+
+    lens = WorldLens(
+        premise_summary=(
+            "The kingdom of Valmere endures a long winter, and its people are worn "
+            "thin by a siege that has not yet broken. " * 5
+        ),
+        affordances=[
+            "messengers ride for days between the valley's scattered holds"
+            for _ in range(10)
+        ],
+        gathering_places=["the great hall at dusk, when the fires are lit" for _ in range(10)],
+        register_notes="Formal, wintry, spoken in long clauses. " * 10,
+        banned_vocabulary=["stakeholder", "team-building"],
+        central_stake="who controls the last granary",
+    )
+    # Sanity check: the raw joined content is well over the cap, so a passing
+    # assertion below proves truncation actually happened.
+    naive_length = (
+        len(lens.premise_summary) + len(lens.register_notes)
+        + sum(len(a) for a in lens.affordances) + sum(len(g) for g in lens.gathering_places)
+    )
+    assert naive_length > MAX_PREMISE_CHARS, "test fixture must exceed the cap to prove anything"
+
+    text = render_premise(lens, "ignored")
+    # Truncation appends one "…" past the slice point (matching premise_lines' own
+    # style below), so the bound is MAX_PREMISE_CHARS + 1, not MAX_PREMISE_CHARS exactly.
+    assert len(text) <= MAX_PREMISE_CHARS + 1, f"render_premise grew to {len(text)} chars"
+    assert text.endswith("…"), "a block this large must actually get truncated"
+
+
+def test_realistic_lens_banned_vocabulary_survives_into_prompt():
+    """Regression guard: banned_vocabulary is the LAST section render_premise appends,
+    and premise_lines truncates again on top of that. A realistic lens must still carry
+    a banned word all the way into the final per-day prompt block, or every per-day call
+    silently loses the single most direct anti-staleness instruction in this feature."""
+    from models import WorldLens
     from simulation.premise import render_premise, premise_lines
-    from simulation.worldgraph import extract_world_context
 
-    essay = "The kingdom of Valmere endures a long winter. " * 250   # ~11k chars
-    _graph, lens = extract_world_context(World(prompt=essay, target_population=5))
-    block = "\n".join(premise_lines(render_premise(lens, essay)))
-    assert len(block) < 2200, f"premise block grew to {len(block)} chars"
-
-    longer = "The kingdom of Valmere endures a long winter. " * 2000
-    _graph2, lens2 = extract_world_context(World(prompt=longer, target_population=5))
-    block2 = "\n".join(premise_lines(render_premise(lens2, longer)))
-    assert len(block2) < 2200, f"premise block grew to {len(block2)} chars"
+    lens = WorldLens(
+        premise_summary="A besieged Cistercian monastery in 1340; the grain is running out.",
+        affordances=["word travels on foot", "no clocks strike the hour"],
+        gathering_places=["the chapter house", "the refectory"],
+        register_notes="Plain, concrete, of its century.",
+        banned_vocabulary=["team-building", "stakeholder"],
+        central_stake="who controls the failing grain stores",
+    )
+    block = "\n".join(premise_lines(render_premise(lens, "ignored")))
+    assert "team-building" in block, "banned vocabulary must survive both truncation passes"
 
 
 _TESTS = [
@@ -589,7 +629,8 @@ _TESTS = [
     test_world_lens_survives_a_setting_less_prompt,
     test_render_premise_uses_lens_fields,
     test_render_premise_falls_back_to_raw_prompt,
-    test_premise_block_size_does_not_track_input_length,
+    test_render_premise_caps_a_large_lens_block,
+    test_realistic_lens_banned_vocabulary_survives_into_prompt,
 ]
 
 

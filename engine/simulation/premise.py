@@ -21,12 +21,14 @@ from models import WorldLens
 
 # The premise rides along on EVERY per-agent call, so its cost is paid once per agent per
 # day. Cap it: a player can paste an essay into the world prompt, and the character sheet
-# and memories below it matter more to the action than paragraph six of the setting.
-MAX_PREMISE_CHARS = 600
-
-# Bounds on the rendered body. The block rides on every per-agent call each day, so its
-# size must track the lens's own caps, never the length of what the user pasted.
-_MAX_RENDER_CHARS = 1400
+# and memories below it matter more to the action than paragraph six of the setting. This
+# single bound covers both shapes `render_premise` can return: the raw-prompt fallback
+# (arbitrary user prose, which deserves a tight leash) and the structured lens block
+# (summary, affordances, gathering places, register, banned vocabulary — already compact,
+# but whose tail carries the banned-vocabulary line, the most load-bearing sentence in the
+# whole block, so the cap must be sized to let that block survive intact rather than to
+# match a single raw paragraph).
+MAX_PREMISE_CHARS = 1400
 
 
 def render_premise(lens: Optional[WorldLens], world_prompt: str) -> str:
@@ -58,7 +60,10 @@ def render_premise(lens: Optional[WorldLens], world_prompt: str) -> str:
             "Never use these words — they belong to another world: "
             + ", ".join(lens.banned_vocabulary)
         )
-    return "\n".join(parts)[:_MAX_RENDER_CHARS]
+    text = "\n".join(parts)
+    if len(text) > MAX_PREMISE_CHARS:
+        text = text[:MAX_PREMISE_CHARS].rstrip() + "…"
+    return text
 
 
 def premise_lines(world_premise: Optional[str]) -> list[str]:
