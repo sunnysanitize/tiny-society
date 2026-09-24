@@ -364,6 +364,7 @@ def run_simulation(
         question=world.question,
         topics=topics,
         dynamic_events=dynamic_events,
+        lens=world.lens,
     )
 
     # PROPHECY (Slice E): if the player set a free-text prediction, grade it once at the

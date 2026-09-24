@@ -593,6 +593,62 @@ def test_realistic_lens_banned_vocabulary_survives_into_prompt():
     assert "team-building" in block, "banned vocabulary must survive both truncation passes"
 
 
+def test_report_prompt_carries_lens_vocabulary():
+    from models import MacroMetrics, WorldLens
+    from simulation import reporter
+    # MacroMetrics has no field defaults (see models.py), so MacroMetrics() alone would
+    # fail Pydantic validation before the lens plumbing is even exercised — fill in the
+    # required fields with neutral values instead.
+    empty_metrics = MacroMetrics(
+        friendship_count=0, rivalry_count=0, conflict_count=0, romance_count=0,
+        alliance_count=0, average_relationship_strength=0.0, average_trust_score=0.0,
+        most_connected=[], influence_gainers=[], influence_losers=[],
+        relationship_volatility=0, social_fragmentation=0.0, group_centrality={},
+    )
+    lens = WorldLens(
+        premise_summary="A besieged monastery in 1340.",
+        actor_noun_plural="brothers",
+        collective_noun="the house",
+        banned_vocabulary=["team-building", "stakeholder"],
+        register_notes="Plain and of its century.",
+    )
+    captured = {}
+    real = reporter.call_llm
+
+    def spy(system, user, **kw):
+        captured["user"] = user
+        captured["system"] = system
+        return "report text"
+
+    reporter.call_llm = spy
+    try:
+        reporter.generate_final_report(
+            empty_metrics, empty_metrics, [], "a monastery", None, lens=lens
+        )
+    finally:
+        reporter.call_llm = real
+
+    assert "brothers" in captured["user"], "the report must know what these people are called"
+    assert "team-building" in captured["user"], "banned words must reach the report prompt"
+
+
+def test_banned_vocabulary_instructs_but_never_filters():
+    """Review Focus #3: the AI may ban a word that also appears in a character's name,
+    a role, or the premise. Banning is an instruction to the model — it must never
+    rewrite, strip or filter text that already exists."""
+    from models import WorldLens
+    from simulation.premise import render_premise
+    lens = WorldLens(
+        premise_summary="The Stakeholder Guild of Verrin controls the granary.",
+        banned_vocabulary=["stakeholder", "guild"],
+        affordances=["the Guild keeps the only ledger"],
+    )
+    text = render_premise(lens, "raw")
+    assert "Stakeholder Guild of Verrin" in text, "premise content must survive verbatim"
+    assert "the Guild keeps the only ledger" in text, "affordances must survive verbatim"
+    assert "stakeholder" in text and "guild" in text, "banned list is named, not applied"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -631,6 +687,8 @@ _TESTS = [
     test_render_premise_falls_back_to_raw_prompt,
     test_render_premise_caps_a_large_lens_block,
     test_realistic_lens_banned_vocabulary_survives_into_prompt,
+    test_report_prompt_carries_lens_vocabulary,
+    test_banned_vocabulary_instructs_but_never_filters,
 ]
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from models import DaySnapshot, MacroMetrics, Forecast
+from models import DaySnapshot, MacroMetrics, Forecast, WorldLens
 from llm import call_llm
 
 REPORT_SYSTEM = """FINAL_REPORT
@@ -139,6 +139,7 @@ def generate_final_report(
     question: Optional[str] = None,
     topics: Optional[list[str]] = None,
     dynamic_events: Optional[dict[str, str]] = None,
+    lens: Optional["WorldLens"] = None,
 ) -> tuple[str, Optional[Forecast]]:
     """Returns (narrative report string, structured Forecast or None).
 
@@ -178,6 +179,21 @@ def generate_final_report(
         f"{final.model_dump_json(indent=2)}\n\n"
         f"DAILY HIGHLIGHTS:\n" + "\n".join(highlights_blob[:30])
     )
+    if lens is not None and not lens.is_empty():
+        vocab: list[str] = []
+        if lens.actor_noun_plural:
+            vocab.append(f"These people are called {lens.actor_noun_plural}.")
+        if lens.collective_noun:
+            vocab.append(f"Collectively they are {lens.collective_noun} — use that, not 'society'.")
+        if lens.register_notes:
+            vocab.append(f"Register: {lens.register_notes}")
+        if lens.banned_vocabulary:
+            vocab.append(
+                "Never use these words: " + ", ".join(lens.banned_vocabulary)
+            )
+        if vocab:
+            user = "HOW TO WRITE THIS WORLD\n" + "\n".join(vocab) + "\n\n" + user
+
     if milestone_lines:
         user += (
             "\n\nRELATIONSHIP TURNING POINTS (chronological — anchor the narrative on these):\n"

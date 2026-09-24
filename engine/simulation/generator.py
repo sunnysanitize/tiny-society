@@ -9,6 +9,7 @@ import uuid
 from models import Agent, World, normalize_mood
 from llm import call_llm
 from .memory import make_memory
+from .premise import render_premise
 from . import consequence
 
 FILLER_SYSTEM = """FILLER_AGENT_GENERATION
@@ -223,7 +224,7 @@ def _fetch_batch(world: World, count: int, existing_names: set[str],
             f"function in this world, not a reworded version of the same job."
         )
     user = (
-        f"World prompt:\n{world.prompt}\n\n"
+        f"World prompt:\n{render_premise(world.lens, world.prompt)}\n\n"
         f"Generate {count} fictional agents that fit this world. "
         f"Avoid these existing names: {sorted(existing_names) or 'none'}. "
         f"These roles are already taken — every new agent must have a clearly "
