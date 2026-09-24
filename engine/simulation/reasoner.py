@@ -10,6 +10,7 @@ from models import Agent, AgentAction, WorldGraph, normalize_action_kind, normal
 from llm import call_llm, acall_llm
 from .memory import retrieve
 from .observation import rank_feed
+from .premise import premise_lines
 
 # How many other agents to surface in a reasoning prompt (bounds prompt size). The roster
 # is RANKED so every agent stays reachable over time, rather than always showing the first
@@ -84,9 +85,10 @@ def reason_for_agent(
     current_day: int = 1,
     world_graph: Optional[WorldGraph] = None,
     tier: str = "cheap",
+    world_premise: Optional[str] = None,
 ) -> Optional[AgentAction]:
     import logging
-    user = _build_prompt(agent, roster, event, current_day, world_graph)
+    user = _build_prompt(agent, roster, event, current_day, world_graph, world_premise)
     try:
         raw = call_llm(REASONER_SYSTEM, user, json_mode=True, max_tokens=1024, tier=tier)
     except Exception as e:
@@ -102,9 +104,10 @@ async def areason_for_agent(
     current_day: int = 1,
     world_graph: Optional[WorldGraph] = None,
     tier: str = "cheap",
+    world_premise: Optional[str] = None,
 ) -> Optional[AgentAction]:
     import logging
-    user = _build_prompt(agent, roster, event, current_day, world_graph)
+    user = _build_prompt(agent, roster, event, current_day, world_graph, world_premise)
     try:
         raw = await acall_llm(REASONER_SYSTEM, user, json_mode=True, max_tokens=1024, tier=tier)
     except Exception as e:
@@ -163,6 +166,7 @@ def _build_prompt(
     event: Optional[str],
     current_day: int = 1,
     world_graph: Optional[WorldGraph] = None,
+    world_premise: Optional[str] = None,
 ) -> str:
     rel_lines = []
     for name, r in agent.relationships.items():
@@ -214,6 +218,7 @@ def _build_prompt(
             topic_lines.append(f"- {t}")
 
     parts = [
+        *premise_lines(world_premise),
         "WORLD FACTS & POWER STRUCTURE",
         "\n".join(fact_lines) if fact_lines else "(none extracted)",
         "",

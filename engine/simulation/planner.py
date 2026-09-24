@@ -8,6 +8,7 @@ from typing import Optional
 from models import Agent
 from llm import call_llm
 from .memory import retrieve
+from .premise import premise_lines
 
 # How many relevant long-term memories to ground the plan in.
 _RETRIEVE_K = 3
@@ -35,13 +36,18 @@ RULES:
 """
 
 
-def form_plan(agent: Agent, world_event: Optional[str], current_day: int) -> Optional[str]:
+def form_plan(
+    agent: Agent,
+    world_event: Optional[str],
+    current_day: int,
+    world_premise: Optional[str] = None,
+) -> Optional[str]:
     """Form a concrete short-term intention for the agent via ONE LLM call.
 
     Returns the plan string (also stored on the agent by the caller), or None on
     failure so the simulation continues unaffected.
     """
-    user = _build_prompt(agent, world_event, current_day)
+    user = _build_prompt(agent, world_event, current_day, world_premise)
     try:
         raw = call_llm(PLANNER_SYSTEM, user, json_mode=True, max_tokens=256, tier="cheap")
     except Exception as e:
@@ -57,7 +63,12 @@ def form_plan(agent: Agent, world_event: Optional[str], current_day: int) -> Opt
     return plan or None
 
 
-def _build_prompt(agent: Agent, world_event: Optional[str], current_day: int) -> str:
+def _build_prompt(
+    agent: Agent,
+    world_event: Optional[str],
+    current_day: int,
+    world_premise: Optional[str] = None,
+) -> str:
     query = " ".join(filter(None, [world_event or ""] + list(agent.goals)))
     retrieved = retrieve(agent.long_term_memory, query, current_day=current_day, k=_RETRIEVE_K)
     recent = list(agent.short_term_memory[-2:]) + list(retrieved)
@@ -74,6 +85,7 @@ def _build_prompt(agent: Agent, world_event: Optional[str], current_day: int) ->
     ]
 
     parts = [
+        *premise_lines(world_premise),
         "YOUR CHARACTER",
         f"Name: {agent.name}",
         f"Role: {agent.role}",

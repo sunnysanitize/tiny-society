@@ -172,7 +172,9 @@ def run_simulation(
         # (which then surface in this same day's relevance-based retrieval).
         if abs_day > 1 and abs_day % REFLECT_EVERY_DAYS == 0:
             for actor in selected:
-                new_reflections = reflect(actor, current_day=abs_day)
+                new_reflections = reflect(
+                    actor, current_day=abs_day, world_premise=world.prompt
+                )
                 if new_reflections:
                     logging.info(
                         f"Day {abs_day}: {actor.name} reflected, "
@@ -232,7 +234,9 @@ def run_simulation(
             # PLANNING (④): refresh this selected agent's short-term intention if it's
             # missing or stale, BEFORE reasoning, so today's action can pursue it.
             if actor.plan is None or (abs_day - actor.plan_day) >= PLAN_REFRESH_DAYS:
-                new_plan = await asyncio.to_thread(form_plan, actor, active_event, abs_day)
+                new_plan = await asyncio.to_thread(
+                    form_plan, actor, active_event, abs_day, world.prompt
+                )
                 if new_plan:
                     actor.plan = new_plan
                     actor.plan_day = abs_day
@@ -243,6 +247,7 @@ def run_simulation(
                 event=active_event,
                 current_day=abs_day,
                 world_graph=world.world_graph,
+                world_premise=world.prompt,
             )
 
         async def _gather_day_actions(actors):
@@ -285,6 +290,7 @@ def run_simulation(
                         current_day=abs_day,
                         world_graph=world.world_graph,
                         tier="strong",
+                        world_premise=world.prompt,
                     )
                     if resp is None:
                         break
@@ -302,7 +308,9 @@ def run_simulation(
             n_vig = min(MAX_VIGNETTES_PER_DAY, len(selected))
             vig_actors = day_rng.sample(selected, day_rng.randint(1, n_vig))
             for actor in vig_actors:
-                struct = generate_vignette_struct(actor, active_event, abs_day)
+                struct = generate_vignette_struct(
+                    actor, active_event, abs_day, world.prompt
+                )
                 if struct:
                     kind, text = struct
                     day_vignettes.append(Vignette(agent=actor.name, kind=kind, text=text))

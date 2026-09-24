@@ -7,6 +7,7 @@ from typing import Optional
 
 from models import Agent
 from llm import call_llm
+from .premise import premise_lines
 
 VIGNETTE_SYSTEM = """VIGNETTE_GENERATION
 You are a single fictional character in a multi-agent social simulation, having a
@@ -32,6 +33,7 @@ def maybe_generate_vignette(
     agent: Agent,
     world_event: Optional[str],
     current_day: int,
+    world_premise: Optional[str] = None,
 ) -> Optional[str]:
     """Produce a short theatrical first-person moment for `agent`, or None on failure.
 
@@ -40,7 +42,7 @@ def maybe_generate_vignette(
     vignette text (the structured kind+text is parsed; this returns just the text for
     convenience). Use `generate_vignette_struct` if you need the kind too.
     """
-    result = generate_vignette_struct(agent, world_event, current_day)
+    result = generate_vignette_struct(agent, world_event, current_day, world_premise)
     return result[1] if result else None
 
 
@@ -48,9 +50,10 @@ def generate_vignette_struct(
     agent: Agent,
     world_event: Optional[str],
     current_day: int,
+    world_premise: Optional[str] = None,
 ) -> Optional[tuple[str, str]]:
     """One LLM call → (kind, text) or None on failure. kind ∈ dream|catchphrase|announcement."""
-    user = _build_prompt(agent, world_event, current_day)
+    user = _build_prompt(agent, world_event, current_day, world_premise)
     try:
         raw = call_llm(VIGNETTE_SYSTEM, user, json_mode=True, max_tokens=160, tier="cheap")
     except Exception as e:
@@ -69,8 +72,14 @@ def generate_vignette_struct(
     return kind, text
 
 
-def _build_prompt(agent: Agent, world_event: Optional[str], current_day: int) -> str:
+def _build_prompt(
+    agent: Agent,
+    world_event: Optional[str],
+    current_day: int,
+    world_premise: Optional[str] = None,
+) -> str:
     parts = [
+        *premise_lines(world_premise),
         "YOUR CHARACTER",
         f"Name: {agent.name}",
         f"Role: {agent.role}",

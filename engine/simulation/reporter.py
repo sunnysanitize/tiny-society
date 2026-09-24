@@ -24,7 +24,13 @@ If a PREDICTION QUESTION is given, END with a clearly-labeled forecast paragraph
 grounded in the final population belief means, the quantified confidence, and the causal chain of
 pivotal days (what happened on each that moved sentiment).
 
-Do not invent agent names that weren't in the data. Keep tone analytical, not gamey.
+Do not invent agent names that weren't in the data.
+WRITE IN THE WORLD'S OWN VOCABULARY. The WORLD line tells you the setting; use its
+specific language, places, pressures and routines, and name the concrete things these
+people actually did. Generic organizational prose — "team-building activity",
+"strategic discussions", "holistic development", "stakeholder alignment" — is always
+wrong: it describes no world in particular. Stay clear-eyed and specific rather than
+breathless, but sound like someone who was there.
 Write about what IS in the input. Never mention a section, heading, or category that
 was not provided, and never state that information was missing or not detailed.
 """

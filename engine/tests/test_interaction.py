@@ -391,6 +391,82 @@ def test_mock_utterance_differs_from_memory():
     assert data["utterance"] != data["new_memory"], "utterance must be distinct dialogue"
 
 
+
+# ---------------------------------------------------------------------------
+# WORLD PREMISE THREADING
+#
+# The premise ("a League of Legends team at U of T") used to reach only world-graph
+# extraction, filler generation and the final report. Every per-day call that actually
+# writes the story — reason, plan, reflect, vignette — ran blind, so the model fell back
+# to generic organizational prose ("team-building activity", "strategic discussions")
+# no matter what world the player typed. These tests pin the premise into those prompts.
+# ---------------------------------------------------------------------------
+
+PREMISE = "a League of Legends team at the University of Toronto: five undergrad friends"
+
+
+def _premise_agent():
+    from models import Agent, Relationship
+    a = Agent(id="id_a", name="Ana", role="Mid laner", goals=["make playoffs"])
+    a.relationships["Ben"] = Relationship(type="rivalry", strength=-0.4)
+    return a
+
+
+def test_reasoner_prompt_carries_world_premise():
+    from simulation import reasoner
+    prompt = reasoner._build_prompt(
+        _premise_agent(), [_premise_agent()], "scrim tonight", 2, None, world_premise=PREMISE
+    )
+    assert "League of Legends" in prompt, "the reasoner cannot write a world it never sees"
+    assert "University of Toronto" in prompt
+
+
+def test_planner_prompt_carries_world_premise():
+    from simulation import planner
+    prompt = planner._build_prompt(_premise_agent(), "scrim tonight", 2, world_premise=PREMISE)
+    assert "League of Legends" in prompt
+
+
+def test_reflector_prompt_carries_world_premise():
+    from models import Memory
+    from simulation import reflector
+    mems = [Memory(text="I int'd the 2v2 and Ben flamed me", day=1, importance=8.0)]
+    prompt = reflector._build_prompt(_premise_agent(), mems, world_premise=PREMISE)
+    assert "League of Legends" in prompt
+
+
+def test_vignette_prompt_carries_world_premise():
+    from simulation import vignette
+    prompt = vignette._build_prompt(_premise_agent(), "scrim tonight", 2, world_premise=PREMISE)
+    assert "League of Legends" in prompt
+
+
+def test_premise_block_is_omitted_when_absent():
+    from simulation import planner
+    prompt = planner._build_prompt(_premise_agent(), "scrim tonight", 2)
+    assert "WORLD PREMISE" not in prompt, "no premise means no empty header"
+
+
+def test_premise_is_capped():
+    """The premise rides on every per-agent call, so a pasted essay must not
+    crowd out the character sheet and memories below it."""
+    from simulation.premise import premise_lines, MAX_PREMISE_CHARS
+    long_premise = "x" * (MAX_PREMISE_CHARS + 5000)
+    block = "\n".join(premise_lines(long_premise))
+    assert "WORLD PREMISE" in block
+    assert "x" * (MAX_PREMISE_CHARS + 1) not in block, "premise text was not truncated"
+    # Whatever fixed scaffolding the block carries, its size must not track the input.
+    longer = "\n".join(premise_lines("x" * (MAX_PREMISE_CHARS + 50000)))
+    assert len(longer) == len(block), "block length must be bounded, not input-driven"
+
+
+def test_report_prompt_does_not_forbid_the_world_voice():
+    from simulation import reporter
+    low = reporter.REPORT_SYSTEM.lower()
+    assert "not gamey" not in low, "this clamp is what produced the consulting-memo voice"
+    assert "vocabulary" in low, "the report must be told to speak the world's own language"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -415,6 +491,13 @@ _TESTS = [
     test_custom_characters_are_not_left_isolated,
     test_highlights_carry_dialogue,
     test_mock_utterance_differs_from_memory,
+    test_reasoner_prompt_carries_world_premise,
+    test_planner_prompt_carries_world_premise,
+    test_reflector_prompt_carries_world_premise,
+    test_vignette_prompt_carries_world_premise,
+    test_premise_block_is_omitted_when_absent,
+    test_premise_is_capped,
+    test_report_prompt_does_not_forbid_the_world_voice,
 ]
 
 
