@@ -676,7 +676,7 @@ def test_fit_endpoint_mutates_nothing():
     })
     assert r.status_code == 200, r.text
     after = client.get(f"/world/{wid}").json()
-    assert before["agents"] == after["agents"], "fit must not touch the roster"
+    assert before == after, "fit must not touch the world"
 
 
 def test_added_character_is_unfitted_by_default():
