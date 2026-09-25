@@ -149,8 +149,17 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
   async function surprise() {
     setErr(null);
     setSurpriseBusy(true);
+    // Snapshot the name field as it stood when the roll was requested. Same technique
+    // requestFit uses below: the user can keep typing while this awaits, and applying
+    // the roll on top of an in-progress edit would silently clobber it.
+    const before = nameRef.current;
     try {
       const ch = await api.surpriseCharacter(worldId);
+      if (nameRef.current !== before) {
+        // The user changed the name field while this was in flight — respect what
+        // they're doing instead of overwriting it with a randomly rolled identity.
+        return;
+      }
       setName(ch.name);
       setRole(ch.role);
       setTraits((ch.traits || []).join(", "));
@@ -161,6 +170,14 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
       // Same reasoning as surpriseFromStaticPools: a new rolled identity invalidates
       // any pending fit proposal from before.
       setFit(null); setFitFor(null);
+      // The backend already fits every Surprise character to the world
+      // (surprise_character sets fitted_to_world=True on the returned CharacterInput) —
+      // feed that into the SAME accept-derivation addCharacter uses for the manual fit
+      // flow, rather than bypassing it. Anchoring fitAcceptedFor to the rolled name
+      // keeps this honest under a later rename too: handleNameChange already drops
+      // fitAccepted the moment the name field diverges from fitAcceptedFor.
+      setFitAccepted(true);
+      setFitAcceptedFor(ch.name);
     } catch {
       surpriseFromStaticPools();
     } finally {
