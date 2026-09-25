@@ -117,8 +117,9 @@ class FeedEntry(BaseModel):
 
     Lightweight metadata so each entry can be RANKED per viewer (see
     simulation/observation.rank_feed): the author + their influence at the time, the
-    day (recency), the action_kind (reach signal), and the rendered text. `Agent.feed`
-    holds these; `Agent.observations` keeps the plain-string back-compat view.
+    day (recency), the reach signal (`reach`; `action_kind` is the retained legacy
+    field — see simulation/audience.py), and the rendered text. `Agent.feed` holds
+    these; `Agent.observations` keeps the plain-string back-compat view.
     """
     text: str
     author: str = ""

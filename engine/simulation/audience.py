@@ -62,6 +62,16 @@ def reach_from_action_kind(kind: str) -> str:
 # one deterministically from the audience the agent DID supply, using the exact rule below.
 # Task 7's reach-based witness routing uses this same rule for its standing-spread, so one
 # rule serves both consumers.
+#
+# RULING: this rule can only ever yield {amplify, post, direct, interact} — "comment" is
+# retired and "amplify" is narrowed, and both are deliberate, not oversights.
+#   - comment is retired because consequence._KIND_SELF_INFLUENCE weights it identically
+#     to interact (0.2 each), so collapsing it into "otherwise" costs no influence value.
+#   - amplify is narrowed to reach == "everyone" WITH a praise/support intent, whereas the
+#     old menu let a model "amplify" during a private exchange, which never made sense —
+#     amplifying someone means boosting them PUBLICLY. Rarer but meaningful beats frequent
+#     but meaningless. Do not widen this to fire on other reaches; Task 7 keys its
+#     standing-spread off the identical condition, and widening here would desync them.
 def derive_action_kind(reach: str, intents: dict) -> str:
     """Derive the legacy action_kind from a parsed reach + per-target intents.
 

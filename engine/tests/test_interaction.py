@@ -814,6 +814,42 @@ def test_action_kind_derived_from_audience_not_agent_authored():
     assert _act("those present", {"Lena": "talk"}).action_kind == "interact"
 
 
+def test_derivation_retires_comment_and_narrows_amplify():
+    """Fix round 1, Finding 2: `comment` can never come back out of derive_action_kind
+    (it shared interact's 0.2 self-influence weight, so retiring it costs nothing), and
+    `amplify` only comes out for reach == "everyone" WITH a praise/support intent — never
+    for a private exchange, since amplifying means boosting someone PUBLICLY. This is a
+    deliberate narrowing, ruled on and accepted; this test pins it so a future edit can't
+    silently reopen or further narrow the mapping."""
+    from simulation.audience import derive_action_kind, REACH_EVERYONE, REACH_PRESENT, REACH_ONE
+
+    reaches = (REACH_EVERYONE, REACH_PRESENT, REACH_ONE)
+    intent_sets = (
+        {},
+        {"A": "praise"},
+        {"A": "support"},
+        {"A": "confront"},
+        {"A": "talk", "B": "praise"},
+        {"A": "confide", "B": "support"},
+        {"A": "talk"},
+    )
+    for reach in reaches:
+        for intents in intent_sets:
+            kind = derive_action_kind(reach, intents)
+            assert kind != "comment", (reach, intents, kind)
+            assert kind in ("amplify", "post", "direct", "interact"), (reach, intents, kind)
+            has_boost_intent = any(v in ("praise", "support") for v in intents.values())
+            if kind == "amplify":
+                assert reach == REACH_EVERYONE and has_boost_intent, (reach, intents, kind)
+    # And the positive half: every everyone+praise/support combination DOES amplify.
+    assert derive_action_kind(REACH_EVERYONE, {"A": "praise"}) == "amplify"
+    assert derive_action_kind(REACH_EVERYONE, {"A": "support"}) == "amplify"
+    assert derive_action_kind(REACH_EVERYONE, {"A": "talk", "B": "support"}) == "amplify"
+    # A boost intent at a narrower reach must NOT amplify.
+    assert derive_action_kind(REACH_PRESENT, {"A": "praise"}) != "amplify"
+    assert derive_action_kind(REACH_ONE, {"A": "support"}) != "amplify"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -864,6 +900,7 @@ _TESTS = [
     test_reasoner_parses_audience_and_trims_who,
     test_legacy_saved_action_and_feed_entry_still_load,
     test_action_kind_derived_from_audience_not_agent_authored,
+    test_derivation_retires_comment_and_narrows_amplify,
 ]
 
 
