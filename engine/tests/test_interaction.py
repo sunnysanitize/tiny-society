@@ -572,12 +572,44 @@ def test_render_premise_caps_a_large_lens_block():
     assert len(text) <= MAX_PREMISE_CHARS + 1, f"render_premise grew to {len(text)} chars"
     assert text.endswith("…"), "a block this large must actually get truncated"
 
+    # Review Focus #1: worldgraph.py's own per-field caps (600 summary / 120x6
+    # affordances / 120x6 gathering_places / 300 register / 60x8 banned / 160 stake)
+    # sum to ~2,400 chars — comfortably over MAX_PREMISE_CHARS on a lens that maxes
+    # out every field, which a wordy model will do. banned_vocabulary used to be the
+    # LAST section appended, so it was the first casualty of truncation; this is the
+    # exact case that failed before the section reorder.
+    realistic_lens = WorldLens(
+        premise_summary=(
+            "The kingdom of Valmere endures a long winter under siege, its people worn "
+            "thin, its granaries watched day and night by exhausted guards who trade "
+            "rumors more than orders, while the court above them argues about a peace "
+            "no one on the wall believes is coming before the thaw. " * 3
+        )[:600],
+        affordances=[
+            ("messengers ride for days between the valley's scattered holds " * 3)[:120]
+            for _ in range(6)
+        ],
+        gathering_places=[
+            ("the great hall at dusk, when the fires are lit and the watch changes " * 2)[:120]
+            for _ in range(6)
+        ],
+        register_notes=("Formal, wintry, spoken in long clauses, never hurried. " * 6)[:300],
+        banned_vocabulary=[f"stakeholder-{i}" for i in range(8)],
+        central_stake=("who controls the last granary before the thaw breaks the siege " * 3)[:160],
+    )
+    realistic_text = render_premise(realistic_lens, "ignored")
+    assert any(w in realistic_text for w in realistic_lens.banned_vocabulary), (
+        "at worldgraph.py's own field caps, a banned word must still survive truncation"
+    )
+
 
 def test_realistic_lens_banned_vocabulary_survives_into_prompt():
-    """Regression guard: banned_vocabulary is the LAST section render_premise appends,
-    and premise_lines truncates again on top of that. A realistic lens must still carry
-    a banned word all the way into the final per-day prompt block, or every per-day call
-    silently loses the single most direct anti-staleness instruction in this feature."""
+    """Regression guard: render_premise truncates at MAX_PREMISE_CHARS, and premise_lines
+    truncates again on top of that. A realistic lens must still carry a banned word all
+    the way into the final per-day prompt block, or every per-day call silently loses the
+    single most direct anti-staleness instruction in this feature. (See
+    test_render_premise_caps_a_large_lens_block for the case where the lens alone,
+    at worldgraph.py's own field caps, is large enough to make this fail.)"""
     from models import WorldLens
     from simulation.premise import render_premise, premise_lines
 

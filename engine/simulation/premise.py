@@ -22,12 +22,14 @@ from models import WorldLens
 # The premise rides along on EVERY per-agent call, so its cost is paid once per agent per
 # day. Cap it: a player can paste an essay into the world prompt, and the character sheet
 # and memories below it matter more to the action than paragraph six of the setting. This
-# single bound covers both shapes `render_premise` can return: the raw-prompt fallback
-# (arbitrary user prose, which deserves a tight leash) and the structured lens block
-# (summary, affordances, gathering places, register, banned vocabulary — already compact,
-# but whose tail carries the banned-vocabulary line, the most load-bearing sentence in the
-# whole block, so the cap must be sized to let that block survive intact rather than to
-# match a single raw paragraph).
+# single bound is applied to BOTH shapes `render_premise` can return: the raw-prompt
+# fallback (arbitrary user prose, which deserves a tight leash) and the structured lens
+# block (summary, affordances, gathering places, register, banned vocabulary — already
+# compact, but able to exceed the cap on a wordy model, e.g. worldgraph.py's own per-field
+# caps sum to ~2,400 chars). Section ORDER in the lens block matters as much as the cap:
+# whatever is appended last is what a long lens loses first, so banned_vocabulary — the
+# single most load-bearing sentence in the block — is emitted right after register_notes,
+# ahead of the longer affordances/gathering-places lists, so it survives truncation.
 MAX_PREMISE_CHARS = 1400
 
 
@@ -40,8 +42,16 @@ def render_premise(lens: Optional[WorldLens], world_prompt: str) -> str:
     whose extraction failed — so no code path depends on interpretation succeeding.
     """
     if lens is None or lens.is_empty():
-        return (world_prompt or "").strip()
+        text = (world_prompt or "").strip()
+        if len(text) > MAX_PREMISE_CHARS:
+            text = text[:MAX_PREMISE_CHARS].rstrip() + "…"
+        return text
 
+    # Order matters: this block is truncated at MAX_PREMISE_CHARS below, so whatever is
+    # appended LAST is the first thing a large lens loses. banned_vocabulary and
+    # register_notes are short, high-value instructions — put them ahead of the two
+    # list sections (affordances, gathering_places), which are the largest and least
+    # catastrophic to lose the tail of.
     parts: list[str] = []
     if lens.premise_summary:
         parts.append(lens.premise_summary)
@@ -49,10 +59,6 @@ def render_premise(lens: Optional[WorldLens], world_prompt: str) -> str:
         parts.append(world_prompt.strip())
     if lens.central_stake:
         parts.append(f"At stake: {lens.central_stake}")
-    if lens.affordances:
-        parts.append("What is true here: " + "; ".join(lens.affordances))
-    if lens.gathering_places:
-        parts.append("Where you encounter each other: " + ", ".join(lens.gathering_places))
     if lens.register_notes:
         parts.append(f"How this world sounds: {lens.register_notes}")
     if lens.banned_vocabulary:
@@ -60,6 +66,10 @@ def render_premise(lens: Optional[WorldLens], world_prompt: str) -> str:
             "Never use these words — they belong to another world: "
             + ", ".join(lens.banned_vocabulary)
         )
+    if lens.affordances:
+        parts.append("What is true here: " + "; ".join(lens.affordances))
+    if lens.gathering_places:
+        parts.append("Where you encounter each other: " + ", ".join(lens.gathering_places))
     text = "\n".join(parts)
     if len(text) > MAX_PREMISE_CHARS:
         text = text[:MAX_PREMISE_CHARS].rstrip() + "…"

@@ -24,7 +24,7 @@ from .worldgraph import extract_world_context
 from .stance import initialize_stances
 from .vignette import generate_vignette_struct
 from .prophecy import grade_prophecy
-from .premise import render_premise
+from .premise import render_premise, premise_lines
 
 # Run a reflection pass (Stanford "Generative Agents" style) every N sim days for
 # the agents reasoning that day, so the day's reasoning can use fresh reflections.
@@ -141,7 +141,7 @@ def run_simulation(
 
         # AI-generated dynamic event every 5 absolute days (after day 3)
         if abs_day > 3 and abs_day % 5 == 0:
-            new_ev = _generate_dynamic_event(full_event_log, agents)
+            new_ev = _generate_dynamic_event(full_event_log, agents, premise_text)
             if new_ev:
                 active_event = new_ev
                 dynamic_events[str(abs_day)] = new_ev
@@ -203,7 +203,9 @@ def run_simulation(
             # restraint is visible in the story instead of silent.
             veto_notes = vet_action(actor, action, by_name)
             day_log.extend(veto_notes)
-            log_line, notes, milestones = apply_action(actor, action, agents, day=abs_day)
+            log_line, notes, milestones = apply_action(
+                actor, action, agents, day=abs_day, world_premise=premise_text
+            )
             day_log.append(log_line)
             day_milestones.extend(milestones)
             # PER-AGENT OBSERVATION LOCALITY: route this action only to the agents
@@ -408,18 +410,21 @@ def run_simulation(
     )
 
 
-def _generate_dynamic_event(recent_log: list[str], agents: list[Agent]) -> Optional[str]:
+def _generate_dynamic_event(
+    recent_log: list[str], agents: list[Agent], premise_text: Optional[str] = None,
+) -> Optional[str]:
     from llm import call_llm
     if not recent_log:
         return None
     tense = [a for a in agents if a.mood in ("angry", "frustrated", "anxious", "heartbroken", "lonely")]
     mood_hint = f"Several agents feel {tense[0].mood}." if tense else ""
     activity = "\n".join(recent_log[-8:])
-    prompt = (
+    prompt = "\n".join([
+        *premise_lines(premise_text),
         f"Recent activity:\n{activity}\n\n{mood_hint}\n\n"
         "Generate one world event sentence (no quotes, no prefix, under 20 words) "
-        "that naturally follows from this activity."
-    )
+        "that naturally follows from this activity.",
+    ])
     try:
         raw = call_llm(
             "DYNAMIC_EVENT_GENERATION\n"

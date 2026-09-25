@@ -25,6 +25,7 @@ def apply_action(
     action: AgentAction,
     all_agents: list[Agent],
     day: int = 0,
+    world_premise: Optional[str] = None,
 ) -> tuple[str, list[PerceptionNote], list[str]]:
     """Validate the structured action against the world and apply state updates.
 
@@ -89,6 +90,7 @@ def apply_action(
             raw_delta=base_delta,
             rel_type=proposed_type,
             action_summary=action_summary,
+            world_premise=world_premise,
         )
         if note:
             perception_notes.append(note)
@@ -148,7 +150,14 @@ def apply_action(
         tgt = "about " + ", ".join(action.about_agents)
     else:
         tgt = "no one"
-    actor.recent_actions.append(f"day {day}: {action.action_kind}/{action.action} → {tgt}")
+    # Render what the STORY actually shows (audience.who, in the world's own words),
+    # never action_kind — action_kind is the retired post/direct/amplify/comment/interact
+    # menu, and it used to leak back into the agent's own memory of its history here even
+    # after the menu left the reasoner prompt. Fall back to the action verb alone (never
+    # to action_kind) when the model left `who` blank.
+    who = (action.audience.who or "").strip()
+    move = f"{who}/{action.action}" if who else action.action
+    actor.recent_actions.append(f"day {day}: {move} → {tgt}")
     actor.recent_actions = actor.recent_actions[-6:]
 
     if action.new_memory:

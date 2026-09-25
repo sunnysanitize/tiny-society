@@ -7,6 +7,7 @@ from typing import Optional
 
 from models import Agent, PerceptionNote
 from llm import call_llm
+from .premise import premise_lines
 
 PERCEPTION_SYSTEM = """PERCEPTION_NARRATION
 You are the internal perception filter of a fictional character in a social simulation.
@@ -47,6 +48,7 @@ def perceive_event(
     raw_delta: float,
     rel_type: str,
     action_summary: str,
+    world_premise: Optional[str] = None,
 ) -> tuple[float, Optional[PerceptionNote]]:
     """
     Filter an incoming social event through the perceiver's character.
@@ -58,7 +60,7 @@ def perceive_event(
     if not _is_significant(perceiver, actor, raw_delta):
         return raw_delta, None
 
-    user_prompt = _build_prompt(perceiver, actor, raw_delta, rel_type, action_summary)
+    user_prompt = _build_prompt(perceiver, actor, raw_delta, rel_type, action_summary, world_premise)
     try:
         raw = call_llm(PERCEPTION_SYSTEM, user_prompt, json_mode=True, max_tokens=400)
     except Exception as e:
@@ -128,6 +130,7 @@ def _build_prompt(
     raw_delta: float,
     rel_type: str,
     action_summary: str,
+    world_premise: Optional[str] = None,
 ) -> str:
     existing = perceiver.relationships.get(actor.name)
     existing_desc = (
@@ -149,6 +152,7 @@ def _build_prompt(
     signal_desc = f"{direction}, magnitude {abs(raw_delta):.2f} — relationship type: {rel_type}"
 
     parts = [
+        *premise_lines(world_premise),
         "YOUR CHARACTER",
         f"Name: {perceiver.name}",
         f"Role: {perceiver.role}",

@@ -5,13 +5,27 @@ from typing import Optional
 from models import DaySnapshot, MacroMetrics, Forecast, WorldLens
 from llm import call_llm
 
-REPORT_SYSTEM = """FINAL_REPORT
-You are a social-dynamics analyst writing a concise narrative report on a multi-agent simulation.
+def _report_system(lens: Optional["WorldLens"] = None) -> str:
+    """The FINAL_REPORT system prompt, with its vocabulary parameterised from the lens.
+
+    The report is the artifact where the branch's original failure was observed — a
+    hardcoded "social-dynamics analyst" writing about "the society" and "the population"
+    is a fair description of the voice that produced "holistic team development", and it
+    used to sit in the highest-authority position (the system prompt) while the lens's
+    own "use that, not 'society'" instruction was merely appended to the user message
+    underneath it. Callers get a world-specific voice when a lens is available and a
+    neutral fallback ("the society" / "the population") when it isn't — those two nouns
+    remain acceptable DEFAULTS, just no longer hardcoded overrides.
+    """
+    collective = (lens.collective_noun.strip() if lens and lens.collective_noun else "") or "the society"
+    population = (lens.actor_noun_plural.strip() if lens and lens.actor_noun_plural else "") or "the population"
+    return f"""FINAL_REPORT
+You are writing a concise narrative report on a multi-agent simulation of {collective}.
 You will be given before/after macro metrics, the day-by-day highlights, and (if present) a
-PREDICTION QUESTION plus the population's BELIEF TRAJECTORY and PIVOTAL DAYS.
+PREDICTION QUESTION plus {population}'s BELIEF TRAJECTORY and PIVOTAL DAYS.
 
 Write a 4-6 paragraph summary in plain prose covering:
-- how the injected event reshaped the society
+- how the injected event reshaped {collective}
 - which agents gained or lost influence and why
 - which factions, romances, rivalries, or alliances formed
 - the relationship turning points, when the input includes them — trace these as the spine
@@ -21,7 +35,7 @@ Write a 4-6 paragraph summary in plain prose covering:
 - the final social shape compared to Day 0
 
 If a PREDICTION QUESTION is given, END with a clearly-labeled forecast paragraph that answers it,
-grounded in the final population belief means, the quantified confidence, and the causal chain of
+grounded in {population}'s final belief means, the quantified confidence, and the causal chain of
 pivotal days (what happened on each that moved sentiment).
 
 Do not invent agent names that weren't in the data.
@@ -34,6 +48,13 @@ breathless, but sound like someone who was there.
 Write about what IS in the input. Never mention a section, heading, or category that
 was not provided, and never state that information was missing or not detailed.
 """
+
+
+# Neutral default (no lens) — kept as a module-level constant since some tests and
+# callers reference the prompt without a lens in hand. generate_final_report below
+# builds its own per-call via _report_system(lens) so a lens, when present, actually
+# reaches the highest-authority position instead of only the user message.
+REPORT_SYSTEM = _report_system(None)
 
 # How many pivotal days to surface in the forecast/report.
 MAX_PIVOTAL_DAYS = 3
@@ -147,6 +168,11 @@ def generate_final_report(
     with the population belief trajectory and pivotal-day causal summaries when a
     question/topics are present. The Forecast's numeric fields are computed in
     Python from the real per-day metrics.
+
+    `lens`, when given and non-empty, does double duty: its vocabulary (collective
+    noun, actor noun, register, banned words) parameterises the SYSTEM prompt itself
+    (see `_report_system`), not just the user message, and is also summarised into a
+    "HOW TO WRITE THIS WORLD" block prepended to the user message below.
     """
     topics = topics or []
     dynamic_events = dynamic_events or {}
@@ -217,7 +243,7 @@ def generate_final_report(
         )
 
     try:
-        narrative = call_llm(REPORT_SYSTEM, user, max_tokens=1500, tier="strong")
+        narrative = call_llm(_report_system(lens), user, max_tokens=1500, tier="strong")
     except Exception as e:
         narrative = f"(Report generation failed: {e})"
 
