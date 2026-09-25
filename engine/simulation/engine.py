@@ -209,9 +209,21 @@ def run_simulation(
             # PER-AGENT OBSERVATION LOCALITY: route this action only to the agents
             # who could plausibly witness it (actor, targets, group-mates, or
             # everyone if the actor is a high-influence public figure).
+            #
+            # STANDING SPREAD, derived rather than declared: publicly lifting someone
+            # raises their standing in any world. The (praise|support) + everyone rule
+            # lives in ONE place — audience.derive_action_kind, which has already
+            # resolved it into action.action_kind. Gate on that instead of
+            # re-checking the intent/reach condition here, so the rule never drifts
+            # into two copies (see the RULING comment in simulation/audience.py).
+            lifted = (
+                [name for name, intent in (action.intents or {}).items()
+                 if intent in ("praise", "support") and name in action.target_agents]
+                if action.action_kind == "amplify" else []
+            )
             distribute_observation(
                 log_line, actor, action.target_agents, agents,
-                action_kind=action.action_kind, day=abs_day,
+                reach=action.audience.reach, day=abs_day, amplify_targets=lifted,
             )
             day_perception_notes.extend(notes)
             day_highlights.append(DayHighlight(

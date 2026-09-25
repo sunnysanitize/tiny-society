@@ -850,6 +850,42 @@ def test_derivation_retires_comment_and_narrows_amplify():
     assert derive_action_kind(REACH_ONE, {"A": "support"}) != "amplify"
 
 
+def test_witness_tiers_match_the_old_action_kinds():
+    from models import Agent
+    from simulation.observation import witnesses
+    from simulation.audience import REACH_EVERYONE, REACH_PRESENT, REACH_ONE
+    a = Agent(id="a", name="Ana", role="x", groups=["kitchen"])
+    b = Agent(id="b", name="Ben", role="x", groups=["kitchen"])
+    c = Agent(id="c", name="Cal", role="x", groups=["garden"])
+    roster = [a, b, c]
+    assert {w.name for w in witnesses(a, [], roster, REACH_EVERYONE)} == {"Ana", "Ben", "Cal"}
+    assert {w.name for w in witnesses(a, ["Cal"], roster, REACH_ONE)} == {"Ana", "Cal"}
+    assert {w.name for w in witnesses(a, [], roster, REACH_PRESENT)} == {"Ana", "Ben"}
+    a.influence_score = 25.0
+    assert {w.name for w in witnesses(a, [], roster, REACH_PRESENT)} == {"Ana", "Ben", "Cal"}, \
+        "a public figure still reaches everyone"
+
+
+def test_amplify_spread_is_derived_not_declared():
+    from models import Agent
+    from simulation.observation import distribute_observation
+    from simulation.audience import REACH_EVERYONE, REACH_PRESENT
+    def fresh():
+        return [Agent(id="a", name="Ana", role="x"), Agent(id="b", name="Ben", role="x")]
+
+    roster = fresh()
+    distribute_observation("[Ana] praised Ben.", roster[0], ["Ben"], roster,
+                           reach=REACH_EVERYONE, day=1, amplify_targets=["Ben"])
+    assert any(e.author == "Ben" for e in roster[0].feed), \
+        "public praise must spread the praised person's standing"
+
+    roster = fresh()
+    distribute_observation("[Ana] praised Ben.", roster[0], ["Ben"], roster,
+                           reach=REACH_PRESENT, day=1, amplify_targets=[])
+    assert not any(e.author == "Ben" for e in roster[0].feed), \
+        "private praise must not spread standing"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -901,6 +937,8 @@ _TESTS = [
     test_legacy_saved_action_and_feed_entry_still_load,
     test_action_kind_derived_from_audience_not_agent_authored,
     test_derivation_retires_comment_and_narrows_amplify,
+    test_witness_tiers_match_the_old_action_kinds,
+    test_amplify_spread_is_derived_not_declared,
 ]
 
 
