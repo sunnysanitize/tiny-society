@@ -51,6 +51,8 @@ export interface Agent {
   // ── Engagement (Slice F) — optional so older saves still type-check ──
   avatar?: string | null;
   based_on?: string | null;
+  // ── World interpretation — optional so older saves still type-check ──
+  fitted_to_world?: boolean;
   // ── earlier slices (defensive optionals) ──
   stance?: Record<string, number>;
   plan?: string | null;

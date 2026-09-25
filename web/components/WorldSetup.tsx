@@ -32,8 +32,8 @@ export function WorldSetup({ onCreated }: { onCreated: (wid: string, world: Worl
           ─── SELECT YOUR WORLD ───
         </div>
         <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 2, fontFamily: "ui-monospace, monospace" }}>
-          Define a fictional society · populate it with characters<br />
-          inject a starting event · watch society evolve
+          Describe any world · populate it with people<br />
+          add a starting event · watch the week play out
         </div>
       </div>
 

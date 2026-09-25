@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { api } from "@/lib/api";
-import type { World, Mood } from "@/lib/types";
+import type { World, Mood, CharacterFit } from "@/lib/types";
 import { PixelAvatar, isEmojiAvatar, pixelVariant } from "./PixelAvatar";
 
 const MOODS: Mood[] = ["calm","excited","frustrated","ambitious","anxious","content","hopeful","confident","lonely","angry","heartbroken"];
@@ -101,6 +101,9 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
   const [busy, setBusy] = useState(false);
   const [genBusy, setGenBusy] = useState(false);
   const [surpriseBusy, setSurpriseBusy] = useState(false);
+  const [fit, setFit] = useState<CharacterFit | null>(null);
+  const [fitBusy, setFitBusy] = useState(false);
+  const [fitAccepted, setFitAccepted] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   // Optional fields (memory, look, based-on) stay hidden until asked for.
   const [showMore, setShowMore] = useState(false);
@@ -146,6 +149,35 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
     }
   }
 
+  // Ask what this person would BE in this world. Writes nothing — the proposal sits
+  // beside what the user typed until they accept it.
+  async function requestFit() {
+    if (!name.trim()) return;
+    setFitBusy(true); setErr(null);
+    try {
+      setFit(await api.fitCharacter(worldId, {
+        name: name.trim(), role: role.trim(),
+        traits: splitCsv(traits), goals: splitCsv(goals),
+        mood, groups: splitCsv(groups),
+        starting_memories: memory.trim() ? [memory.trim()] : [],
+        starting_relationships: {},
+      }));
+    } catch (e: any) { setErr(e.message); }
+    finally { setFitBusy(false); }
+  }
+
+  // Accept the whole proposal into the form. The user can still edit every field
+  // afterwards — and their name, traits and mood were never up for proposal.
+  function acceptFit() {
+    if (!fit) return;
+    if (fit.role) setRole(fit.role);
+    if (fit.groups.length) setGroups(fit.groups.join(", "));
+    if (fit.goals.length) setGoals(fit.goals.join(", "));
+    if (fit.starting_memories.length) setMemory(fit.starting_memories[0]);
+    setFitAccepted(true);
+    setFit(null);
+  }
+
   async function addCharacter() {
     if (!name.trim()) return;
     setBusy(true); setErr(null);
@@ -158,10 +190,11 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
         starting_relationships: {},
         ...(avatar ? { avatar } : {}),
         ...(basedOn.trim() ? { based_on: basedOn.trim() } : {}),
+        fitted_to_world: fitAccepted,
       });
       const w = await api.getWorld(worldId);
       onWorldChange(w);
-      setName(""); setMemory(""); setAvatar(null); setBasedOn("");
+      setName(""); setMemory(""); setAvatar(null); setBasedOn(""); setFitAccepted(false); setFit(null);
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   }
@@ -220,11 +253,26 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
         </div>
         <button
           type="button"
+          onClick={requestFit}
+          disabled={fitBusy || !name.trim()}
+          title="Ask what this character would be in this world — proposes, never overwrites"
+          style={{
+            marginLeft: "auto", fontSize: 8, padding: "6px 12px", cursor: (fitBusy || !name.trim()) ? "default" : "pointer",
+            background: "transparent", color: "var(--accent)",
+            border: "1px solid var(--accent)", fontFamily: "var(--font-pixel)",
+            textTransform: "uppercase", letterSpacing: "0.06em",
+            opacity: (fitBusy || !name.trim()) ? 0.6 : 1,
+          }}
+        >
+          {fitBusy ? "🔎 FITTING..." : "🔎 FIT TO WORLD"}
+        </button>
+        <button
+          type="button"
           onClick={surprise}
           disabled={surpriseBusy}
           title="Roll a random character who belongs in this world"
           style={{
-            marginLeft: "auto", fontSize: 8, padding: "6px 12px", cursor: surpriseBusy ? "default" : "pointer",
+            fontSize: 8, padding: "6px 12px", cursor: surpriseBusy ? "default" : "pointer",
             background: "transparent", color: "var(--accent)",
             border: "1px solid var(--accent)", fontFamily: "var(--font-pixel)",
             textTransform: "uppercase", letterSpacing: "0.06em",
@@ -348,6 +396,25 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
           </>
         )}
       </div>
+
+      {fit && (
+        <div className="panel" style={{ padding: 12, marginBottom: 12 }}>
+          <FieldLabel>IN THIS WORLD</FieldLabel>
+          {fit.note && (
+            <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.6, marginBottom: 8 }}>
+              {fit.note}
+            </div>
+          )}
+          {fit.role && <div style={{ fontSize: 10 }}>role · {fit.role}</div>}
+          {fit.groups.length > 0 && <div style={{ fontSize: 10 }}>groups · {fit.groups.join(", ")}</div>}
+          {fit.goals.length > 0 && <div style={{ fontSize: 10 }}>goals · {fit.goals.join(", ")}</div>}
+          {fit.starting_memories.length > 0 && <div style={{ fontSize: 10 }}>memory · {fit.starting_memories[0]}</div>}
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button className="btn" onClick={acceptFit}>use this</button>
+            <button className="btn-ghost" onClick={() => setFit(null)}>keep mine</button>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button className="btn" onClick={addCharacter} disabled={busy || !name.trim() || atCap}>

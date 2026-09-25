@@ -150,6 +150,14 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun, onBegin }: {
         Begin day by day to watch each day unfold and step in between days, or fast-forward to run straight through and review the outcome.
       </div>
 
+      {world.agents.filter(a => !a.fitted_to_world && a.is_custom).length > 0 && (
+        <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.6, marginBottom: 10 }}>
+          Not fitted to this world:{" "}
+          {world.agents.filter(a => !a.fitted_to_world && a.is_custom).map(a => a.name).join(", ")}
+          {" "}— they will still take part, written as you wrote them.
+        </div>
+      )}
+
       {/* Primary: begin day-by-day. The town advances one day at a time, and you can
           nudge / inject events / add characters / set a prophecy between days. */}
       <button
