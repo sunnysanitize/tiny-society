@@ -20,10 +20,11 @@ from .persona import vet_action
 from .observation import distribute_observation
 from .metrics import compute_metrics, snapshot_influence
 from .reporter import generate_final_report
-from .worldgraph import extract_world_graph
+from .worldgraph import extract_world_context
 from .stance import initialize_stances
 from .vignette import generate_vignette_struct
 from .prophecy import grade_prophecy
+from .premise import render_premise, premise_lines
 
 # Run a reflection pass (Stanford "Generative Agents" style) every N sim days for
 # the agents reasoning that day, so the day's reasoning can use fresh reflections.
@@ -70,7 +71,7 @@ def run_simulation(
     # structures, and the stance topics the society will divide on). Stored on the
     # world object so snapshots/saves carry it.
     if world.world_graph is None or world.world_graph.is_empty():
-        world.world_graph = extract_world_graph(world)
+        world.world_graph, world.lens = extract_world_context(world)
     topics = world.world_graph.topics
 
     # PER-AGENT STANCE: seed each agent with a mild, varied starting position on each
@@ -107,6 +108,10 @@ def run_simulation(
     if pending_event:
         world.pending_event = None
 
+    # Render the world's premise ONCE per run: every per-day call gets the same text,
+    # so day 6 cannot drift to a different reading of the world than day 1.
+    premise_text = render_premise(world.lens, world.prompt)
+
     for day in range(1, config.days + 1):
         abs_day = day + day_offset
         # USER CANCEL: stop before starting a new day if the player asked to halt the run.
@@ -136,7 +141,7 @@ def run_simulation(
 
         # AI-generated dynamic event every 5 absolute days (after day 3)
         if abs_day > 3 and abs_day % 5 == 0:
-            new_ev = _generate_dynamic_event(full_event_log, agents)
+            new_ev = _generate_dynamic_event(full_event_log, agents, premise_text)
             if new_ev:
                 active_event = new_ev
                 dynamic_events[str(abs_day)] = new_ev
@@ -172,7 +177,9 @@ def run_simulation(
         # (which then surface in this same day's relevance-based retrieval).
         if abs_day > 1 and abs_day % REFLECT_EVERY_DAYS == 0:
             for actor in selected:
-                new_reflections = reflect(actor, current_day=abs_day)
+                new_reflections = reflect(
+                    actor, current_day=abs_day, world_premise=premise_text
+                )
                 if new_reflections:
                     logging.info(
                         f"Day {abs_day}: {actor.name} reflected, "
@@ -196,15 +203,29 @@ def run_simulation(
             # restraint is visible in the story instead of silent.
             veto_notes = vet_action(actor, action, by_name)
             day_log.extend(veto_notes)
-            log_line, notes, milestones = apply_action(actor, action, agents, day=abs_day)
+            log_line, notes, milestones = apply_action(
+                actor, action, agents, day=abs_day, world_premise=premise_text
+            )
             day_log.append(log_line)
             day_milestones.extend(milestones)
             # PER-AGENT OBSERVATION LOCALITY: route this action only to the agents
             # who could plausibly witness it (actor, targets, group-mates, or
             # everyone if the actor is a high-influence public figure).
+            #
+            # STANDING SPREAD, derived rather than declared: publicly lifting someone
+            # raises their standing in any world. The (praise|support) + everyone rule
+            # lives in ONE place — audience.derive_action_kind, which has already
+            # resolved it into action.action_kind. Gate on that instead of
+            # re-checking the intent/reach condition here, so the rule never drifts
+            # into two copies (see the RULING comment in simulation/audience.py).
+            lifted = (
+                [name for name, intent in (action.intents or {}).items()
+                 if intent in ("praise", "support") and name in action.target_agents]
+                if action.action_kind == "amplify" else []
+            )
             distribute_observation(
                 log_line, actor, action.target_agents, agents,
-                action_kind=action.action_kind, day=abs_day,
+                reach=action.audience.reach, day=abs_day, amplify_targets=lifted,
             )
             day_perception_notes.extend(notes)
             day_highlights.append(DayHighlight(
@@ -232,7 +253,9 @@ def run_simulation(
             # PLANNING (④): refresh this selected agent's short-term intention if it's
             # missing or stale, BEFORE reasoning, so today's action can pursue it.
             if actor.plan is None or (abs_day - actor.plan_day) >= PLAN_REFRESH_DAYS:
-                new_plan = await asyncio.to_thread(form_plan, actor, active_event, abs_day)
+                new_plan = await asyncio.to_thread(
+                    form_plan, actor, active_event, abs_day, premise_text
+                )
                 if new_plan:
                     actor.plan = new_plan
                     actor.plan_day = abs_day
@@ -243,6 +266,7 @@ def run_simulation(
                 event=active_event,
                 current_day=abs_day,
                 world_graph=world.world_graph,
+                world_premise=premise_text,
             )
 
         async def _gather_day_actions(actors):
@@ -285,6 +309,7 @@ def run_simulation(
                         current_day=abs_day,
                         world_graph=world.world_graph,
                         tier="strong",
+                        world_premise=premise_text,
                     )
                     if resp is None:
                         break
@@ -302,7 +327,9 @@ def run_simulation(
             n_vig = min(MAX_VIGNETTES_PER_DAY, len(selected))
             vig_actors = day_rng.sample(selected, day_rng.randint(1, n_vig))
             for actor in vig_actors:
-                struct = generate_vignette_struct(actor, active_event, abs_day)
+                struct = generate_vignette_struct(
+                    actor, active_event, abs_day, premise_text
+                )
                 if struct:
                     kind, text = struct
                     day_vignettes.append(Vignette(agent=actor.name, kind=kind, text=text))
@@ -351,6 +378,7 @@ def run_simulation(
         question=world.question,
         topics=topics,
         dynamic_events=dynamic_events,
+        lens=world.lens,
     )
 
     # PROPHECY (Slice E): if the player set a free-text prediction, grade it once at the
@@ -382,18 +410,21 @@ def run_simulation(
     )
 
 
-def _generate_dynamic_event(recent_log: list[str], agents: list[Agent]) -> Optional[str]:
+def _generate_dynamic_event(
+    recent_log: list[str], agents: list[Agent], premise_text: Optional[str] = None,
+) -> Optional[str]:
     from llm import call_llm
     if not recent_log:
         return None
     tense = [a for a in agents if a.mood in ("angry", "frustrated", "anxious", "heartbroken", "lonely")]
     mood_hint = f"Several agents feel {tense[0].mood}." if tense else ""
     activity = "\n".join(recent_log[-8:])
-    prompt = (
+    prompt = "\n".join([
+        *premise_lines(premise_text),
         f"Recent activity:\n{activity}\n\n{mood_hint}\n\n"
         "Generate one world event sentence (no quotes, no prefix, under 20 words) "
-        "that naturally follows from this activity."
-    )
+        "that naturally follows from this activity.",
+    ])
     try:
         raw = call_llm(
             "DYNAMIC_EVENT_GENERATION\n"

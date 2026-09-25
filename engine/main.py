@@ -29,13 +29,16 @@ logging.basicConfig(
 log = logging.getLogger("tiny_society")
 
 from models import (
-    Agent, CharacterInput, World, WorldInput,
+    Agent, CharacterFit, CharacterInput, World, WorldInput,
     SimulationConfig, SimulationResult, DaySnapshot,
 )
 from state import store
 from simulation.engine import run_simulation
 from simulation.generator import generate_fillers
+from simulation.worldgraph import extract_world_context
 from simulation.memory import make_memory
+from simulation.fitting import fit_character, surprise_character
+from simulation.premise import render_premise, premise_lines
 
 
 def _validate_config() -> None:
@@ -119,6 +122,10 @@ class CreateWorldResponse(BaseModel):
 @app.post("/world", response_model=CreateWorldResponse)
 def create_world(body: WorldInput):
     world = World(prompt=body.prompt, target_population=body.target_population)
+    # Interpret the premise up front: the fitting and surprise endpoints run long
+    # before any simulation does, and both need the lens. Best-effort — an empty lens
+    # means every consumer falls back to the raw prompt.
+    world.world_graph, world.lens = extract_world_context(world)
     wid = store.create(world)
     return CreateWorldResponse(world_id=wid, world=world)
 
@@ -149,6 +156,7 @@ def _build_agent_from_input(body: CharacterInput, *, day: int = 0) -> Agent:
         is_custom=True,
         avatar=body.avatar,
         based_on=body.based_on,
+        fitted_to_world=body.fitted_to_world,
     )
 
 
@@ -159,6 +167,26 @@ def add_character(wid: str, body: CharacterInput):
     w.agents.append(agent)
     store.update(wid, w)
     return agent
+
+
+@app.post("/world/{wid}/character/fit", response_model=CharacterFit)
+def fit_character_to_world(wid: str, body: CharacterInput):
+    """Propose this character's situation in this world. Writes NOTHING — the client
+    shows the proposal beside what the user typed and only an explicit accept, via the
+    ordinary add-character call, turns it into an agent."""
+    w = _require(wid)
+    return fit_character(w, body)
+
+
+@app.post("/world/{wid}/character/surprise", response_model=CharacterInput)
+def surprise_character_for_world(wid: str):
+    """Roll one world-appropriate character. Writes NOTHING — the client fills its form
+    with the result and the user still presses add."""
+    w = _require(wid)
+    ch = surprise_character(w)
+    if ch is None:
+        raise HTTPException(503, "could not invent a character for this world")
+    return ch
 
 
 @app.post("/world/{wid}/inject-character", response_model=Agent)
@@ -445,20 +473,30 @@ def agent_chat(wid: str, agent_id: str, body: ChatRequest):
         f"  - {m.text}" for m in (agent.long_term_memory[-6:] + agent.short_term_memory[-4:])
     ) or "  (none)"
 
-    user_prompt = (
-        f"CHARACTER PROFILE\n"
-        f"Name: {agent.name}\n"
-        f"Role: {agent.role}\n"
-        f"Traits: {', '.join(agent.traits) or 'none'}\n"
-        f"Goals: {', '.join(agent.goals) or 'none'}\n"
-        f"Current mood: {agent.mood}\n"
-        f"Influence score: {agent.influence_score:.1f}\n"
-        f"Groups: {', '.join(agent.groups) or 'none'}\n\n"
-        f"RELATIONSHIPS\n{rel_lines}\n\n"
-        f"MEMORIES\n{memories}\n\n"
-        f"WORLD EVENT\n{world.starting_event or '(none)'}\n\n"
-        f"USER MESSAGE\n{body.message}"
-    )
+    premise_text = render_premise(world.lens, world.prompt)
+    user_prompt = "\n".join([
+        *premise_lines(premise_text),
+        "CHARACTER PROFILE",
+        f"Name: {agent.name}",
+        f"Role: {agent.role}",
+        f"Traits: {', '.join(agent.traits) or 'none'}",
+        f"Goals: {', '.join(agent.goals) or 'none'}",
+        f"Current mood: {agent.mood}",
+        f"Influence score: {agent.influence_score:.1f}",
+        f"Groups: {', '.join(agent.groups) or 'none'}",
+        "",
+        "RELATIONSHIPS",
+        rel_lines,
+        "",
+        "MEMORIES",
+        memories,
+        "",
+        "WORLD EVENT",
+        world.starting_event or "(none)",
+        "",
+        "USER MESSAGE",
+        body.message,
+    ])
 
     try:
         reply = call_llm(CHAT_SYSTEM, user_prompt, max_tokens=300, tier="strong")

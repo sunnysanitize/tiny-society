@@ -9,6 +9,7 @@ import uuid
 from models import Agent, World, normalize_mood
 from llm import call_llm
 from .memory import make_memory
+from .premise import render_premise
 from . import consequence
 
 FILLER_SYSTEM = """FILLER_AGENT_GENERATION
@@ -200,6 +201,11 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
                 short_term_memory=[m.model_copy() for m in memories],
                 long_term_memory=[m.model_copy() for m in memories],
                 is_custom=False,
+                # generate_fillers already fits every character to the world (the whole
+                # point of this generator) — born fitted, unlike an authored character
+                # added through CharacterEditor, which starts unfitted until a fit
+                # proposal is accepted for it.
+                fitted_to_world=True,
             ))
             remaining -= 1
             if remaining <= 0:
@@ -209,7 +215,7 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
     # starting_relationships={} (CharacterEditor sends no relationships and exposes no UI
     # for them), so passing `out` alone left every hand-made character isolated on day 1 —
     # the precise failure this seeding exists to prevent.
-    _seed_relationships(list(world.agents) + out, world.prompt)
+    _seed_relationships(list(world.agents) + out, render_premise(world.lens, world.prompt))
     return out
 
 
@@ -223,7 +229,7 @@ def _fetch_batch(world: World, count: int, existing_names: set[str],
             f"function in this world, not a reworded version of the same job."
         )
     user = (
-        f"World prompt:\n{world.prompt}\n\n"
+        f"World prompt:\n{render_premise(world.lens, world.prompt)}\n\n"
         f"Generate {count} fictional agents that fit this world. "
         f"Avoid these existing names: {sorted(existing_names) or 'none'}. "
         f"These roles are already taken — every new agent must have a clearly "

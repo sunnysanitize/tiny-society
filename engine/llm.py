@@ -759,11 +759,116 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
 
         # 3-6 topics
         topics = topics[:5]
+
+        if is_fantasy:
+            nouns = ("brother", "brothers", "the house")
+            places = ["the chapter house", "the refectory", "the cloister walk"]
+            afford = ["word travels on foot", "letters take weeks", "the stores are counted daily"]
+            register = "Plain, concrete, of its century. Name the hours and the work."
+        elif is_scifi:
+            nouns = ("crew member", "crew", "the ship")
+            places = ["the mess", "the observation deck", "engineering"]
+            afford = ["comms are logged", "no contact with home", "air and water are rationed"]
+            register = "Clipped and procedural. Distance and dwindling supply shape everything."
+        elif is_corp:
+            nouns = ("employee", "employees", "the company")
+            places = ["the open floor", "the kitchen", "the Monday all-hands"]
+            afford = ["everything is on Slack", "calendars are public", "the org chart is known"]
+            register = "Dry and specific. Real work, real deadlines, no motivational abstractions."
+        elif is_school:
+            nouns = ("student", "students", "the cohort")
+            places = ["the dining hall", "the quad", "the group chat"]
+            afford = ["everyone shares a timetable", "term deadlines are fixed"]
+            register = "Close and immediate. Term time, coursework, and small rooms."
+        else:
+            nouns = ("member", "members", "the group")
+            places = ["the usual meeting place"]
+            afford = ["people speak face to face"]
+            register = "Concrete and specific to this setting."
+
+        lens = {
+            "premise_summary": " ".join(user.split())[:300],
+            "actor_noun": nouns[0],
+            "actor_noun_plural": nouns[1],
+            "collective_noun": nouns[2],
+            "affordances": afford,
+            "gathering_places": places,
+            "register_notes": register,
+            "banned_vocabulary": ["team-building", "stakeholder", "holistic",
+                                  "strategic discussions", "posted"],
+            "central_stake": f"who controls {place}",
+        }
+
         return json.dumps({
+            "lens": lens,
             "entities": entities,
             "relationships": relationships,
             "power_structures": power_structures,
             "topics": topics,
+        })
+
+    # ── character world-fitting (suggest, don't rewrite) ───────────────────────
+    if "CHARACTER_WORLD_FIT" in system:
+        ctx = user.lower()
+        if any(w in ctx for w in ("monastery", "abbey", "medieval", "1340", "kingdom", "realm")):
+            role, groups = "kitchener", ["the kitchen", "the lay brothers"]
+            goals = ["keep the house fed through the siege"]
+            mems = ["I argued with the cellarer over the last of the salt pork."]
+        elif any(w in ctx for w in ("ship", "colony", "station", "crew")):
+            role, groups = "galley hand", ["the mess crew"]
+            goals = ["stretch the rations another month"]
+            mems = ["I watched the quartermaster shave the portions again and said nothing."]
+        else:
+            role, groups = "cook", ["the kitchen"]
+            goals = ["feed everyone properly"]
+            mems = ["I have been feeding this lot longer than any of them remember."]
+        return json.dumps({
+            "role": role, "groups": groups, "goals": goals,
+            "starting_memories": mems,
+            "note": f"Their stubbornness and their cooking make them the {role} here.",
+        })
+
+    # ── character surprise (roll one world-appropriate character) ──────────────
+    if "CHARACTER_SURPRISE" in system:
+        ctx = user.lower()
+        if any(w in ctx for w in ("monastery", "abbey", "medieval", "1340", "kingdom", "realm")):
+            pool = [("Anselm", "cellarer"), ("Gilbert", "infirmarian"), ("Odo", "novice master"),
+                    ("Wulfric", "porter"), ("Baldwin", "sacrist"), ("Edmund", "almoner")]
+            groups, goal = ["the choir monks"], "keep the rule while the grain lasts"
+            mem = "I kept the gate shut the night the villagers came asking."
+        elif any(w in ctx for w in ("ship", "colony", "station", "crew", "space")):
+            pool = [("Vess", "hydroponics tech"), ("Ilan", "flight engineer"), ("Rook", "quartermaster"),
+                    ("Siu", "comms officer"), ("Dara", "ship's medic"), ("Pell", "cargo master")]
+            groups, goal = ["the day watch"], "get the ship somewhere worth arriving at"
+            mem = "I falsified a pressure reading once and nobody ever checked."
+        else:
+            pool = [("Ren", "organiser"), ("Mira", "quiet one"), ("Tovan", "newcomer"),
+                    ("Juno", "old hand"), ("Sasha", "fixer"), ("Bo", "outsider")]
+            groups, goal = ["the regulars"], "be taken seriously here"
+            mem = "I said the wrong thing in front of everyone and never lived it down."
+
+        # Pull the EXISTING NAMES line straight out of the prompt (built by
+        # surprise_character as "EXISTING NAMES\n<comma-separated names>\n") rather than
+        # regexing the whole user block — the section is single-line and self-delimited,
+        # so a plain scan is both simpler and correct.
+        existing_names: set[str] = set()
+        lines = user.split("\n")
+        for i, line in enumerate(lines):
+            if line.strip() == "EXISTING NAMES" and i + 1 < len(lines):
+                existing_names = {n.strip().lower() for n in lines[i + 1].split(",") if n.strip()}
+                break
+
+        name, role = pool[seed % len(pool)]
+        for cand_name, cand_role in pool:
+            if cand_name.lower() not in existing_names:
+                name, role = cand_name, cand_role
+                break
+
+        return json.dumps({
+            "name": name, "role": role,
+            "traits": ["stubborn", "watchful", "proud"],
+            "goals": [goal], "groups": groups, "mood": "anxious",
+            "starting_memories": [mem],
         })
 
     # ── perception narration ───────────────────────────────────────────────────
@@ -1270,9 +1375,21 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
         # (Drawn after every other rng call in this branch, so it never shifts the
         # random stream consumed by action_verb/new_memory/stance_shift/action_kind.)
         _about_only = rng.random() < 0.25
+        # AUDIENCE (Task 6): the mock used to emit the legacy action_kind directly. The
+        # reasoner prompt no longer offers that menu, so emit the world-native audience
+        # shape instead — mapping the same deterministically-picked kind onto an
+        # equivalent (who, reach) pair, so downstream variety (and determinism) is
+        # unchanged.
+        _effective_kind = "interact" if _about_only else action_kind
+        if _effective_kind == "post":
+            audience = {"who": "in front of everyone", "reach": "everyone"}
+        elif _effective_kind == "direct":
+            audience = {"who": "quietly, just the two of us", "reach": "one person"}
+        else:
+            audience = {"who": "in front of the others", "reach": "those present"}
         return json.dumps({
             "action": action_verb,
-            "action_kind": "interact" if _about_only else action_kind,
+            "audience": audience,
             "target_agents": [] if _about_only else [target],
             "about_agents": [target] if _about_only else [],
             "emotional_reaction": new_mood,

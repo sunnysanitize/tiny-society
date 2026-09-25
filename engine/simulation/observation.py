@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 import re
+from typing import Optional
 
 from models import Agent, FeedEntry
+from .audience import normalize_reach, REACH_EVERYONE, REACH_PRESENT, REACH_ONE
 
 # Information-asymmetry routing (modeled on OASIS / Generative-Agents observation
 # locality). Instead of broadcasting one global event log to every agent, each
 # action is distributed only to agents who could plausibly witness it. This is the
 # substrate for emergent gossip, factions, and misinformation.
 #
-# Phase 2 #4/#5 upgrade: reach now depends on the action_kind (post/direct/amplify/
-# comment/interact), and each witness stores a structured FeedEntry so their feed can
-# be RANKED per viewer by interest-match + hot-score (recommendation-style feed),
-# rather than shown as a uniform recent slice.
+# Phase 2 #4/#5 upgrade: reach now depends on the audience scale (everyone/those
+# present/one person — see simulation/audience.py), and each witness stores a
+# structured FeedEntry so their feed can be RANKED per viewer by interest-match +
+# hot-score (recommendation-style feed), rather than shown as a uniform recent slice.
 
 # Max observations / feed entries retained per agent (bounds snapshot size + prompt weight).
 OBSERVATION_WINDOW = 15
@@ -50,23 +52,23 @@ def witnesses(
     actor: Agent,
     target_names: list[str],
     all_agents: list[Agent],
-    action_kind: str = "interact",
+    reach: str = REACH_PRESENT,
 ) -> list[Agent]:
     """Return the agents who would plausibly witness `actor`'s action.
 
-    Reach depends on action_kind:
-      - "post"            : public broadcast — EVERYONE witnesses it.
-      - "direct"          : private — only the actor and the named target(s).
-      - "amplify"/"comment"/"interact" : the default witness rule —
-            the actor, named targets, group-mates, and (if the actor's influence is
-            >= PUBLIC_INFLUENCE_THRESHOLD) everyone.
+    Reach is a physical audience scale, not a channel (see simulation/audience.py):
+      - "everyone"      : the whole world learns of it.
+      - "one person"    : only the actor and the named target(s).
+      - "those present" : actor + targets + group-mates, and everyone if the actor is
+                          prominent enough to be public (PUBLIC_INFLUENCE_THRESHOLD).
     """
-    if action_kind == "post":
+    reach = normalize_reach(reach)
+    if reach == REACH_EVERYONE:
         return list(all_agents)
 
     targets = {t for t in target_names}
 
-    if action_kind == "direct":
+    if reach == REACH_ONE:
         seen: list[Agent] = []
         seen_ids: set[str] = set()
         for a in all_agents:
@@ -75,7 +77,7 @@ def witnesses(
                 seen_ids.add(a.id)
         return seen
 
-    # comment / amplify / interact: actor + targets + group-mates + public-if-high-influence
+    # "those present": actor + targets + group-mates + public-if-high-influence
     if actor.influence_score >= PUBLIC_INFLUENCE_THRESHOLD:
         return list(all_agents)
 
@@ -99,51 +101,57 @@ def distribute_observation(
     actor: Agent,
     target_names: list[str],
     all_agents: list[Agent],
-    action_kind: str = "interact",
+    reach: str = REACH_PRESENT,
     day: int = 0,
+    amplify_targets: Optional[list[str]] = None,
 ) -> list[Agent]:
-    """Append `log_line` to the feed of every witnessing agent (reach by action_kind).
+    """Append `log_line` to the feed of every witnessing agent (reach by audience scale).
 
     Each witness gets both the plain-string `observations` entry (back-compat) and a
-    structured `FeedEntry` carrying author/influence/day/action_kind for ranking.
+    structured `FeedEntry` carrying author/influence/day/reach for ranking.
 
-    For "amplify", the amplifier additionally spreads the AMPLIFIED target's standing:
-    a synthetic entry attributed to the target is injected into the amplifier's own
-    witness set, so the target's visibility reaches the amplifier's audience.
+    `amplify_targets`, when given, additionally spreads each named target's standing:
+    a synthetic entry attributed to the target is injected into the actor's own witness
+    set, so the target's visibility reaches the actor's audience. The caller (engine.py)
+    derives this list from (intent, reach) via simulation.audience — see that module's
+    RULING comment for why the rule lives there and not here.
 
     Returns the list of agents who observed it (useful for tests/inspection).
     """
-    witnessed = witnesses(actor, target_names, all_agents, action_kind)
+    reach = normalize_reach(reach)
+    witnessed = witnesses(actor, target_names, all_agents, reach)
     entry = FeedEntry(
         text=log_line,
         author=actor.name,
         author_influence=actor.influence_score,
         day=day,
-        action_kind=action_kind,
+        reach=reach,
     )
     for a in witnessed:
         a.observations.append(log_line)
         a.feed.append(entry.model_copy())
         _trim(a)
 
-    if action_kind == "amplify" and target_names:
-        by_name = {a.name: a for a in all_agents}
-        for tname in target_names:
-            target = by_name.get(tname)
-            if target is None or target.id == actor.id:
-                continue
-            amp_line = f"[{actor.name}] amplified {target.name}, spreading their standing."
-            amp_entry = FeedEntry(
-                text=amp_line,
-                author=target.name,                 # the spread content belongs to the target
-                author_influence=target.influence_score,
-                day=day,
-                action_kind="amplify",
-            )
-            for a in witnessed:
-                a.observations.append(amp_line)
-                a.feed.append(amp_entry.model_copy())
-                _trim(a)
+    # STANDING SPREAD, derived rather than declared: publicly lifting someone raises their
+    # standing in any world. The (praise|support) + everyone rule lives in ONE place —
+    # audience.derive_action_kind, which the caller has already resolved into this list.
+    by_name = {a.name: a for a in all_agents}
+    for tname in (amplify_targets or []):
+        target = by_name.get(tname)
+        if target is None or target.id == actor.id:
+            continue
+        amp_line = f"[{actor.name}] spoke well of {target.name} in front of the others."
+        amp_entry = FeedEntry(
+            text=amp_line,
+            author=target.name,                 # the spread content belongs to the target
+            author_influence=target.influence_score,
+            day=day,
+            reach=reach,
+        )
+        for a in witnessed:
+            a.observations.append(amp_line)
+            a.feed.append(amp_entry.model_copy())
+            _trim(a)
 
     return witnessed
 

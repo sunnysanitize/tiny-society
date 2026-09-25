@@ -53,13 +53,43 @@ class WorldRelationship(BaseModel):
     relation: str = "related to"
 
 
+class WorldLens(BaseModel):
+    """How THIS world must be written, so a run reads like it and no other.
+
+    Not factual graph data — `WorldGraph` holds that, and stays its own field. This is
+    the register: what the actors are called, what can and cannot exist here, where
+    people meet, how narration should sound, which words would break the world.
+
+    Every field degrades to empty. An empty lens means consumers fall back to the raw
+    world prompt, i.e. the behavior before this existed.
+    """
+    premise_summary: str = ""
+    actor_noun: str = ""               # "brother", "nation", "deckhand"
+    actor_noun_plural: str = ""
+    collective_noun: str = ""          # "the community" — replaces "society"/"population"
+    affordances: list[str] = []        # "word travels on foot", "no telephones"
+    gathering_places: list[str] = []
+    register_notes: str = ""
+    banned_vocabulary: list[str] = []  # "posted", "stakeholder", "team-building"
+    central_stake: str = ""
+
+    def is_empty(self) -> bool:
+        return not any([
+            self.premise_summary, self.actor_noun, self.actor_noun_plural,
+            self.collective_noun, self.affordances, self.gathering_places,
+            self.register_notes, self.banned_vocabulary, self.central_stake,
+        ])
+
+
 class WorldGraph(BaseModel):
     """Shared factual ground truth for the world (a lightweight GraphRAG layer).
 
-    Extracted once at simulation start from `World.prompt` (+ `World.question` if set)
-    via a single LLM call. Injected compactly into every agent's reasoning prompt so the
-    population shares the same facts. `topics` are the 3-6 short stance axes the society
-    divides on — these seed and drive `Agent.stance`.
+    Extracted from `World.prompt` (+ `World.question` if set) via a single LLM call,
+    now made at world-creation time (see main.py's world-creation handler). Simulation
+    start (`simulation/engine.py`) only re-extracts it as a legacy fallback, for a world
+    that reaches it still empty (created before this existed). Injected compactly into
+    every agent's reasoning prompt so the population shares the same facts. `topics` are
+    the 3-6 short stance axes the society divides on — these seed and drive `Agent.stance`.
     """
     entities: list[WorldEntity] = []
     relationships: list[WorldRelationship] = []
@@ -89,14 +119,20 @@ class FeedEntry(BaseModel):
 
     Lightweight metadata so each entry can be RANKED per viewer (see
     simulation/observation.rank_feed): the author + their influence at the time, the
-    day (recency), the action_kind (reach signal), and the rendered text. `Agent.feed`
-    holds these; `Agent.observations` keeps the plain-string back-compat view.
+    day (recency), the reach signal (`reach`; `action_kind` is the retained legacy
+    field — see simulation/audience.py), and the rendered text. `Agent.feed` holds
+    these; `Agent.observations` keeps the plain-string back-compat view.
     """
     text: str
     author: str = ""
     author_influence: float = 0.0
     day: int = 0
+    # LEGACY. Kept only so entries written before the audience model still load; new
+    # entries carry `reach` instead. See simulation/audience.py.
     action_kind: str = "interact"
+    # Fixed physical audience scale ("everyone" | "those present" | "one person") that
+    # replaces action_kind as the reach signal. See simulation/audience.py.
+    reach: str = "those present"
 
 
 class Agent(BaseModel):
@@ -144,6 +180,9 @@ class Agent(BaseModel):
     avatar: Optional[str] = None
     # Free text noting a real person the character is based on (e.g. "my friend Sam").
     based_on: Optional[str] = None
+    # True only when the user ACCEPTED a world-fitting proposal. A blank role is
+    # indistinguishable from a deliberate one, so "who is unfitted" needs its own flag.
+    fitted_to_world: bool = False
 
 
 class CharacterInput(BaseModel):
@@ -159,6 +198,23 @@ class CharacterInput(BaseModel):
     # person" free text. Both optional so existing callers are unaffected.
     avatar: Optional[str] = None
     based_on: Optional[str] = None
+    # True only when the user ACCEPTED a world-fitting proposal. A blank role is
+    # indistinguishable from a deliberate one, so "who is unfitted" needs its own flag.
+    fitted_to_world: bool = False
+
+
+class CharacterFit(BaseModel):
+    """A PROPOSED world-fitting for an authored character. Never applied automatically.
+
+    Carries only the SITUATIONAL fields — where a person stands in a world. Identity
+    (name, traits, mood, avatar, based_on) is what the user came to see dropped into a
+    world, and is never proposed against.
+    """
+    role: str = ""
+    groups: list[str] = []
+    goals: list[str] = []
+    starting_memories: list[str] = []
+    note: str = ""
 
 
 class WorldInput(BaseModel):
@@ -174,8 +230,12 @@ class World(BaseModel):
     # Optional player prediction question (Phase 2). May be None for a pure sandbox run.
     question: Optional[str] = None
     # Shared factual ground truth (entities/relationships/power structures/topics),
-    # populated once at simulation start by simulation/worldgraph.py.
+    # populated at world-creation time by simulation/worldgraph.py; simulation start
+    # only re-populates it as a legacy fallback if it is still empty by then.
     world_graph: WorldGraph = Field(default_factory=WorldGraph)
+    # Derived interpretation of `prompt` (see simulation/worldgraph.extract_world_context).
+    # Empty on worlds created before this existed; every consumer falls back to `prompt`.
+    lens: WorldLens = Field(default_factory=WorldLens)
     # PROPHECY (Slice E): player's free-text prediction, graded by the AI at the end of
     # a run against the actual outcome. None = no prophecy made.
     prophecy: Optional[str] = None
@@ -205,6 +265,9 @@ class PerceptionNote(BaseModel):
     revealed_trait: Optional[str] = None
 
 
+# LEGACY. Retained so saved runs written before the audience model still load. New
+# actions carry `Audience` instead; see simulation/audience.py.
+#
 # Real action space (Phase 2 #5, modeled on OASIS's distinct social actions). The
 # action_kind drives REACH (who witnesses it) and side-effects, layered on top of the
 # free-text `action` verb. Unknown values are clamped to "interact" (current behavior).
@@ -219,7 +282,13 @@ ACTION_KINDS: set[str] = {"post", "direct", "amplify", "comment", "interact"}
 
 
 def normalize_action_kind(value: object) -> str:
-    """Clamp an arbitrary value to a valid ActionKind, defaulting to 'interact'."""
+    """Clamp an arbitrary value to a valid ActionKind, defaulting to 'interact'.
+
+    No production caller remains — the reasoner now derives `action_kind` deterministically
+    (see `simulation.audience.derive_action_kind`) instead of reading it off the model, and
+    pydantic's own `Literal[...]` validation on `AgentAction.action_kind` already rejects
+    anything off-enum at load time. Retained only so an old saved run/action still deserializes.
+    """
     if isinstance(value, str) and value.strip().lower() in ACTION_KINDS:
         return value.strip().lower()
     return "interact"
@@ -261,6 +330,18 @@ def normalize_mood(value: object, default: str = "calm") -> str:
     return default if default in MOODS else "calm"
 
 
+class Audience(BaseModel):
+    """Who was around when an action happened.
+
+    `who` is free text in the WORLD's own vocabulary ("said it loud enough for the whole
+    chapter house to hear") and is what the story renders. `reach` is a fixed physical
+    scale that drives the witness model. See simulation/audience.py for why this is a
+    scale rather than a channel.
+    """
+    who: str = ""
+    reach: str = "those present"
+
+
 class AgentAction(BaseModel):
     """Structured output contract returned by the AI reasoning layer.
 
@@ -270,9 +351,19 @@ class AgentAction(BaseModel):
     so bonds are earned rather than asserted. (Stage 2 of the realism re-architecture.)
     """
     action: str
-    # Social-action type driving reach + side-effects (see ActionKind above). Safe
+    # LEGACY / INTERNAL. This used to be agent-authored, offered as a post/direct/amplify/
+    # comment/interact menu that made every world read like a social network. The menu is
+    # gone from the reasoner prompt — agents now narrate `audience` instead. This field
+    # survives only because the internal influence math (consequence.derive_influence) and
+    # the amplify standing-boost (applicator.py) still key off it; reasoner._parse_action
+    # now DERIVES it deterministically from the parsed audience + intents (see
+    # simulation/audience.derive_action_kind) rather than reading it from the model. Safe
     # default "interact" preserves prior behavior for any caller that omits it.
     action_kind: ActionKind = "interact"
+    # Who witnessed this, in the world's own words plus a fixed scale. Replaces the
+    # former `action_kind` channel menu as what the agent actually supplies; see
+    # simulation/audience.py.
+    audience: Audience = Field(default_factory=Audience)
     target_agents: list[str] = []
     # People this action is ABOUT who were not present and do not know — a referent,
     # not an interaction. Referents get no consequence bid, no perception routing and

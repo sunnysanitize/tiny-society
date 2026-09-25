@@ -1,7 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { api } from "@/lib/api";
-import type { World, Mood } from "@/lib/types";
+import type { World, Mood, CharacterFit } from "@/lib/types";
 import { PixelAvatar, isEmojiAvatar, pixelVariant } from "./PixelAvatar";
 
 const MOODS: Mood[] = ["calm","excited","frustrated","ambitious","anxious","content","hopeful","confident","lonely","angry","heartbroken"];
@@ -26,8 +26,11 @@ const AVATARS = [
   "👑","🎭","🌟","🔥","💀","🌸",
 ];
 
-// Curated pools that the "Surprise" button rolls a plausible character from, so
-// building a roster is one click per character instead of eight fields.
+// Curated pools that the "Surprise" button falls back to when the network roll
+// (which asks the backend for a character who actually belongs in this world) is
+// unavailable. This is a high-school slice-of-life cast — fine as an offline safety
+// net, wrong as the default, since it would inject baristas and dorm clubs into a
+// besieged monastery or a starship.
 const RANDOM = {
   names: [
     "Maya","Theo","Ren","Iris","Kai","Nova","Leo","Suki","Jonas","Priya",
@@ -87,6 +90,12 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
   worldId: string; world: World; onWorldChange: (w: World) => void;
 }) {
   const [name, setName] = useState("");
+  // requestFit's continuation runs after an await, inside a closure that captured
+  // `name` as of the render that started the request — it can never see a later
+  // rename by reading `name` itself. This ref is kept current on every render so
+  // that continuation can check the LIVE name instead of its own stale snapshot.
+  const nameRef = useRef(name);
+  nameRef.current = name;
   const [role, setRole] = useState("");
   const [traits, setTraits] = useState("");
   const [goals, setGoals] = useState("");
@@ -97,6 +106,16 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
   const [basedOn, setBasedOn] = useState("");
   const [busy, setBusy] = useState(false);
   const [genBusy, setGenBusy] = useState(false);
+  const [surpriseBusy, setSurpriseBusy] = useState(false);
+  const [fit, setFit] = useState<CharacterFit | null>(null);
+  const [fitFor, setFitFor] = useState<string | null>(null);
+  const [fitBusy, setFitBusy] = useState(false);
+  const [fitAccepted, setFitAccepted] = useState(false);
+  // The name a proposal was actually applied to — distinct from fitFor, which is
+  // cleared the moment acceptFit succeeds. fitAccepted alone would go stale the
+  // instant the name changes after acceptance; this lets us re-check honesty at
+  // submit time instead of trusting a flag set earlier.
+  const [fitAcceptedFor, setFitAcceptedFor] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // Optional fields (memory, look, based-on) stay hidden until asked for.
   const [showMore, setShowMore] = useState(false);
@@ -105,9 +124,10 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
     return s.split(",").map(x => x.trim()).filter(Boolean);
   }
 
-  // Fill the core fields with a random plausible character. Avoids names already
-  // on the roster so repeated clicks build a varied cast, not duplicates.
-  function surprise() {
+  // Offline/error fallback only — fills the core fields from the fixed high-school-shaped
+  // pools above. Avoids names already on the roster so repeated clicks build a varied
+  // cast, not duplicates.
+  function surpriseFromStaticPools() {
     const used = new Set(world.agents.map(a => a.name.toLowerCase()));
     const avail = RANDOM.names.filter(n => !used.has(n.toLowerCase()));
     setName(avail.length ? pick(avail) : `${pick(RANDOM.names)} ${Math.floor(Math.random() * 90) + 10}`);
@@ -117,24 +137,142 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
     setMood(pick(MOODS));
     setGroups(sample(RANDOM.groups, 1 + Math.floor(Math.random() * 2)).join(", "));
     setErr(null);
+    // A fresh identity makes any pending proposal (fetched for whoever was in the
+    // form before) stale — drop it rather than leave it accept-able against a name
+    // match that no longer means anything.
+    setFit(null); setFitFor(null);
+  }
+
+  // Roll a character who belongs in THIS world. The static pools above are the
+  // fallback only — they are a high-school cast, and using them in a monastery or a
+  // starship is what made every world read the same.
+  async function surprise() {
+    setErr(null);
+    setSurpriseBusy(true);
+    // Snapshot the name field as it stood when the roll was requested. Same technique
+    // requestFit uses below: the user can keep typing while this awaits, and applying
+    // the roll on top of an in-progress edit would silently clobber it.
+    const before = nameRef.current;
+    try {
+      const ch = await api.surpriseCharacter(worldId);
+      if (nameRef.current !== before) {
+        // The user changed the name field while this was in flight — respect what
+        // they're doing instead of overwriting it with a randomly rolled identity.
+        return;
+      }
+      setName(ch.name);
+      setRole(ch.role);
+      setTraits((ch.traits || []).join(", "));
+      setGoals((ch.goals || []).join(", "));
+      setGroups((ch.groups || []).join(", "));
+      setMood(ch.mood as Mood);
+      if (ch.starting_memories?.length) setMemory(ch.starting_memories[0]);
+      // Same reasoning as surpriseFromStaticPools: a new rolled identity invalidates
+      // any pending fit proposal from before.
+      setFit(null); setFitFor(null);
+      // The backend already fits every Surprise character to the world
+      // (surprise_character sets fitted_to_world=True on the returned CharacterInput) —
+      // feed that into the SAME accept-derivation addCharacter uses for the manual fit
+      // flow, rather than bypassing it. Anchoring fitAcceptedFor to the rolled name
+      // keeps this honest under a later rename too: handleNameChange already drops
+      // fitAccepted the moment the name field diverges from fitAcceptedFor.
+      setFitAccepted(true);
+      setFitAcceptedFor(ch.name);
+    } catch {
+      surpriseFromStaticPools();
+    } finally {
+      setSurpriseBusy(false);
+    }
+  }
+
+  // Ask what this person would BE in this world. Writes nothing — the proposal sits
+  // beside what the user typed until they accept it. Remembers whose name it was
+  // fetched for, so an edit to the name can invalidate a now-stale proposal.
+  async function requestFit() {
+    const forName = name.trim();
+    if (!forName) return;
+    setFitBusy(true); setErr(null);
+    try {
+      const result = await api.fitCharacter(worldId, {
+        name: forName, role: role.trim(),
+        traits: splitCsv(traits), goals: splitCsv(goals),
+        mood, groups: splitCsv(groups),
+        starting_memories: memory.trim() ? [memory.trim()] : [],
+        starting_relationships: {},
+      });
+      // The request may have resolved after the user renamed away from forName.
+      // Showing a proposal card for a name no longer in the field would just make
+      // "use this" a silent no-op (acceptFit's guard would refuse it) — discard it
+      // instead so nothing appears to accept. Read nameRef, not `name` — `name` in
+      // this closure is frozen at the value it held when the request was sent.
+      if (nameRef.current.trim() === forName) {
+        setFit(result);
+        setFitFor(forName);
+      }
+    } catch (e: any) { setErr(e.message); }
+    finally { setFitBusy(false); }
+  }
+
+  // The name field changed. Two claims can go stale here:
+  //  - a pending proposal (fit/fitFor), fetched for a name the field no longer holds
+  //  - an already-accepted proposal (fitAccepted/fitAcceptedFor) — accepting clears
+  //    fitFor, so that guard alone goes inert the instant acceptFit succeeds; this is
+  //    the only place left that can catch a rename happening AFTER acceptance.
+  // Drop whichever claim(s) no longer match, rather than let a rename smuggle
+  // someone else's proposal — or someone else's fitted_to_world claim — onto this
+  // character.
+  function handleNameChange(next: string) {
+    setName(next);
+    const trimmed = next.trim();
+    if (fit && trimmed !== fitFor) {
+      setFit(null);
+      setFitFor(null);
+    }
+    if (fitAccepted && trimmed !== fitAcceptedFor) {
+      setFitAccepted(false);
+      setFitAcceptedFor(null);
+    }
+  }
+
+  // Accept the whole proposal into the form. The user can still edit every field
+  // afterwards — and their name, traits and mood were never up for proposal.
+  // Guarded against accepting a proposal fetched for a name the field no longer holds.
+  function acceptFit() {
+    if (!fit || name.trim() !== fitFor) return;
+    if (fit.role) setRole(fit.role);
+    if (fit.groups.length) setGroups(fit.groups.join(", "));
+    if (fit.goals.length) setGoals(fit.goals.join(", "));
+    if (fit.starting_memories.length) setMemory(fit.starting_memories[0]);
+    setFitAccepted(true);
+    setFitAcceptedFor(fitFor);
+    setFit(null);
+    setFitFor(null);
   }
 
   async function addCharacter() {
-    if (!name.trim()) return;
+    const submittedName = name.trim();
+    if (!submittedName) return;
     setBusy(true); setErr(null);
     try {
       await api.addCharacter(worldId, {
-        name: name.trim(), role: role.trim() || "member",
+        name: submittedName, role: role.trim() || world.lens?.actor_noun || "member",
         traits: splitCsv(traits), goals: splitCsv(goals),
         mood, groups: splitCsv(groups),
         starting_memories: memory.trim() ? [memory.trim()] : [],
         starting_relationships: {},
         ...(avatar ? { avatar } : {}),
         ...(basedOn.trim() ? { based_on: basedOn.trim() } : {}),
+        // Anchored to the name actually being submitted, not to fitAccepted alone —
+        // fitAccepted can only ever be true because handleNameChange keeps
+        // fitAcceptedFor in lockstep with it, but this re-check at the submit
+        // boundary is what makes the flag honest under any ordering, not just the
+        // ones we thought to guard earlier.
+        fitted_to_world: fitAccepted && submittedName === fitAcceptedFor,
       });
       const w = await api.getWorld(worldId);
       onWorldChange(w);
       setName(""); setMemory(""); setAvatar(null); setBasedOn("");
+      setFitAccepted(false); setFitAcceptedFor(null); setFit(null); setFitFor(null);
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   }
@@ -193,16 +331,33 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
         </div>
         <button
           type="button"
-          onClick={surprise}
-          title="Roll a random character into the form"
+          onClick={requestFit}
+          disabled={fitBusy || !name.trim()}
+          title="Ask what this character would be in this world — proposes, never overwrites"
           style={{
-            marginLeft: "auto", fontSize: 8, padding: "6px 12px", cursor: "pointer",
+            marginLeft: "auto", fontSize: 8, padding: "6px 12px", cursor: (fitBusy || !name.trim()) ? "default" : "pointer",
             background: "transparent", color: "var(--accent)",
             border: "1px solid var(--accent)", fontFamily: "var(--font-pixel)",
             textTransform: "uppercase", letterSpacing: "0.06em",
+            opacity: (fitBusy || !name.trim()) ? 0.6 : 1,
           }}
         >
-          🎲 SURPRISE
+          {fitBusy ? "🔎 FITTING..." : "🔎 FIT TO WORLD"}
+        </button>
+        <button
+          type="button"
+          onClick={surprise}
+          disabled={surpriseBusy}
+          title="Roll a random character who belongs in this world"
+          style={{
+            fontSize: 8, padding: "6px 12px", cursor: surpriseBusy ? "default" : "pointer",
+            background: "transparent", color: "var(--accent)",
+            border: "1px solid var(--accent)", fontFamily: "var(--font-pixel)",
+            textTransform: "uppercase", letterSpacing: "0.06em",
+            opacity: surpriseBusy ? 0.6 : 1,
+          }}
+        >
+          {surpriseBusy ? "🎲 ROLLING..." : "🎲 SURPRISE"}
         </button>
       </div>
       <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.6, marginBottom: 14 }}>
@@ -212,13 +367,13 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 10 }}>
         <div>
           <FieldLabel>NAME</FieldLabel>
-          <input placeholder="character name" value={name} onChange={e => setName(e.target.value)} />
+          <input placeholder="character name" value={name} onChange={e => handleNameChange(e.target.value)} />
           <FieldHint>What this character is called.</FieldHint>
         </div>
         <div>
           <FieldLabel>ROLE</FieldLabel>
-          <input placeholder="student / teacher..." value={role} onChange={e => setRole(e.target.value)} />
-          <FieldHint>Their place in the world, like student or teacher.</FieldHint>
+          <input placeholder={world.lens?.actor_noun || "role"} value={role} onChange={e => setRole(e.target.value)} />
+          <FieldHint>Their place in the world, like {world.lens?.actor_noun || "student or teacher"}.</FieldHint>
         </div>
         <div>
           <FieldLabel>TRAITS</FieldLabel>
@@ -319,6 +474,25 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
           </>
         )}
       </div>
+
+      {fit && (
+        <div className="panel" style={{ padding: 12, marginBottom: 12 }}>
+          <FieldLabel>IN THIS WORLD</FieldLabel>
+          {fit.note && (
+            <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.6, marginBottom: 8 }}>
+              {fit.note}
+            </div>
+          )}
+          {fit.role && <div style={{ fontSize: 10 }}>role · {fit.role}</div>}
+          {fit.groups.length > 0 && <div style={{ fontSize: 10 }}>groups · {fit.groups.join(", ")}</div>}
+          {fit.goals.length > 0 && <div style={{ fontSize: 10 }}>goals · {fit.goals.join(", ")}</div>}
+          {fit.starting_memories.length > 0 && <div style={{ fontSize: 10 }}>memory · {fit.starting_memories[0]}</div>}
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button className="btn" onClick={acceptFit}>use this</button>
+            <button className="btn-ghost" onClick={() => { setFit(null); setFitFor(null); }}>keep mine</button>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button className="btn" onClick={addCharacter} disabled={busy || !name.trim() || atCap}>

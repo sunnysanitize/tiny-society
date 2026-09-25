@@ -33,6 +33,9 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun, onBegin }: {
   }
 
   const canRun = world.agents.length > 0 && !saving;
+  // Computed once and reused below for both the count check and the name list, rather
+  // than filtering the roster twice for the same result.
+  const unfittedAgents = world.agents.filter(a => !a.fitted_to_world && a.is_custom);
 
   return (
     <div className="panel" style={{ padding: "20px 24px" }}>
@@ -149,6 +152,14 @@ export function EventAndRun({ worldId, world, onWorldChange, onRun, onBegin }: {
       <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.6, marginBottom: 10 }}>
         Begin day by day to watch each day unfold and step in between days, or fast-forward to run straight through and review the outcome.
       </div>
+
+      {unfittedAgents.length > 0 && (
+        <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.6, marginBottom: 10 }}>
+          Not fitted to this world:{" "}
+          {unfittedAgents.map(a => a.name).join(", ")}
+          {" "}— they will still take part, written as you wrote them.
+        </div>
+      )}
 
       {/* Primary: begin day-by-day. The town advances one day at a time, and you can
           nudge / inject events / add characters / set a prophecy between days. */}

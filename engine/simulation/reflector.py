@@ -8,6 +8,7 @@ from typing import Optional
 from models import Agent, Memory
 from llm import call_llm
 from .memory import retrieve
+from .premise import premise_lines
 
 # Importance assigned to reflection-derived insights. High (out of 10) so they
 # dominate later relevance+recency+importance retrieval, per the Stanford
@@ -39,7 +40,11 @@ RULES:
 """
 
 
-def reflect(agent: Agent, current_day: int) -> list[Memory]:
+def reflect(
+    agent: Agent,
+    current_day: int,
+    world_premise: Optional[str] = None,
+) -> list[Memory]:
     """Synthesize 1-3 high-level insights from the agent's recent memories.
 
     Makes one LLM call, parses strict JSON, and appends the resulting insights to
@@ -50,7 +55,7 @@ def reflect(agent: Agent, current_day: int) -> list[Memory]:
     if not memories:
         return []
 
-    user = _build_prompt(agent, memories)
+    user = _build_prompt(agent, memories, world_premise)
     try:
         raw = call_llm(REFLECTOR_SYSTEM, user, json_mode=True, max_tokens=512, tier="strong")
     except Exception as e:
@@ -107,12 +112,17 @@ def _gather_recent(agent: Agent, current_day: int) -> list[Memory]:
     return pool
 
 
-def _build_prompt(agent: Agent, memories: list[Memory]) -> str:
+def _build_prompt(
+    agent: Agent,
+    memories: list[Memory],
+    world_premise: Optional[str] = None,
+) -> str:
     rel_lines = [
         f"  - {name}: {r.type} (strength {r.strength:+.2f})"
         for name, r in agent.relationships.items()
     ]
     parts = [
+        *premise_lines(world_premise),
         "YOUR CHARACTER",
         f"Name: {agent.name}",
         f"Role: {agent.role}",

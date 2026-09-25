@@ -18,7 +18,8 @@ Each run begins with a world, a population, and an event. Over 7 simulated days,
 
 1. pull up relevant memories and make short-term plans;
 2. see their own version of what is happening through a personal feed;
-3. post, talk, react, support, argue, or amplify someone else;
+3. act in character — say or do something toward whoever they choose, witnessed by
+   everyone, by those present, or by one person alone, in the world's own vocabulary;
 4. update relationships, influence, memories, and opinions; and
 5. roll those individual changes into daily social metrics and a final forecast summary.
 

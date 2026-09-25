@@ -391,6 +391,533 @@ def test_mock_utterance_differs_from_memory():
     assert data["utterance"] != data["new_memory"], "utterance must be distinct dialogue"
 
 
+
+# ---------------------------------------------------------------------------
+# WORLD PREMISE THREADING
+#
+# The premise ("a League of Legends team at U of T") used to reach only world-graph
+# extraction, filler generation and the final report. Every per-day call that actually
+# writes the story — reason, plan, reflect, vignette — ran blind, so the model fell back
+# to generic organizational prose ("team-building activity", "strategic discussions")
+# no matter what world the player typed. These tests pin the premise into those prompts.
+# ---------------------------------------------------------------------------
+
+PREMISE = "a League of Legends team at the University of Toronto: five undergrad friends"
+
+
+def _premise_agent():
+    from models import Agent, Relationship
+    a = Agent(id="id_a", name="Ana", role="Mid laner", goals=["make playoffs"])
+    a.relationships["Ben"] = Relationship(type="rivalry", strength=-0.4)
+    return a
+
+
+def test_reasoner_prompt_carries_world_premise():
+    from simulation import reasoner
+    prompt = reasoner._build_prompt(
+        _premise_agent(), [_premise_agent()], "scrim tonight", 2, None, world_premise=PREMISE
+    )
+    assert "League of Legends" in prompt, "the reasoner cannot write a world it never sees"
+    assert "University of Toronto" in prompt
+
+
+def test_planner_prompt_carries_world_premise():
+    from simulation import planner
+    prompt = planner._build_prompt(_premise_agent(), "scrim tonight", 2, world_premise=PREMISE)
+    assert "League of Legends" in prompt
+
+
+def test_reflector_prompt_carries_world_premise():
+    from models import Memory
+    from simulation import reflector
+    mems = [Memory(text="I int'd the 2v2 and Ben flamed me", day=1, importance=8.0)]
+    prompt = reflector._build_prompt(_premise_agent(), mems, world_premise=PREMISE)
+    assert "League of Legends" in prompt
+
+
+def test_vignette_prompt_carries_world_premise():
+    from simulation import vignette
+    prompt = vignette._build_prompt(_premise_agent(), "scrim tonight", 2, world_premise=PREMISE)
+    assert "League of Legends" in prompt
+
+
+def test_premise_block_is_omitted_when_absent():
+    from simulation import planner
+    prompt = planner._build_prompt(_premise_agent(), "scrim tonight", 2)
+    assert "WORLD PREMISE" not in prompt, "no premise means no empty header"
+
+
+def test_premise_is_capped():
+    """The premise rides on every per-agent call, so a pasted essay must not
+    crowd out the character sheet and memories below it."""
+    from simulation.premise import premise_lines, MAX_PREMISE_CHARS
+    long_premise = "x" * (MAX_PREMISE_CHARS + 5000)
+    block = "\n".join(premise_lines(long_premise))
+    assert "WORLD PREMISE" in block
+    assert "x" * (MAX_PREMISE_CHARS + 1) not in block, "premise text was not truncated"
+    # Whatever fixed scaffolding the block carries, its size must not track the input.
+    longer = "\n".join(premise_lines("x" * (MAX_PREMISE_CHARS + 50000)))
+    assert len(longer) == len(block), "block length must be bounded, not input-driven"
+
+
+def test_report_prompt_does_not_forbid_the_world_voice():
+    from simulation import reporter
+    low = reporter.REPORT_SYSTEM.lower()
+    assert "not gamey" not in low, "this clamp is what produced the consulting-memo voice"
+    assert "vocabulary" in low, "the report must be told to speak the world's own language"
+
+
+def test_world_context_returns_graph_and_lens():
+    from models import World
+    from simulation.worldgraph import extract_world_context, extract_world_graph
+    w = World(
+        prompt="A besieged Cistercian monastery in 1340; the grain is running out.",
+        target_population=5,
+    )
+    graph, lens = extract_world_context(w)
+    assert graph.topics, "the graph must still be extracted"
+    assert not lens.is_empty(), "a real premise must yield a populated lens"
+    assert lens.actor_noun, "actors need a name in this world"
+    # The old entry point must keep working for every existing caller.
+    assert extract_world_graph(w).topics
+
+
+def test_created_world_carries_a_lens():
+    from fastapi.testclient import TestClient
+    import main
+    client = TestClient(main.app)
+    r = client.post("/world", json={
+        "prompt": "A besieged Cistercian monastery in 1340; the grain is running out.",
+        "target_population": 5,
+    })
+    assert r.status_code == 200, r.text
+    world = r.json()["world"]
+    assert world["lens"]["actor_noun"], "the created world must carry its interpretation"
+    assert world["world_graph"]["topics"], "the graph must still be its own field"
+
+
+def test_world_lens_survives_a_setting_less_prompt():
+    """Review Focus #1: a one-word, non-English or mashed prompt must degrade to a
+    usable-or-empty lens, never an exception."""
+    from models import World
+    from simulation.worldgraph import extract_world_context
+    for prompt in ("cats", "asdkjhasd kjhasd", "五人の友達", "", "   "):
+        graph, lens = extract_world_context(World(prompt=prompt, target_population=5))
+        assert lens is not None and graph is not None   # must not raise
+        for item in lens.affordances + lens.gathering_places + lens.banned_vocabulary:
+            assert len(item) <= 120
+
+
+def test_render_premise_uses_lens_fields():
+    from models import WorldLens
+    from simulation.premise import render_premise
+    lens = WorldLens(
+        premise_summary="A besieged Cistercian monastery in 1340; the grain is running out.",
+        actor_noun="brother",
+        affordances=["word travels on foot"],
+        gathering_places=["the chapter house"],
+        register_notes="Plain, concrete, of its century.",
+        banned_vocabulary=["team-building", "stakeholder"],
+        central_stake="who controls the failing grain stores",
+    )
+    text = render_premise(lens, "ignored raw prompt")
+    assert "1340" in text
+    assert "word travels on foot" in text
+    assert "the chapter house" in text
+    assert "team-building" in text, "banned words must be named so the model can avoid them"
+    assert "ignored raw prompt" not in text, "the lens supersedes the raw prompt"
+
+
+def test_render_premise_falls_back_to_raw_prompt():
+    from models import WorldLens
+    from simulation.premise import render_premise
+    assert "a raw world" in render_premise(WorldLens(), "a raw world")
+    assert "a raw world" in render_premise(None, "a raw world")
+
+
+def test_render_premise_caps_a_large_lens_block():
+    """Review Focus #2: the premise rides on every per-agent call every day. A rich
+    lens (long summary plus many affordances/gathering places) must not multiply the
+    cost of the entire run. Drives render_premise's own cap directly — routing through
+    premise_lines would hide a regression there, since premise_lines truncates again on
+    top of whatever render_premise returns."""
+    from models import WorldLens
+    from simulation.premise import render_premise, MAX_PREMISE_CHARS
+
+    lens = WorldLens(
+        premise_summary=(
+            "The kingdom of Valmere endures a long winter, and its people are worn "
+            "thin by a siege that has not yet broken. " * 5
+        ),
+        affordances=[
+            "messengers ride for days between the valley's scattered holds"
+            for _ in range(10)
+        ],
+        gathering_places=["the great hall at dusk, when the fires are lit" for _ in range(10)],
+        register_notes="Formal, wintry, spoken in long clauses. " * 10,
+        banned_vocabulary=["stakeholder", "team-building"],
+        central_stake="who controls the last granary",
+    )
+    # Sanity check: the raw joined content is well over the cap, so a passing
+    # assertion below proves truncation actually happened.
+    naive_length = (
+        len(lens.premise_summary) + len(lens.register_notes)
+        + sum(len(a) for a in lens.affordances) + sum(len(g) for g in lens.gathering_places)
+    )
+    assert naive_length > MAX_PREMISE_CHARS, "test fixture must exceed the cap to prove anything"
+
+    text = render_premise(lens, "ignored")
+    # Truncation appends one "…" past the slice point (matching premise_lines' own
+    # style below), so the bound is MAX_PREMISE_CHARS + 1, not MAX_PREMISE_CHARS exactly.
+    assert len(text) <= MAX_PREMISE_CHARS + 1, f"render_premise grew to {len(text)} chars"
+    assert text.endswith("…"), "a block this large must actually get truncated"
+
+    # Review Focus #1: worldgraph.py's own per-field caps (600 summary / 120x6
+    # affordances / 120x6 gathering_places / 300 register / 60x8 banned / 160 stake)
+    # sum to ~2,400 chars — comfortably over MAX_PREMISE_CHARS on a lens that maxes
+    # out every field, which a wordy model will do. banned_vocabulary used to be the
+    # LAST section appended, so it was the first casualty of truncation; this is the
+    # exact case that failed before the section reorder.
+    realistic_lens = WorldLens(
+        premise_summary=(
+            "The kingdom of Valmere endures a long winter under siege, its people worn "
+            "thin, its granaries watched day and night by exhausted guards who trade "
+            "rumors more than orders, while the court above them argues about a peace "
+            "no one on the wall believes is coming before the thaw. " * 3
+        )[:600],
+        affordances=[
+            ("messengers ride for days between the valley's scattered holds " * 3)[:120]
+            for _ in range(6)
+        ],
+        gathering_places=[
+            ("the great hall at dusk, when the fires are lit and the watch changes " * 2)[:120]
+            for _ in range(6)
+        ],
+        register_notes=("Formal, wintry, spoken in long clauses, never hurried. " * 6)[:300],
+        banned_vocabulary=[f"stakeholder-{i}" for i in range(8)],
+        central_stake=("who controls the last granary before the thaw breaks the siege " * 3)[:160],
+    )
+    realistic_text = render_premise(realistic_lens, "ignored")
+    assert any(w in realistic_text for w in realistic_lens.banned_vocabulary), (
+        "at worldgraph.py's own field caps, a banned word must still survive truncation"
+    )
+
+
+def test_realistic_lens_banned_vocabulary_survives_into_prompt():
+    """Regression guard: render_premise truncates at MAX_PREMISE_CHARS, and premise_lines
+    truncates again on top of that. A realistic lens must still carry a banned word all
+    the way into the final per-day prompt block, or every per-day call silently loses the
+    single most direct anti-staleness instruction in this feature. (See
+    test_render_premise_caps_a_large_lens_block for the case where the lens alone,
+    at worldgraph.py's own field caps, is large enough to make this fail.)"""
+    from models import WorldLens
+    from simulation.premise import render_premise, premise_lines
+
+    lens = WorldLens(
+        premise_summary="A besieged Cistercian monastery in 1340; the grain is running out.",
+        affordances=["word travels on foot", "no clocks strike the hour"],
+        gathering_places=["the chapter house", "the refectory"],
+        register_notes="Plain, concrete, of its century.",
+        banned_vocabulary=["team-building", "stakeholder"],
+        central_stake="who controls the failing grain stores",
+    )
+    block = "\n".join(premise_lines(render_premise(lens, "ignored")))
+    assert "team-building" in block, "banned vocabulary must survive both truncation passes"
+
+
+def test_report_prompt_carries_lens_vocabulary():
+    from models import MacroMetrics, WorldLens
+    from simulation import reporter
+    # MacroMetrics has no field defaults (see models.py), so MacroMetrics() alone would
+    # fail Pydantic validation before the lens plumbing is even exercised — fill in the
+    # required fields with neutral values instead.
+    empty_metrics = MacroMetrics(
+        friendship_count=0, rivalry_count=0, conflict_count=0, romance_count=0,
+        alliance_count=0, average_relationship_strength=0.0, average_trust_score=0.0,
+        most_connected=[], influence_gainers=[], influence_losers=[],
+        relationship_volatility=0, social_fragmentation=0.0, group_centrality={},
+    )
+    lens = WorldLens(
+        premise_summary="A besieged monastery in 1340.",
+        actor_noun_plural="brothers",
+        collective_noun="the house",
+        banned_vocabulary=["team-building", "stakeholder"],
+        register_notes="Plain and of its century.",
+    )
+    captured = {}
+    real = reporter.call_llm
+
+    def spy(system, user, **kw):
+        captured["user"] = user
+        captured["system"] = system
+        return "report text"
+
+    reporter.call_llm = spy
+    try:
+        reporter.generate_final_report(
+            empty_metrics, empty_metrics, [], "a monastery", None, lens=lens
+        )
+    finally:
+        reporter.call_llm = real
+
+    assert "brothers" in captured["user"], "the report must know what these people are called"
+    assert "team-building" in captured["user"], "banned words must reach the report prompt"
+
+
+def test_banned_vocabulary_instructs_but_never_filters():
+    """Review Focus #3: the AI may ban a word that also appears in a character's name,
+    a role, or the premise. Banning is an instruction to the model — it must never
+    rewrite, strip or filter text that already exists."""
+    from models import WorldLens
+    from simulation.premise import render_premise
+    lens = WorldLens(
+        premise_summary="The Stakeholder Guild of Verrin controls the granary.",
+        banned_vocabulary=["stakeholder", "guild"],
+        affordances=["the Guild keeps the only ledger"],
+    )
+    text = render_premise(lens, "raw")
+    assert "Stakeholder Guild of Verrin" in text, "premise content must survive verbatim"
+    assert "the Guild keeps the only ledger" in text, "affordances must survive verbatim"
+    assert "stakeholder" in text and "guild" in text, "banned list is named, not applied"
+
+
+def test_fit_preserves_identity_and_proposes_situation():
+    from models import World, CharacterInput
+    from simulation.fitting import fit_character
+    w = World(prompt="A besieged Cistercian monastery in 1340.", target_population=5)
+    from simulation.worldgraph import extract_world_context
+    w.world_graph, w.lens = extract_world_context(w)
+    body = CharacterInput(name="Dave", role="", traits=["stubborn", "broke"], mood="calm")
+    fit = fit_character(w, body)
+    assert fit.role, "fitting must propose a role"
+    assert not hasattr(fit, "name"), "fitting must never propose a name"
+    assert not hasattr(fit, "traits"), "fitting must never propose traits"
+    assert not hasattr(fit, "mood"), "fitting must never propose a mood"
+
+
+def test_fit_endpoint_mutates_nothing():
+    from fastapi.testclient import TestClient
+    import main
+    client = TestClient(main.app)
+    wid = client.post("/world", json={
+        "prompt": "A besieged Cistercian monastery in 1340.", "target_population": 5,
+    }).json()["world_id"]
+    before = client.get(f"/world/{wid}").json()
+    r = client.post(f"/world/{wid}/character/fit", json={
+        "name": "Dave", "role": "", "traits": ["stubborn"], "mood": "calm",
+    })
+    assert r.status_code == 200, r.text
+    after = client.get(f"/world/{wid}").json()
+    assert before == after, "fit must not touch the world"
+
+
+def test_added_character_is_unfitted_by_default():
+    from models import CharacterInput
+    from main import _build_agent_from_input
+    a = _build_agent_from_input(CharacterInput(name="Dave"), day=0)
+    assert a.fitted_to_world is False
+    b = _build_agent_from_input(CharacterInput(name="Ana", fitted_to_world=True), day=0)
+    assert b.fitted_to_world is True
+
+
+def test_fit_on_a_lensless_world_returns_200_not_500():
+    """Review Focus #5: worlds created before the lens existed have an empty lens and
+    are loaded from saves every day. Asking to fit a character in one must degrade to
+    an explanatory empty proposal, never an error."""
+    from models import World, WorldLens, CharacterInput
+    from simulation.fitting import fit_character
+    w = World(prompt="", target_population=5)
+    w.lens = WorldLens()
+    fit = fit_character(w, CharacterInput(name="Dave"))
+    assert fit.role == "" and fit.note, "empty proposal must explain itself"
+
+    w2 = World(prompt="A monastery in 1340.", target_population=5)
+    w2.lens = WorldLens()   # pre-lens save: prompt present, lens empty
+    fit2 = fit_character(w2, CharacterInput(name="Dave"))
+    assert fit2.role, "a raw prompt is enough to fit against"
+
+
+def test_surprise_character_fits_the_world_and_avoids_existing_names():
+    from fastapi.testclient import TestClient
+    import main
+    client = TestClient(main.app)
+    wid = client.post("/world", json={
+        "prompt": "A besieged Cistercian monastery in 1340.", "target_population": 5,
+    }).json()["world_id"]
+    client.post(f"/world/{wid}/character", json={"name": "Anselm", "role": "cellarer"})
+    before = client.get(f"/world/{wid}").json()
+    r = client.post(f"/world/{wid}/character/surprise")
+    assert r.status_code == 200, r.text
+    ch = r.json()
+    assert ch["name"] and ch["name"] != "Anselm", "must not collide with the roster"
+    assert ch["role"] and ch["role"] != "member", "a surprise must belong to this world"
+    roster = client.get(f"/world/{wid}").json()["agents"]
+    assert len(roster) == 1, "surprise must not add anyone"
+    after = client.get(f"/world/{wid}").json()
+    assert before == after, "surprise must not touch the world"
+
+
+def test_reach_normalization():
+    from simulation.audience import normalize_reach, REACH_EVERYONE, REACH_PRESENT, REACH_ONE
+    assert normalize_reach("everyone") == REACH_EVERYONE
+    assert normalize_reach("those present") == REACH_PRESENT
+    assert normalize_reach("one person") == REACH_ONE
+    assert normalize_reach("ONE PERSON") == REACH_ONE
+    assert normalize_reach(None) == REACH_PRESENT, "missing must default like 'interact' did"
+    assert normalize_reach("gibberish") == REACH_PRESENT
+    assert normalize_reach(7) == REACH_PRESENT
+
+
+def test_legacy_action_kind_maps_to_reach():
+    from simulation.audience import reach_from_action_kind, REACH_EVERYONE, REACH_PRESENT, REACH_ONE
+    assert reach_from_action_kind("post") == REACH_EVERYONE
+    assert reach_from_action_kind("direct") == REACH_ONE
+    for k in ("amplify", "comment", "interact", "", "nonsense"):
+        assert reach_from_action_kind(k) == REACH_PRESENT
+
+
+def test_reasoner_parses_audience_and_trims_who():
+    from models import Agent
+    from simulation import reasoner
+    a = Agent(id="a1", name="Kai", role="jungler")
+    raw = __import__("json").dumps({
+        "action": "confront", "target_agents": ["Lena"],
+        "intents": {"Lena": "confront"},
+        "audience": {"who": "x" * 400, "reach": "everyone"},
+        "utterance": "We need to talk about last night.",
+        "new_memory": "I confronted Lena in front of everyone.",
+        "explanation": "My pride would not let it go.",
+    })
+    action = reasoner._parse_action(a, raw)
+    assert action is not None
+    assert action.audience.reach == "everyone"
+    assert len(action.audience.who) <= 160, "free text must be trimmed like every other field"
+
+
+def test_legacy_saved_action_and_feed_entry_still_load():
+    """Review Focus #4: saves written before the audience model carry action_kind on
+    both stored actions and feed entries. Loading one and continuing must work."""
+    from models import AgentAction, FeedEntry, Agent
+    from simulation import reasoner
+    from simulation.audience import REACH_EVERYONE, REACH_PRESENT
+
+    legacy_entry = FeedEntry(text="x", author="Ana", day=1, action_kind="post")
+    assert legacy_entry.reach == REACH_PRESENT, "legacy entries take the safe default"
+
+    a = Agent(id="a1", name="Kai", role="jungler")
+    raw = __import__("json").dumps({
+        "action": "announce", "target_agents": ["Lena"],
+        "intents": {"Lena": "talk"}, "action_kind": "post",
+        "utterance": "Everyone should hear this.",
+        "new_memory": "I announced it.", "explanation": "Pride.",
+    })
+    action = reasoner._parse_action(a, raw)
+    assert action is not None
+    assert action.audience.reach == REACH_EVERYONE, "legacy action_kind must map to reach"
+
+    legacy_action = AgentAction(
+        action="x", target_agents=["Lena"], new_memory="I did x.", explanation="testing",
+    )
+    assert legacy_action.audience.reach == REACH_PRESENT
+
+
+def test_action_kind_derived_from_audience_not_agent_authored():
+    """Correction to Task 6's brief: action_kind is kept (consequence.py, applicator.py
+    and the realism suite key off it) but is no longer agent-authored — it is derived
+    from the parsed audience + intents, matching the rule Task 7 uses for standing-spread."""
+    import json
+    from models import Agent
+    from simulation import reasoner
+
+    def _act(reach, intents):
+        a = Agent(id="a1", name="Kai", role="jungler")
+        raw = json.dumps({
+            "action": "act", "target_agents": list(intents),
+            "intents": intents,
+            "audience": {"who": "nearby", "reach": reach},
+            "new_memory": "I acted.", "explanation": "because.",
+        })
+        return reasoner._parse_action(a, raw)
+
+    assert _act("everyone", {"Lena": "praise"}).action_kind == "amplify"
+    assert _act("everyone", {"Lena": "support"}).action_kind == "amplify"
+    assert _act("everyone", {"Lena": "confront"}).action_kind == "post"
+    assert _act("one person", {"Lena": "confide"}).action_kind == "direct"
+    assert _act("those present", {"Lena": "talk"}).action_kind == "interact"
+
+
+def test_derivation_retires_comment_and_narrows_amplify():
+    """Fix round 1, Finding 2: `comment` can never come back out of derive_action_kind
+    (it shared interact's 0.2 self-influence weight, so retiring it costs nothing), and
+    `amplify` only comes out for reach == "everyone" WITH a praise/support intent — never
+    for a private exchange, since amplifying means boosting someone PUBLICLY. This is a
+    deliberate narrowing, ruled on and accepted; this test pins it so a future edit can't
+    silently reopen or further narrow the mapping."""
+    from simulation.audience import derive_action_kind, REACH_EVERYONE, REACH_PRESENT, REACH_ONE
+
+    reaches = (REACH_EVERYONE, REACH_PRESENT, REACH_ONE)
+    intent_sets = (
+        {},
+        {"A": "praise"},
+        {"A": "support"},
+        {"A": "confront"},
+        {"A": "talk", "B": "praise"},
+        {"A": "confide", "B": "support"},
+        {"A": "talk"},
+    )
+    for reach in reaches:
+        for intents in intent_sets:
+            kind = derive_action_kind(reach, intents)
+            assert kind != "comment", (reach, intents, kind)
+            assert kind in ("amplify", "post", "direct", "interact"), (reach, intents, kind)
+            has_boost_intent = any(v in ("praise", "support") for v in intents.values())
+            if kind == "amplify":
+                assert reach == REACH_EVERYONE and has_boost_intent, (reach, intents, kind)
+    # And the positive half: every everyone+praise/support combination DOES amplify.
+    assert derive_action_kind(REACH_EVERYONE, {"A": "praise"}) == "amplify"
+    assert derive_action_kind(REACH_EVERYONE, {"A": "support"}) == "amplify"
+    assert derive_action_kind(REACH_EVERYONE, {"A": "talk", "B": "support"}) == "amplify"
+    # A boost intent at a narrower reach must NOT amplify.
+    assert derive_action_kind(REACH_PRESENT, {"A": "praise"}) != "amplify"
+    assert derive_action_kind(REACH_ONE, {"A": "support"}) != "amplify"
+
+
+def test_witness_tiers_match_the_old_action_kinds():
+    from models import Agent
+    from simulation.observation import witnesses
+    from simulation.audience import REACH_EVERYONE, REACH_PRESENT, REACH_ONE
+    a = Agent(id="a", name="Ana", role="x", groups=["kitchen"])
+    b = Agent(id="b", name="Ben", role="x", groups=["kitchen"])
+    c = Agent(id="c", name="Cal", role="x", groups=["garden"])
+    roster = [a, b, c]
+    assert {w.name for w in witnesses(a, [], roster, REACH_EVERYONE)} == {"Ana", "Ben", "Cal"}
+    assert {w.name for w in witnesses(a, ["Cal"], roster, REACH_ONE)} == {"Ana", "Cal"}
+    assert {w.name for w in witnesses(a, [], roster, REACH_PRESENT)} == {"Ana", "Ben"}
+    a.influence_score = 25.0
+    assert {w.name for w in witnesses(a, [], roster, REACH_PRESENT)} == {"Ana", "Ben", "Cal"}, \
+        "a public figure still reaches everyone"
+
+
+def test_amplify_spread_is_derived_not_declared():
+    from models import Agent
+    from simulation.observation import distribute_observation
+    from simulation.audience import REACH_EVERYONE, REACH_PRESENT
+    def fresh():
+        return [Agent(id="a", name="Ana", role="x"), Agent(id="b", name="Ben", role="x")]
+
+    roster = fresh()
+    distribute_observation("[Ana] praised Ben.", roster[0], ["Ben"], roster,
+                           reach=REACH_EVERYONE, day=1, amplify_targets=["Ben"])
+    assert any(e.author == "Ben" for e in roster[0].feed), \
+        "public praise must spread the praised person's standing"
+
+    roster = fresh()
+    distribute_observation("[Ana] praised Ben.", roster[0], ["Ben"], roster,
+                           reach=REACH_PRESENT, day=1, amplify_targets=[])
+    assert not any(e.author == "Ben" for e in roster[0].feed), \
+        "private praise must not spread standing"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -415,6 +942,35 @@ _TESTS = [
     test_custom_characters_are_not_left_isolated,
     test_highlights_carry_dialogue,
     test_mock_utterance_differs_from_memory,
+    test_reasoner_prompt_carries_world_premise,
+    test_planner_prompt_carries_world_premise,
+    test_reflector_prompt_carries_world_premise,
+    test_vignette_prompt_carries_world_premise,
+    test_premise_block_is_omitted_when_absent,
+    test_premise_is_capped,
+    test_report_prompt_does_not_forbid_the_world_voice,
+    test_world_context_returns_graph_and_lens,
+    test_created_world_carries_a_lens,
+    test_world_lens_survives_a_setting_less_prompt,
+    test_render_premise_uses_lens_fields,
+    test_render_premise_falls_back_to_raw_prompt,
+    test_render_premise_caps_a_large_lens_block,
+    test_realistic_lens_banned_vocabulary_survives_into_prompt,
+    test_report_prompt_carries_lens_vocabulary,
+    test_banned_vocabulary_instructs_but_never_filters,
+    test_fit_preserves_identity_and_proposes_situation,
+    test_fit_endpoint_mutates_nothing,
+    test_added_character_is_unfitted_by_default,
+    test_fit_on_a_lensless_world_returns_200_not_500,
+    test_surprise_character_fits_the_world_and_avoids_existing_names,
+    test_reach_normalization,
+    test_legacy_action_kind_maps_to_reach,
+    test_reasoner_parses_audience_and_trims_who,
+    test_legacy_saved_action_and_feed_entry_still_load,
+    test_action_kind_derived_from_audience_not_agent_authored,
+    test_derivation_retires_comment_and_narrows_amplify,
+    test_witness_tiers_match_the_old_action_kinds,
+    test_amplify_spread_is_derived_not_declared,
 ]
 
 
