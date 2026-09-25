@@ -38,6 +38,7 @@ from simulation.generator import generate_fillers
 from simulation.worldgraph import extract_world_context
 from simulation.memory import make_memory
 from simulation.fitting import fit_character, surprise_character
+from simulation.premise import render_premise, premise_lines
 
 
 def _validate_config() -> None:
@@ -472,20 +473,30 @@ def agent_chat(wid: str, agent_id: str, body: ChatRequest):
         f"  - {m.text}" for m in (agent.long_term_memory[-6:] + agent.short_term_memory[-4:])
     ) or "  (none)"
 
-    user_prompt = (
-        f"CHARACTER PROFILE\n"
-        f"Name: {agent.name}\n"
-        f"Role: {agent.role}\n"
-        f"Traits: {', '.join(agent.traits) or 'none'}\n"
-        f"Goals: {', '.join(agent.goals) or 'none'}\n"
-        f"Current mood: {agent.mood}\n"
-        f"Influence score: {agent.influence_score:.1f}\n"
-        f"Groups: {', '.join(agent.groups) or 'none'}\n\n"
-        f"RELATIONSHIPS\n{rel_lines}\n\n"
-        f"MEMORIES\n{memories}\n\n"
-        f"WORLD EVENT\n{world.starting_event or '(none)'}\n\n"
-        f"USER MESSAGE\n{body.message}"
-    )
+    premise_text = render_premise(world.lens, world.prompt)
+    user_prompt = "\n".join([
+        *premise_lines(premise_text),
+        "CHARACTER PROFILE",
+        f"Name: {agent.name}",
+        f"Role: {agent.role}",
+        f"Traits: {', '.join(agent.traits) or 'none'}",
+        f"Goals: {', '.join(agent.goals) or 'none'}",
+        f"Current mood: {agent.mood}",
+        f"Influence score: {agent.influence_score:.1f}",
+        f"Groups: {', '.join(agent.groups) or 'none'}",
+        "",
+        "RELATIONSHIPS",
+        rel_lines,
+        "",
+        "MEMORIES",
+        memories,
+        "",
+        "WORLD EVENT",
+        world.starting_event or "(none)",
+        "",
+        "USER MESSAGE",
+        body.message,
+    ])
 
     try:
         reply = call_llm(CHAT_SYSTEM, user_prompt, max_tokens=300, tier="strong")

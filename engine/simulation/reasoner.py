@@ -270,7 +270,7 @@ def _build_prompt(
         "CURRENT WORLD EVENT",
         event or "(no specific event today)",
         "",
-        "YOUR FEED — what's reaching you (ranked by your interests + what's hot)",
+        "WHAT HAS REACHED YOU (ranked by your interests + what's most talked about)",
         "\n".join(f"- {e.text}" for e in ranked_feed) or "(nothing notable yet)",
         "",
         "OTHER AGENTS IN THE WORLD",

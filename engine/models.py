@@ -84,10 +84,12 @@ class WorldLens(BaseModel):
 class WorldGraph(BaseModel):
     """Shared factual ground truth for the world (a lightweight GraphRAG layer).
 
-    Extracted once at simulation start from `World.prompt` (+ `World.question` if set)
-    via a single LLM call. Injected compactly into every agent's reasoning prompt so the
-    population shares the same facts. `topics` are the 3-6 short stance axes the society
-    divides on — these seed and drive `Agent.stance`.
+    Extracted from `World.prompt` (+ `World.question` if set) via a single LLM call,
+    now made at world-creation time (see main.py's world-creation handler). Simulation
+    start (`simulation/engine.py`) only re-extracts it as a legacy fallback, for a world
+    that reaches it still empty (created before this existed). Injected compactly into
+    every agent's reasoning prompt so the population shares the same facts. `topics` are
+    the 3-6 short stance axes the society divides on — these seed and drive `Agent.stance`.
     """
     entities: list[WorldEntity] = []
     relationships: list[WorldRelationship] = []
@@ -228,7 +230,8 @@ class World(BaseModel):
     # Optional player prediction question (Phase 2). May be None for a pure sandbox run.
     question: Optional[str] = None
     # Shared factual ground truth (entities/relationships/power structures/topics),
-    # populated once at simulation start by simulation/worldgraph.py.
+    # populated at world-creation time by simulation/worldgraph.py; simulation start
+    # only re-populates it as a legacy fallback if it is still empty by then.
     world_graph: WorldGraph = Field(default_factory=WorldGraph)
     # Derived interpretation of `prompt` (see simulation/worldgraph.extract_world_context).
     # Empty on worlds created before this existed; every consumer falls back to `prompt`.
@@ -279,7 +282,13 @@ ACTION_KINDS: set[str] = {"post", "direct", "amplify", "comment", "interact"}
 
 
 def normalize_action_kind(value: object) -> str:
-    """Clamp an arbitrary value to a valid ActionKind, defaulting to 'interact'."""
+    """Clamp an arbitrary value to a valid ActionKind, defaulting to 'interact'.
+
+    No production caller remains — the reasoner now derives `action_kind` deterministically
+    (see `simulation.audience.derive_action_kind`) instead of reading it off the model, and
+    pydantic's own `Literal[...]` validation on `AgentAction.action_kind` already rejects
+    anything off-enum at load time. Retained only so an old saved run/action still deserializes.
+    """
     if isinstance(value, str) and value.strip().lower() in ACTION_KINDS:
         return value.strip().lower()
     return "interact"

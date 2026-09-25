@@ -201,6 +201,11 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
                 short_term_memory=[m.model_copy() for m in memories],
                 long_term_memory=[m.model_copy() for m in memories],
                 is_custom=False,
+                # generate_fillers already fits every character to the world (the whole
+                # point of this generator) — born fitted, unlike an authored character
+                # added through CharacterEditor, which starts unfitted until a fit
+                # proposal is accepted for it.
+                fitted_to_world=True,
             ))
             remaining -= 1
             if remaining <= 0:
@@ -210,7 +215,7 @@ def generate_fillers(world: World, count: int) -> list[Agent]:
     # starting_relationships={} (CharacterEditor sends no relationships and exposes no UI
     # for them), so passing `out` alone left every hand-made character isolated on day 1 —
     # the precise failure this seeding exists to prevent.
-    _seed_relationships(list(world.agents) + out, world.prompt)
+    _seed_relationships(list(world.agents) + out, render_premise(world.lens, world.prompt))
     return out
 
 
