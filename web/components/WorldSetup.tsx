@@ -69,7 +69,7 @@ export function WorldSetup({ onCreated }: { onCreated: (wid: string, world: Worl
           </div>
           {/* description */}
           <div style={{ marginTop: 12, fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.6 }}>
-            The setting your society grows from. Sketch the place, its groups, and the tensions between them. The AI turns it into characters, relationships, and the drama that unfolds.
+            The place your world grows from. Sketch the setting, its groups, and the tensions between them. The AI turns it into characters, relationships, and the drama that unfolds.
           </div>
         </div>
 

@@ -102,6 +102,7 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
   const [genBusy, setGenBusy] = useState(false);
   const [surpriseBusy, setSurpriseBusy] = useState(false);
   const [fit, setFit] = useState<CharacterFit | null>(null);
+  const [fitFor, setFitFor] = useState<string | null>(null);
   const [fitBusy, setFitBusy] = useState(false);
   const [fitAccepted, setFitAccepted] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -125,6 +126,10 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
     setMood(pick(MOODS));
     setGroups(sample(RANDOM.groups, 1 + Math.floor(Math.random() * 2)).join(", "));
     setErr(null);
+    // A fresh identity makes any pending proposal (fetched for whoever was in the
+    // form before) stale — drop it rather than leave it accept-able against a name
+    // match that no longer means anything.
+    setFit(null); setFitFor(null);
   }
 
   // Roll a character who belongs in THIS world. The static pools above are the
@@ -142,6 +147,9 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
       setGroups((ch.groups || []).join(", "));
       setMood(ch.mood as Mood);
       if (ch.starting_memories?.length) setMemory(ch.starting_memories[0]);
+      // Same reasoning as surpriseFromStaticPools: a new rolled identity invalidates
+      // any pending fit proposal from before.
+      setFit(null); setFitFor(null);
     } catch {
       surpriseFromStaticPools();
     } finally {
@@ -150,32 +158,49 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
   }
 
   // Ask what this person would BE in this world. Writes nothing — the proposal sits
-  // beside what the user typed until they accept it.
+  // beside what the user typed until they accept it. Remembers whose name it was
+  // fetched for, so an edit to the name can invalidate a now-stale proposal.
   async function requestFit() {
-    if (!name.trim()) return;
+    const forName = name.trim();
+    if (!forName) return;
     setFitBusy(true); setErr(null);
     try {
-      setFit(await api.fitCharacter(worldId, {
-        name: name.trim(), role: role.trim(),
+      const result = await api.fitCharacter(worldId, {
+        name: forName, role: role.trim(),
         traits: splitCsv(traits), goals: splitCsv(goals),
         mood, groups: splitCsv(groups),
         starting_memories: memory.trim() ? [memory.trim()] : [],
         starting_relationships: {},
-      }));
+      });
+      setFit(result);
+      setFitFor(forName);
     } catch (e: any) { setErr(e.message); }
     finally { setFitBusy(false); }
   }
 
+  // The name field changed — if a pending proposal was fetched for a different name,
+  // it no longer describes who's in the form. Drop it rather than let a rename smuggle
+  // someone else's proposal (and the fitted_to_world flag) onto this character.
+  function handleNameChange(next: string) {
+    setName(next);
+    if (fit && next.trim() !== fitFor) {
+      setFit(null);
+      setFitFor(null);
+    }
+  }
+
   // Accept the whole proposal into the form. The user can still edit every field
   // afterwards — and their name, traits and mood were never up for proposal.
+  // Guarded against accepting a proposal fetched for a name the field no longer holds.
   function acceptFit() {
-    if (!fit) return;
+    if (!fit || name.trim() !== fitFor) return;
     if (fit.role) setRole(fit.role);
     if (fit.groups.length) setGroups(fit.groups.join(", "));
     if (fit.goals.length) setGoals(fit.goals.join(", "));
     if (fit.starting_memories.length) setMemory(fit.starting_memories[0]);
     setFitAccepted(true);
     setFit(null);
+    setFitFor(null);
   }
 
   async function addCharacter() {
@@ -194,7 +219,7 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
       });
       const w = await api.getWorld(worldId);
       onWorldChange(w);
-      setName(""); setMemory(""); setAvatar(null); setBasedOn(""); setFitAccepted(false); setFit(null);
+      setName(""); setMemory(""); setAvatar(null); setBasedOn(""); setFitAccepted(false); setFit(null); setFitFor(null);
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   }
@@ -289,7 +314,7 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 10 }}>
         <div>
           <FieldLabel>NAME</FieldLabel>
-          <input placeholder="character name" value={name} onChange={e => setName(e.target.value)} />
+          <input placeholder="character name" value={name} onChange={e => handleNameChange(e.target.value)} />
           <FieldHint>What this character is called.</FieldHint>
         </div>
         <div>
@@ -411,7 +436,7 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
           {fit.starting_memories.length > 0 && <div style={{ fontSize: 10 }}>memory · {fit.starting_memories[0]}</div>}
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <button className="btn" onClick={acceptFit}>use this</button>
-            <button className="btn-ghost" onClick={() => setFit(null)}>keep mine</button>
+            <button className="btn-ghost" onClick={() => { setFit(null); setFitFor(null); }}>keep mine</button>
           </div>
         </div>
       )}
