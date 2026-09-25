@@ -26,8 +26,11 @@ const AVATARS = [
   "👑","🎭","🌟","🔥","💀","🌸",
 ];
 
-// Curated pools that the "Surprise" button rolls a plausible character from, so
-// building a roster is one click per character instead of eight fields.
+// Curated pools that the "Surprise" button falls back to when the network roll
+// (which asks the backend for a character who actually belongs in this world) is
+// unavailable. This is a high-school slice-of-life cast — fine as an offline safety
+// net, wrong as the default, since it would inject baristas and dorm clubs into a
+// besieged monastery or a starship.
 const RANDOM = {
   names: [
     "Maya","Theo","Ren","Iris","Kai","Nova","Leo","Suki","Jonas","Priya",
@@ -97,6 +100,7 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
   const [basedOn, setBasedOn] = useState("");
   const [busy, setBusy] = useState(false);
   const [genBusy, setGenBusy] = useState(false);
+  const [surpriseBusy, setSurpriseBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   // Optional fields (memory, look, based-on) stay hidden until asked for.
   const [showMore, setShowMore] = useState(false);
@@ -105,9 +109,10 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
     return s.split(",").map(x => x.trim()).filter(Boolean);
   }
 
-  // Fill the core fields with a random plausible character. Avoids names already
-  // on the roster so repeated clicks build a varied cast, not duplicates.
-  function surprise() {
+  // Offline/error fallback only — fills the core fields from the fixed high-school-shaped
+  // pools above. Avoids names already on the roster so repeated clicks build a varied
+  // cast, not duplicates.
+  function surpriseFromStaticPools() {
     const used = new Set(world.agents.map(a => a.name.toLowerCase()));
     const avail = RANDOM.names.filter(n => !used.has(n.toLowerCase()));
     setName(avail.length ? pick(avail) : `${pick(RANDOM.names)} ${Math.floor(Math.random() * 90) + 10}`);
@@ -119,12 +124,34 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
     setErr(null);
   }
 
+  // Roll a character who belongs in THIS world. The static pools above are the
+  // fallback only — they are a high-school cast, and using them in a monastery or a
+  // starship is what made every world read the same.
+  async function surprise() {
+    setErr(null);
+    setSurpriseBusy(true);
+    try {
+      const ch = await api.surpriseCharacter(worldId);
+      setName(ch.name);
+      setRole(ch.role);
+      setTraits((ch.traits || []).join(", "));
+      setGoals((ch.goals || []).join(", "));
+      setGroups((ch.groups || []).join(", "));
+      setMood(ch.mood as Mood);
+      if (ch.starting_memories?.length) setMemory(ch.starting_memories[0]);
+    } catch {
+      surpriseFromStaticPools();
+    } finally {
+      setSurpriseBusy(false);
+    }
+  }
+
   async function addCharacter() {
     if (!name.trim()) return;
     setBusy(true); setErr(null);
     try {
       await api.addCharacter(worldId, {
-        name: name.trim(), role: role.trim() || "member",
+        name: name.trim(), role: role.trim() || world.lens?.actor_noun || "member",
         traits: splitCsv(traits), goals: splitCsv(goals),
         mood, groups: splitCsv(groups),
         starting_memories: memory.trim() ? [memory.trim()] : [],
@@ -194,15 +221,17 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
         <button
           type="button"
           onClick={surprise}
-          title="Roll a random character into the form"
+          disabled={surpriseBusy}
+          title="Roll a random character who belongs in this world"
           style={{
-            marginLeft: "auto", fontSize: 8, padding: "6px 12px", cursor: "pointer",
+            marginLeft: "auto", fontSize: 8, padding: "6px 12px", cursor: surpriseBusy ? "default" : "pointer",
             background: "transparent", color: "var(--accent)",
             border: "1px solid var(--accent)", fontFamily: "var(--font-pixel)",
             textTransform: "uppercase", letterSpacing: "0.06em",
+            opacity: surpriseBusy ? 0.6 : 1,
           }}
         >
-          🎲 SURPRISE
+          {surpriseBusy ? "🎲 ROLLING..." : "🎲 SURPRISE"}
         </button>
       </div>
       <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", lineHeight: 1.6, marginBottom: 14 }}>
@@ -217,8 +246,8 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
         </div>
         <div>
           <FieldLabel>ROLE</FieldLabel>
-          <input placeholder="student / teacher..." value={role} onChange={e => setRole(e.target.value)} />
-          <FieldHint>Their place in the world, like student or teacher.</FieldHint>
+          <input placeholder={world.lens?.actor_noun || "role"} value={role} onChange={e => setRole(e.target.value)} />
+          <FieldHint>Their place in the world, like {world.lens?.actor_noun || "student or teacher"}.</FieldHint>
         </div>
         <div>
           <FieldLabel>TRAITS</FieldLabel>

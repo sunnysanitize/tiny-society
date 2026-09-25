@@ -1,5 +1,5 @@
 import type {
-  World, Agent, CharacterInput, SimulationResult, StreamEvent, SaveMeta,
+  World, Agent, CharacterInput, CharacterFit, SimulationResult, StreamEvent, SaveMeta,
 } from "./types";
 import { getToken } from "./supabase";
 
@@ -89,6 +89,18 @@ export const api = {
   removeCharacter: (wid: string, agentId: string) =>
     req<{ ok: boolean }>(`/world/${wid}/character/${agentId}`, {
       method: "DELETE",
+    }),
+
+  // Roll a character who belongs in this world (writes nothing). 503s on failure so
+  // the caller can fall back to the static offline pools.
+  surpriseCharacter: (wid: string) =>
+    req<CharacterInput>(`/world/${wid}/character/surprise`, { method: "POST" }),
+
+  // Propose a world-fitting for an authored character (writes nothing).
+  fitCharacter: (wid: string, c: CharacterInput) =>
+    req<CharacterFit>(`/world/${wid}/character/fit`, {
+      method: "POST",
+      body: JSON.stringify(c),
     }),
 
   generateFillers: (wid: string, count?: number) =>

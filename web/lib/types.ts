@@ -58,6 +58,31 @@ export interface Agent {
   observations?: string[];
 }
 
+/** How the world wants itself described — the vocabulary a "Surprise" roll or a
+ * role placeholder should borrow instead of falling back to generic school-story words.
+ * Worlds created before the lens existed carry an empty lens, so every field here is
+ * optional at the World level (see `lens?:` below) — never assume it is populated. */
+export type WorldLens = {
+  premise_summary: string;
+  actor_noun: string;
+  actor_noun_plural: string;
+  collective_noun: string;
+  affordances: string[];
+  gathering_places: string[];
+  register_notes: string;
+  banned_vocabulary: string[];
+  central_stake: string;
+};
+
+/** A proposed re-fitting of an authored character into the world's own terms. */
+export type CharacterFit = {
+  role: string;
+  groups: string[];
+  goals: string[];
+  starting_memories: string[];
+  note: string;
+};
+
 export interface World {
   prompt: string;
   target_population: number;
@@ -67,6 +92,8 @@ export interface World {
   prophecy?: string | null;
   question?: string | null;
   pending_event?: string | null;
+  // ── World interpretation — optional: absent/empty on worlds created before it existed ──
+  lens?: WorldLens;
 }
 
 export type VignetteKind = "dream" | "catchphrase" | "announcement";
@@ -171,6 +198,7 @@ export interface CharacterInput {
   starting_relationships: Record<string, Relationship>;
   avatar?: string;
   based_on?: string;
+  fitted_to_world?: boolean;
 }
 
 export interface SaveMeta {
