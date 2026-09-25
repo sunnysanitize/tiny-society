@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { api } from "@/lib/api";
 import type { World, Mood, CharacterFit } from "@/lib/types";
 import { PixelAvatar, isEmojiAvatar, pixelVariant } from "./PixelAvatar";
@@ -90,6 +90,12 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
   worldId: string; world: World; onWorldChange: (w: World) => void;
 }) {
   const [name, setName] = useState("");
+  // requestFit's continuation runs after an await, inside a closure that captured
+  // `name` as of the render that started the request — it can never see a later
+  // rename by reading `name` itself. This ref is kept current on every render so
+  // that continuation can check the LIVE name instead of its own stale snapshot.
+  const nameRef = useRef(name);
+  nameRef.current = name;
   const [role, setRole] = useState("");
   const [traits, setTraits] = useState("");
   const [goals, setGoals] = useState("");
@@ -105,6 +111,11 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
   const [fitFor, setFitFor] = useState<string | null>(null);
   const [fitBusy, setFitBusy] = useState(false);
   const [fitAccepted, setFitAccepted] = useState(false);
+  // The name a proposal was actually applied to — distinct from fitFor, which is
+  // cleared the moment acceptFit succeeds. fitAccepted alone would go stale the
+  // instant the name changes after acceptance; this lets us re-check honesty at
+  // submit time instead of trusting a flag set earlier.
+  const [fitAcceptedFor, setFitAcceptedFor] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // Optional fields (memory, look, based-on) stay hidden until asked for.
   const [showMore, setShowMore] = useState(false);
@@ -172,20 +183,37 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
         starting_memories: memory.trim() ? [memory.trim()] : [],
         starting_relationships: {},
       });
-      setFit(result);
-      setFitFor(forName);
+      // The request may have resolved after the user renamed away from forName.
+      // Showing a proposal card for a name no longer in the field would just make
+      // "use this" a silent no-op (acceptFit's guard would refuse it) — discard it
+      // instead so nothing appears to accept. Read nameRef, not `name` — `name` in
+      // this closure is frozen at the value it held when the request was sent.
+      if (nameRef.current.trim() === forName) {
+        setFit(result);
+        setFitFor(forName);
+      }
     } catch (e: any) { setErr(e.message); }
     finally { setFitBusy(false); }
   }
 
-  // The name field changed — if a pending proposal was fetched for a different name,
-  // it no longer describes who's in the form. Drop it rather than let a rename smuggle
-  // someone else's proposal (and the fitted_to_world flag) onto this character.
+  // The name field changed. Two claims can go stale here:
+  //  - a pending proposal (fit/fitFor), fetched for a name the field no longer holds
+  //  - an already-accepted proposal (fitAccepted/fitAcceptedFor) — accepting clears
+  //    fitFor, so that guard alone goes inert the instant acceptFit succeeds; this is
+  //    the only place left that can catch a rename happening AFTER acceptance.
+  // Drop whichever claim(s) no longer match, rather than let a rename smuggle
+  // someone else's proposal — or someone else's fitted_to_world claim — onto this
+  // character.
   function handleNameChange(next: string) {
     setName(next);
-    if (fit && next.trim() !== fitFor) {
+    const trimmed = next.trim();
+    if (fit && trimmed !== fitFor) {
       setFit(null);
       setFitFor(null);
+    }
+    if (fitAccepted && trimmed !== fitAcceptedFor) {
+      setFitAccepted(false);
+      setFitAcceptedFor(null);
     }
   }
 
@@ -199,27 +227,35 @@ export function CharacterEditor({ worldId, world, onWorldChange }: {
     if (fit.goals.length) setGoals(fit.goals.join(", "));
     if (fit.starting_memories.length) setMemory(fit.starting_memories[0]);
     setFitAccepted(true);
+    setFitAcceptedFor(fitFor);
     setFit(null);
     setFitFor(null);
   }
 
   async function addCharacter() {
-    if (!name.trim()) return;
+    const submittedName = name.trim();
+    if (!submittedName) return;
     setBusy(true); setErr(null);
     try {
       await api.addCharacter(worldId, {
-        name: name.trim(), role: role.trim() || world.lens?.actor_noun || "member",
+        name: submittedName, role: role.trim() || world.lens?.actor_noun || "member",
         traits: splitCsv(traits), goals: splitCsv(goals),
         mood, groups: splitCsv(groups),
         starting_memories: memory.trim() ? [memory.trim()] : [],
         starting_relationships: {},
         ...(avatar ? { avatar } : {}),
         ...(basedOn.trim() ? { based_on: basedOn.trim() } : {}),
-        fitted_to_world: fitAccepted,
+        // Anchored to the name actually being submitted, not to fitAccepted alone —
+        // fitAccepted can only ever be true because handleNameChange keeps
+        // fitAcceptedFor in lockstep with it, but this re-check at the submit
+        // boundary is what makes the flag honest under any ordering, not just the
+        // ones we thought to guard earlier.
+        fitted_to_world: fitAccepted && submittedName === fitAcceptedFor,
       });
       const w = await api.getWorld(worldId);
       onWorldChange(w);
-      setName(""); setMemory(""); setAvatar(null); setBasedOn(""); setFitAccepted(false); setFit(null); setFitFor(null);
+      setName(""); setMemory(""); setAvatar(null); setBasedOn("");
+      setFitAccepted(false); setFitAcceptedFor(null); setFit(null); setFitFor(null);
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   }
