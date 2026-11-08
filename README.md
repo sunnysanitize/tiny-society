@@ -3,7 +3,6 @@
 **A small social simulation where LLM-driven characters remember things, form relationships, see
 different versions of events, and change their minds over time.**
 
-![Tiny Society AI](./web/public/tinysocietylanding.png)
 
 You describe a world, cast up to 7 characters, drop an event into their lives, and watch a week
 unfold day by day. Along the way you can talk to characters, whisper advice to them, throw in new
