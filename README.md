@@ -36,6 +36,11 @@ characters are called, what can and can't exist there, where people gather, how 
 should sound, and what everyone is really fighting over. Every later stage reads that lens, so a
 monastery reads like a monastery and an esports team reads like an esports team.
 
+The starting event is then **cast**: one pass decides who it concretely involves, what everyone
+knows, and the hidden truth behind it. Each character gets a private memory of their own part, so
+the culprit knows what they did and nobody else does. A second pass turns each character's
+free-text traits into a personality profile (mood baseline, honesty, desires, speaking voice).
+
 Then, over up to 7 simulated days, each agent:
 
 1. **Recalls** relevant memories, ranked by relevance, recency, and importance, and makes a
@@ -44,7 +49,16 @@ Then, over up to 7 simulated days, each agent:
    seen them, which is how gossip, factions, and misinformation emerge.
 3. **Acts** in character, toward whoever they choose, with an audience: everyone, the people
    who are there, or one person alone. The action is written in the world's own words.
-4. **Updates** relationships, influence, memories, and beliefs.
+4. **Finds out what came of it.** When a character *tries* something (a search, a hunt, a repair),
+   a game master rates the difficulty, writes every possible result, and a seeded roll picks
+   one. Efforts that take several days fill a progress clock and must finish or fall apart.
+5. **Updates** relationships, mood, needs, memories, and beliefs, and writes a short summary of
+   where they stand.
+
+At night, people who met that day may pass on what the other doesn't know yet, so news and
+secrets spread (and a spilled secret can get back to its owner). A director keeps a ledger of
+open story threads, adds a complication from the world only when the story stalls, and pushes
+open matters to a head in the last days.
 
 A few guardrails keep this believable:
 
@@ -53,11 +67,19 @@ A few guardrails keep this believable:
   them over time, and on both sides, not on one LLM call deciding it.
 - **Characters stay in character.** A persona check blocks actions a character wouldn't take given
   their mood, traits, and history with the target, and swaps in the closest action they would.
+- **Characters only know what they know.** Witnesses see what was said and done, never the
+  actor's private reasons. An accusation must rest on something the character actually saw or
+  was told, or it comes out as questions instead.
+- **Moods have inertia.** Emotions pull a mood that settles back to each person's baseline,
+  instead of flipping with every action.
+- **Opinions form camps.** People only move toward views near their own, and keep part of their
+  original stance, so factions survive a week of talk.
 - **Agents reflect.** Every few days they turn recent memories into higher-level insights.
 
 At the end of each day, individual changes are rolled up into social metrics (friendships,
-rivalries, factions, fragmentation, and so on). When the run finishes, they become a written report
-and a population forecast.
+rivalries, factions, fragmentation, and so on). When the run finishes, a written report is built
+from the canonical event log: it has to cite the events it describes, and the citations are
+checked in code. A population forecast is computed alongside it.
 
 ## What you can do
 
@@ -203,7 +225,11 @@ first request.
 
 **Model tiers (optional).** You can send bulk background work to a cheaper model and the moments
 players see to a stronger one with `*_MODEL_CHEAP` and `*_MODEL_STRONG` (for example
-`ANTHROPIC_MODEL_CHEAP`). If a tier isn't set, it uses the main `*_MODEL`.
+`ANTHROPIC_MODEL_CHEAP`). If a tier isn't set, it uses the main `*_MODEL`. Character turns, the
+game master, event casting, the director and the report use the strong tier; perception, plans,
+summaries, profiles and vignettes use the cheap one. On OpenRouter, `google/gemini-2.5-flash` as
+the main model with `OPENAI_COMPAT_MODEL_CHEAP=google/gemini-2.5-flash-lite` costs about $0.07
+per 5-day run.
 
 ### Other backend settings
 
@@ -214,6 +240,7 @@ players see to a stronger one with `*_MODEL_CHEAP` and `*_MODEL_STRONG` (for exa
 | `MAX_LIVE_WORLDS` | `200` | Worlds kept in memory before the oldest is dropped |
 | `LOG_LEVEL` | `INFO` | Python logging level |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | empty | Turns on accounts and saved runs. Set both or neither |
+| `MEMORY_EMBEDDINGS` | off | `on` recalls memories by meaning with a local embedding model (needs `pip install fastembed`). An A/B test showed no story gain, so it's off by default |
 
 Full templates are in [`engine/.env.example`](./engine/.env.example) and
 [`web/.env.local.example`](./web/.env.local.example).
@@ -249,6 +276,23 @@ python -m pytest -q
 - `tests/test_realism.py`: calibration checks that whole-society behavior stays believable across
   several seeds.
 
+### Measuring story realism
+
+`engine/tools/sim_eval/` runs real simulations across eight contrasting worlds (a Tibetan
+monastery, a Mars base, a wolf pack, a plague village…) and grades them with an LLM judge from a
+different model family. It needs a real provider in `engine/.env`.
+
+```bash
+cd engine
+venv/bin/python -m tools.sim_eval.run_batch --out tools/sim_eval/runs/NAME --days 5   # simulate
+venv/bin/python -m tools.sim_eval.judge tools/sim_eval/runs/NAME                       # 1-10 scores + counts
+venv/bin/python -m tools.sim_eval.pairwise tools/sim_eval/runs/OLD tools/sim_eval/runs/NAME  # side by side
+```
+
+Side-by-side comparisons are more sensitive than averaged scores. With eight runs per version,
+only large differences are reliable. The research behind the realism design is in
+[`reports/`](./reports/).
+
 To check that the frontend compiles:
 
 ```bash
@@ -272,13 +316,22 @@ engine/                    FastAPI backend
 │   ├── audience.py        Who an action was in front of
 │   ├── observation.py     Who sees which actions
 │   ├── reasoner.py        Each agent's action choice
-│   ├── persona.py         Blocks out-of-character actions
+│   ├── persona.py         Blocks out-of-character actions and unfounded accusations
+│   ├── event_casting.py   Binds each event to the cast: public facts, hidden truth
+│   ├── game_master.py     Decides what came of attempts; progress clocks
+│   ├── gossip.py          Who passes on what to whom
+│   ├── affect.py          Mood with inertia and a personal baseline
+│   ├── personality.py     Traits → personality profile and voice
+│   ├── needs.py           Needs that pull characters out of routine
+│   ├── dynamics.py        Familiarity, conflict ladder, balance, opinion camps
+│   ├── director.py        Story threads, pacing, complications
 │   ├── consequence.py     Turns actions into relationship changes
-│   ├── reflector.py       Periodic reflection
-│   ├── stance.py          Beliefs and opinion shifts
+│   ├── reflector.py       Periodic reflection and daily self-summaries
+│   ├── stance.py          Starting beliefs
 │   ├── metrics.py         Daily society-level metrics
 │   └── reporter.py        Final report and forecast
-└── tests/                 Mock-provider test suites
+├── tests/                 Mock-provider test suites
+└── tools/sim_eval/        Real-LLM realism evaluation harness
 web/                       Next.js 14 + Tailwind frontend
 ├── app/                   Pages and global styles
 └── components/            Setup, story, network graph, inspector, saves
