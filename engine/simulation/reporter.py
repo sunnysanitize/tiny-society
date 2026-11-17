@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import re
 from typing import Optional
 
 from models import Agent, DaySnapshot, EventCast, MacroMetrics, Forecast, WorldLens
@@ -48,6 +50,13 @@ ACCURACY IS THE FIRST RULE. Every sentence must be traceable to a line of the in
   reader sees the numbers elsewhere. Say what they mean in words ("rose sharply",
   "barely moved", "the {population} stayed split").
 - Never resolve what the log leaves open (who is guilty, who wins) unless the log shows it.
+- Never embellish. Quote words only if they appear verbatim in the log; never add places,
+  gestures, tones or details the log doesn't state. Use each person's role exactly as the
+  CAST list gives it. Plain and exact beats vivid and invented.
+- When the input has an EVENT LOG, end every sentence that states something that happened
+  with the id(s) of the event(s) it rests on, like [E2.3] or [E1.4][E3.2]. A sentence you
+  can't cite to an event is a sentence you shouldn't write. Outcomes marked ⇒ are what
+  actually came of an attempt — use them; an attempt without ⇒ did not resolve.
 WRITE IN THE WORLD'S OWN VOCABULARY. The WORLD line tells you the setting; use its
 specific language, places, pressures and routines, and name the concrete things these
 people actually did. Generic organizational prose — "team-building activity",
@@ -189,6 +198,21 @@ def _standing_changes(initial_agents: list[Agent], final_agents: list[Agent]) ->
     return [f"{name}: {delta:+.1f}" for delta, name in rows]
 
 
+_CITE_RE = re.compile(r"\s*\[(E\d+\.\d+)\]")
+
+
+def _check_citations(narrative: str, valid_ids: set[str]) -> str:
+    """Count how many cited event ids exist, then strip the markers for display.
+
+    Citing forces each claim to rest on a logged event; the ids themselves are noise
+    to a reader. Invalid ids mean the report referenced an event that doesn't exist."""
+    cited = _CITE_RE.findall(narrative)
+    if cited:
+        bad = [c for c in cited if c not in valid_ids]
+        logging.info(f"Report cited {len(cited)} events, {len(bad)} unknown: {bad[:5]}")
+    return _CITE_RE.sub("", narrative)
+
+
 def generate_final_report(
     initial: MacroMetrics,
     final: MacroMetrics,
@@ -240,13 +264,22 @@ def generate_final_report(
             milestone_lines.append(f"Day {s.day}: " + "; ".join(ms[:6]))
 
     user = f"WORLD: {world_prompt}\n\nSTARTING EVENT: {starting_event or '(none)'}\n\n"
+    if snapshots:
+        user += "CAST:\n" + "\n".join(f"- {a.name}: {a.role}" for a in snapshots[-1].agents) + "\n\n"
     cast = (event_casts or {}).get(starting_event or "")
     if cast and (cast.public or cast.truth):
         user += f"WHAT EVERYONE KNEW: {cast.public}\n"
         if cast.truth:
             user += f"THE HIDDEN TRUTH (only revealed if the log shows it coming out): {cast.truth}\n"
         user += "\n"
-    user += "DAILY ACTIONS:\n" + "\n".join(highlights_blob[:30])
+    events = [e for s in snapshots for e in s.events]
+    if events:
+        # The canonical log: what actually happened, with the outcome of every attempt.
+        user += "EVENT LOG (cite these ids):\n" + "\n".join(
+            f"[{e.id}] {e.text}" for e in events[:150]
+        )
+    else:  # snapshots from before the event log existed
+        user += "DAILY ACTIONS:\n" + "\n".join(highlights_blob[:30])
     if snapshots and initial_agents is not None:
         final_agents = snapshots[-1].agents
         start = snapshots[0].day - 1
@@ -283,7 +316,7 @@ def generate_final_report(
             + "\n".join(milestone_lines[:40])
         )
 
-    if question or final.topic_means:
+    if question:
         traj = _belief_trajectory_blob(snapshots, topics)
         pivotal = _pivotal_blob(snapshots, pivotal_days, dynamic_events)
         user += "\n\n"
@@ -300,9 +333,11 @@ def generate_final_report(
         )
 
     try:
-        narrative = call_llm(_report_system(lens), user, max_tokens=1500, tier="strong")
+        narrative = call_llm(_report_system(lens), user, max_tokens=1800, tier="strong")
     except Exception as e:
         narrative = f"(Report generation failed: {e})"
+    else:
+        narrative = _check_citations(narrative, {e.id for e in events})
 
     forecast = build_forecast(snapshots, question, topics, dynamic_events, narrative)
     return narrative, forecast

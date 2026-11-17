@@ -67,13 +67,18 @@ Return STRICT JSON only:
 
 
 def judge_llm(transcript: str, model: str) -> dict:
+    return _post_judge(JUDGE_SYSTEM, transcript, model)
+
+
+def _post_judge(system: str, user: str, model: str) -> dict:
+    """One judge call returning parsed JSON, or {"error": ...} after retries."""
     base = os.getenv("OPENAI_COMPAT_BASE_URL", "").rstrip("/")
     key = os.getenv("OPENAI_COMPAT_API_KEY")
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": JUDGE_SYSTEM},
-            {"role": "user", "content": transcript},
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
         ],
         "max_tokens": 5000,
         "temperature": 0,
@@ -131,7 +136,16 @@ def deterministic(data: dict) -> dict:
     text = " ".join(h["summary"] + " " + h["utterance"] for _, h in hls) + " " + (res.get("final_report") or "")
     banned_hits = sum(len(re.findall(rf"\b{re.escape(b)}\b", text.lower())) for b in banned)
 
+    events = [e for s in snaps for e in s.get("events", [])]
+    outcomes = Counter(e["outcome"] for e in events if e["outcome"])
+    final_efforts = [f for a in snaps[-1]["agents"] for f in a.get("efforts", [])] if snaps else []
     return {
+        "attempts": sum(outcomes.values()),
+        "outcomes": dict(outcomes),
+        "efforts": len(final_efforts),
+        "efforts_open": sum(not f["done"] for f in final_efforts),
+        "known_share": round(sum(len(e["known_by"]) for e in events)
+                             / max(1, len(events) * len(names)), 3),
         "actions": n,
         "fallback_rate": round(fallbacks / n, 3),
         "veto_count": vetoes,

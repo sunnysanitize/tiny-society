@@ -8,7 +8,7 @@ from typing import Callable, Optional
 
 from models import (
     Agent, AgentAction, World, SimulationConfig, SimulationResult,
-    DaySnapshot, DayHighlight, Vignette,
+    DaySnapshot, DayHighlight, Vignette, WorldEvent,
 )
 from .selector import select_reasoning_agents
 from .reasoner import reason_for_agent, areason_for_agent
@@ -26,6 +26,9 @@ from .vignette import generate_vignette_struct
 from .prophecy import grade_prophecy
 from .premise import render_premise, premise_lines
 from .event_casting import cast_event, plant_involvement, render_event
+from .game_master import judge_attempt, settle
+from .memory import make_memory
+from .audience import REACH_ONE
 
 # Run a reflection pass (Stanford "Generative Agents" style) every N sim days for
 # the agents reasoning that day, so the day's reasoning can use fresh reflections.
@@ -129,11 +132,15 @@ def run_simulation(
         day_log: list[str] = []
         day_highlights: list[DayHighlight] = []
         day_vignettes: list[Vignette] = []
+        day_events: list[WorldEvent] = []
         type_changes = 0
         # Per-day RNG derived from the absolute day, so advancing one day at a time
         # produces the SAME randomness as running the days in a batch (day N's draws
         # depend only on seed+N, not on how many days were simulated in this call).
         day_rng = random.Random(seed + abs_day)
+        # The game master's dice get their own stream so adding adjudication doesn't
+        # shift the draws every other per-day decision already depends on.
+        gm_rng = random.Random(f"gm|{seed}|{abs_day}")
 
         # Clear starting event once we're past day 3 (works for both batch and 1-day steps)
         if abs_day > 3 and active_event == world.starting_event:
@@ -207,13 +214,29 @@ def run_simulation(
         by_name = {a.name: a for a in agents}
         exchanges_today = 0
 
-        def _commit_action(actor: Agent, action) -> str:
-            """Apply an action, route its observation/perception, log + highlight it.
+        def _adjudicate(actor: Agent, action) -> object:
+            """Phase 1 of the game master (LLM): judge an attempt, if the action has one."""
+            if action is None or not action.attempt:
+                return None
+            return judge_attempt(
+                actor, action, agents,
+                cast=world.event_casts.get(active_event or ""),
+                recent=full_event_log[-10:] + day_log[-5:],
+                world_premise=premise_text,
+            )
+
+        def _commit_action(actor: Agent, action, adj=None) -> str:
+            """Settle any attempt, apply the action, route what was seen and what came
+            of it, and record it in the day's canonical event log.
 
             Returns what witnesses saw (the line an exchange responds to). Used
             identically for primary actions and multi-turn response turns; also
             accumulates relationship milestones."""
             nonlocal type_changes
+            # GAME MASTER phase 2: roll and advance the effort clock (deterministic).
+            settlement = settle(adj, actor, abs_day, gm_rng) if adj is not None else None
+            if settlement:
+                action.outcome, action.outcome_text = settlement.outcome, settlement.text
             # PERSONA VETO (Stage 3): before any consequence is applied, reject intents this
             # character plausibly wouldn't act on given mood/traits/standing (e.g. courting
             # while heartbroken). Downgrades happen in place; vetoes are logged so the
@@ -243,15 +266,47 @@ def run_simulation(
             # Witnesses see the outward move, never the private memory/explanation in
             # log_line; a covert move (only watching) reaches no one but the actor.
             public_line = witness_line(actor, action)
-            distribute_observation(
+            witnessed = distribute_observation(
                 public_line, actor, [] if is_covert(action) else action.target_agents,
                 [actor] if is_covert(action) else agents,
                 reach=action.audience.reach, day=abs_day, amplify_targets=lifted,
             )
+            known = {a.name for a in witnessed} | {actor.name}
+            if settlement:
+                # The actor learns the result; so do the few the game master says would.
+                # Everyone else has to hear it from someone.
+                result = f"{settlement.outcome}: {settlement.text}"
+                actor.short_term_memory.append(
+                    make_memory(f"What came of my attempt to {action.attempt}: {settlement.text}", abs_day))
+                if actor.recent_actions:
+                    actor.recent_actions[-1] += f" ⇒ {settlement.outcome}: {settlement.text[:120]}"
+                day_log[-1] = f"{log_line} ⇒ [{result}]"
+                for name in settlement.aware:
+                    other = by_name.get(name)
+                    if other is not None:
+                        other.short_term_memory.append(
+                            make_memory(f"I learned that {settlement.text}", abs_day))
+                if settlement.aware:
+                    distribute_observation(
+                        f"[{actor.name}] {settlement.text}", actor, settlement.aware,
+                        agents, reach=REACH_ONE, day=abs_day,
+                    )
+                known |= set(settlement.aware)
+            day_events.append(WorldEvent(
+                id=f"E{abs_day}.{len(day_events) + 1}",
+                day=abs_day,
+                actor=actor.name,
+                targets=list(action.target_agents),
+                text=public_line + (f" ⇒ {settlement.text}" if settlement else ""),
+                outcome=settlement.outcome if settlement else "",
+                effort=settlement.effort if settlement else "",
+                known_by=sorted(known),
+            ))
             day_perception_notes.extend(notes)
             day_highlights.append(DayHighlight(
                 agent=actor.name,
-                summary=action.new_memory or (
+                summary=(action.new_memory + (f" — {settlement.text}" if settlement else ""))
+                if action.new_memory else (
                     f"{action.action} {', '.join(action.target_agents)} — {action.explanation}"
                     if action.target_agents else
                     f"{action.action} about {', '.join(action.about_agents)} — {action.explanation}"
@@ -281,7 +336,7 @@ def run_simulation(
                     actor.plan = new_plan
                     actor.plan_day = abs_day
             logging.info(f"Day {abs_day}: reasoning for {actor.name}")
-            return await areason_for_agent(
+            action = await areason_for_agent(
                 actor,
                 agents,
                 event=event_text,
@@ -289,23 +344,27 @@ def run_simulation(
                 world_graph=world.world_graph,
                 world_premise=premise_text,
             )
+            # Judge the attempt right away, still in parallel; the roll waits for the
+            # sequential pass so outcomes stay deterministic.
+            adj = await asyncio.to_thread(_adjudicate, actor, action)
+            return action, adj
 
         async def _gather_day_actions(actors):
             return await asyncio.gather(*[_plan_and_reason(a) for a in actors])
 
         # run_simulation stays sync; the calling thread has no running loop in both
         # the sync-endpoint and streaming-thread cases, so asyncio.run is safe here.
-        actions = asyncio.run(_gather_day_actions(selected))
+        results = asyncio.run(_gather_day_actions(selected))
 
         # SEQUENTIAL PASS: apply in selection order for determinism, then run any
         # multi-turn exchanges (which depend on prior applied state — kept serial).
-        for actor, action in zip(selected, actions):
+        for actor, (action, adj) in zip(selected, results):
             if action is None:
                 # The LLM call failed or returned unparseable JSON. Rather than silently
                 # dropping the agent's whole turn (which flatlines the story), commit a
                 # neutral "kept to themselves" beat so the day still reflects them.
                 action = _fallback_action(actor, agents)
-            public_line = _commit_action(actor, action)
+            public_line = _commit_action(actor, action, adj)
 
             # MULTI-TURN EXCHANGES (⑤): if this was a CHARGED interaction with a
             # specific target, let that target respond, then optionally the actor
@@ -334,7 +393,7 @@ def run_simulation(
                     )
                     if resp is None:
                         break
-                    prior_line = _commit_action(responder, resp)
+                    prior_line = _commit_action(responder, resp, _adjudicate(responder, resp))
                     speaker, responder = responder, speaker
 
         # EVENING: background rules + relationship decay
@@ -375,6 +434,7 @@ def run_simulation(
             perception_notes=day_perception_notes,
             vignettes=day_vignettes,
             milestones=day_milestones,
+            events=day_events,
         )
         snapshots.append(snap)
 

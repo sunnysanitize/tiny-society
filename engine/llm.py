@@ -1398,6 +1398,26 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
             "stance_shift": stance_shift,
             "new_memory": new_memory,
             "explanation": explanation,
+            # Solo days are where characters try to get something done; give the game
+            # master something to resolve so the offline path exercises it.
+            "attempt": f"find out what {target} has been hiding" if _about_only else "",
+        })
+
+    # ── game master adjudication ───────────────────────────────────────────────
+    if "GAME_MASTER_ADJUDICATION" in system:
+        effort = _re_module.search(r"Trying to: (.+)", user)
+        effort = (effort.group(1).strip() if effort else "the task")[:60]
+        return json.dumps({
+            "difficulty": rng.randint(1, 5),
+            "competence": rng.randint(1, 5),
+            "size": rng.choice(["single", "short", "long"]),
+            "effort": effort,
+            "success": f"The effort to {effort} turned up a torn note in a familiar hand.",
+            "partial": f"The effort to {effort} turned up half an answer and a new question.",
+            "failure": f"The effort to {effort} was interrupted and nothing came of it that day.",
+            "completion": f"The effort to {effort} was finished, and the answer was plain.",
+            "collapse": f"The effort to {effort} was abandoned for good.",
+            "aware": [],
         })
 
     # ── final report ───────────────────────────────────────────────────────────

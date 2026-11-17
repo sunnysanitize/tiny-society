@@ -55,6 +55,9 @@ def transcript(world: World, result) -> str:
             out.append(f"- {line}")
         if s.milestones:
             out.append(f"- MILESTONES: {s.milestones}")
+        if s.events:
+            out.append("- WHO KNEW WHAT: " + "; ".join(
+                f"{e.id} ({e.actor}) known by {', '.join(e.known_by)}" for e in s.events))
         for v in s.vignettes:
             out.append(f"- VIGNETTE ({v.kind}) {v.agent}: {v.text}")
         for h in s.highlights:

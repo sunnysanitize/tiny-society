@@ -135,6 +135,20 @@ class FeedEntry(BaseModel):
     reach: str = "those present"
 
 
+class Effort(BaseModel):
+    """A multi-day undertaking tracked as a progress clock (simulation/game_master.py).
+
+    A search or hunt used to be re-attempted every day and never succeed or fail.
+    Each resolved attempt fills segments; a full clock completes the effort, and an
+    effort is forced to a conclusion after MAX_EFFORT_ATTEMPTS tries."""
+    name: str
+    segments: int = 4
+    filled: int = 0
+    opened_day: int = 0
+    attempts: int = 0
+    done: bool = False
+
+
 class Agent(BaseModel):
     id: str
     name: str
@@ -174,6 +188,9 @@ class Agent(BaseModel):
     # actions ("day3: confront -> Aria"), surfaced in the reasoner prompt so the model
     # can see its OWN pattern and deliberately vary target/approach instead of looping.
     recent_actions: list[str] = []
+    # Progress clocks for this agent's multi-day undertakings. Lives on the agent (not
+    # the world) so a day-by-day advance carries it with the snapshot.
+    efforts: list[Effort] = []
     is_custom: bool = False
     # IDENTITY INJECTION (Slice E): an emoji or a preset pixel-avatar id string used by
     # the frontend to render the character. None means the frontend assigns one.
@@ -401,6 +418,30 @@ class AgentAction(BaseModel):
     stance_shift: dict[str, float] = {}
     new_memory: str
     explanation: str
+    # What the agent is trying to ACCOMPLISH whose result isn't theirs to decide (find,
+    # fix, hunt, hide, catch, prove). Empty for pure social moves. A non-empty attempt
+    # is resolved by the game master into a concrete outcome.
+    attempt: str = ""
+    # Filled by the game master: "success" | "partial" | "failure" | "" (unresolved),
+    # and the concrete result in the world's words.
+    outcome: str = ""
+    outcome_text: str = ""
+
+
+class WorldEvent(BaseModel):
+    """One entry of the canonical event log: what actually happened, who knows it.
+
+    The log is the single source of truth for the final report (which cites event ids)
+    and for measuring how information spreads. Characters never see it directly; they
+    see only the events they're in `known_by` for, via their memory and feed."""
+    id: str
+    day: int
+    actor: str
+    targets: list[str] = []
+    text: str
+    outcome: str = ""
+    effort: str = ""
+    known_by: list[str] = []
 
 
 class DayHighlight(BaseModel):
@@ -437,6 +478,8 @@ class DaySnapshot(BaseModel):
     # or crossed a strength threshold. Fed into the final report and surfaced in the
     # story view so arcs are visible instead of buried in per-day activity. Default [].
     milestones: list[str] = []
+    # Canonical event log for the day (see WorldEvent). Default [] for old saves.
+    events: list[WorldEvent] = []
 
 
 class MacroMetrics(BaseModel):

@@ -43,7 +43,8 @@ JSON schema:
   "emotional_reaction": "calm|excited|frustrated|heartbroken|ambitious|anxious|content|angry|hopeful|lonely|confident",
   "stance_shift": { "TopicName": -0.3 to 0.3 },
   "new_memory": "first-person past-tense sentence describing what you did today",
-  "explanation": "one sentence linking your traits and memories to this specific action"
+  "explanation": "one sentence linking your traits and memories to this specific action",
+  "attempt": "what you are trying to accomplish whose result isn't yours to decide, or \"\""
 }
 
   audience : who witnessed this. `who` is your own phrasing — where you were, who could
@@ -51,6 +52,12 @@ JSON schema:
              it, "those present" if your circle saw it, "one person" if it was private
              between you and your named target. Most days are "those present".
   target_agents : people you actually interacted with today — they were there.
+  attempt       : fill this when you try to MAKE something happen in the world — search,
+                  track, fix, hunt, hide, steal, catch, prove, cure ("find who altered the
+                  oxygen logs"). The world decides whether it works; you'll learn the
+                  result. Leave it "" for conversation and social moves: what someone else
+                  feels or decides is up to them, not an attempt.
+                  Never write the result into new_memory — say what you did, not what came of it.
   about_agents  : people this was ABOUT who were not there and do not know. Working
                   alone on something because of someone, avoiding them, preparing for
                   them, stewing about them. They do not learn anything from this.
@@ -176,6 +183,7 @@ def _parse_action(agent: Agent, raw: str) -> Optional[AgentAction]:
             stance_shift=stance_shift,
             new_memory=_trim(str(data.get("new_memory", "")), 280),
             explanation=_trim(str(data.get("explanation", "")), 280),
+            attempt=_trim(str(data.get("attempt") or ""), 200),
         )
     except Exception:
         return None
@@ -241,6 +249,7 @@ def _build_prompt(
         else:
             topic_lines.append(f"- {t}")
 
+    efforts = [e for e in agent.efforts if not e.done]
     parts = [
         *premise_lines(world_premise),
         "WORLD FACTS & POWER STRUCTURE",
@@ -262,6 +271,9 @@ def _build_prompt(
         "\n".join(rel_lines) if rel_lines else "(none yet)",
         "",
         *(["YOUR CURRENT PLAN", agent.plan, ""] if agent.plan else []),
+        *(["YOUR ONGOING EFFORTS (continue one by naming it in `attempt`, or let it go)",
+           "\n".join(f"- {e.name}: {e.filled}/{e.segments} of the way, {e.attempts} attempt(s) so far"
+                     for e in efforts), ""] if efforts else []),
         "YOUR SHORT-TERM MEMORY (today so far)",
         "\n".join(f"- {m.text}" for m in agent.short_term_memory[-4:]) or "(empty)",
         "",

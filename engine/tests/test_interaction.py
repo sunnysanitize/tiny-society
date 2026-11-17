@@ -1016,6 +1016,84 @@ def test_embedding_recall_finds_a_paraphrase():
         os.environ.pop("MEMORY_EMBEDDINGS", None)
 
 
+def _adj(size="long", difficulty=3, competence=3):
+    from simulation.game_master import Adjudication
+    return Adjudication(difficulty=difficulty, competence=competence, size=size,
+                        effort="track the elk",
+                        branches={"success": "S", "partial": "P", "failure": "F",
+                                  "completion": "DONE", "collapse": "GAVE UP"})
+
+
+class _Rolls:
+    """A stand-in RNG returning scripted rolls."""
+    def __init__(self, *vals):
+        self.vals = list(vals)
+
+    def random(self):
+        return self.vals.pop(0)
+
+
+def test_one_off_attempt_settles_without_a_clock():
+    from models import Agent
+    from simulation.game_master import settle
+    a = Agent(id="a", name="Ana", role="x")
+    st = settle(_adj(size="single"), a, day=1, rng=_Rolls(0.99))
+    assert (st.outcome, st.text) == ("failure", "F") and not a.efforts
+
+
+def test_effort_completes_when_its_clock_fills():
+    from models import Agent
+    from simulation.game_master import settle
+    a = Agent(id="a", name="Ana", role="x")
+    assert settle(_adj(size="short"), a, day=1, rng=_Rolls(0.0)).outcome == "success"
+    st = settle(_adj(size="short"), a, day=2, rng=_Rolls(0.0))
+    assert (st.outcome, st.text) == ("completed", "DONE"), "two successes finish a short effort"
+    assert a.efforts[0].done
+
+
+def test_effort_cannot_drag_on_forever():
+    from models import Agent
+    from simulation.game_master import settle, MAX_EFFORT_ATTEMPTS
+    a = Agent(id="a", name="Ana", role="x")
+    outcomes = [settle(_adj(), a, day=d, rng=_Rolls(0.99)).outcome
+                for d in range(1, MAX_EFFORT_ATTEMPTS + 1)]
+    assert outcomes[-1] == "collapsed", outcomes
+    assert a.efforts[0].done, "a failed effort must end, not repeat daily"
+
+
+def test_harder_attempts_fail_more_often():
+    import random
+    from models import Agent
+    from simulation.game_master import settle
+    def successes(difficulty, competence):
+        rng = random.Random(7)
+        return sum(settle(_adj("single", difficulty, competence), Agent(id="a", name="A", role="x"),
+                          1, rng).outcome == "success" for _ in range(400))
+    assert successes(5, 1) < successes(3, 3) < successes(1, 5)
+
+
+def test_game_master_cannot_name_the_actor_or_strangers_as_aware():
+    import json
+    from models import Agent
+    from simulation.game_master import _parse
+    roster = [Agent(id="a", name="Ana", role="x"), Agent(id="b", name="Ben", role="x")]
+    raw = json.dumps({"success": "s", "partial": "p", "failure": "f", "aware": ["Ana", "Ben", "Zed"]})
+    assert _parse(raw, roster[0], roster).aware == ["Ben"]
+
+
+def test_mock_run_resolves_attempts_into_the_event_log():
+    from models import World, SimulationConfig
+    from simulation.generator import generate_fillers
+    from simulation.engine import run_simulation
+    w = World(prompt="a besieged monastery in winter", target_population=6)
+    w.agents = generate_fillers(w, 6)
+    w.starting_event = "The grain store is found half empty."
+    r = run_simulation(w, SimulationConfig(days=4, reasoning_agents_per_day=5), seed=3)
+    events = [e for s in r.snapshots for e in s.events]
+    assert events and all(e.actor in e.known_by for e in events)
+    assert any(e.outcome for e in events), "attempts must come out resolved"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -1076,6 +1154,12 @@ _TESTS = [
     test_failed_event_casting_is_harmless,
     test_report_sees_pairwise_relationship_changes,
     test_embedding_recall_finds_a_paraphrase,
+    test_one_off_attempt_settles_without_a_clock,
+    test_effort_completes_when_its_clock_fills,
+    test_effort_cannot_drag_on_forever,
+    test_harder_attempts_fail_more_often,
+    test_game_master_cannot_name_the_actor_or_strangers_as_aware,
+    test_mock_run_resolves_attempts_into_the_event_log,
 ]
 
 
