@@ -172,7 +172,7 @@ def score_one(json_path: Path, model: str) -> dict:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run_dir")
-    ap.add_argument("--model", default="anthropic/claude-sonnet-4.5")
+    ap.add_argument("--model", default="deepseek/deepseek-v3.2")
     args = ap.parse_args()
     run_dir = Path(args.run_dir)
     paths = sorted(run_dir.glob("*.json"))

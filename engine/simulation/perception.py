@@ -65,7 +65,7 @@ def perceive_event(
 
     user_prompt = _build_prompt(perceiver, actor, raw_delta, rel_type, action_summary, world_premise)
     try:
-        raw = call_llm(PERCEPTION_SYSTEM, user_prompt, json_mode=True, max_tokens=400)
+        raw = call_llm(PERCEPTION_SYSTEM, user_prompt, json_mode=True, max_tokens=400, tier="cheap")
     except Exception as e:
         logging.warning(f"Perception LLM failed ({perceiver.name} ← {actor.name}): {e}")
         return raw_delta, None

@@ -62,7 +62,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("dir_a")
     ap.add_argument("dir_b")
-    ap.add_argument("--model", default="anthropic/claude-sonnet-4.5")
+    ap.add_argument("--model", default="deepseek/deepseek-v3.2")
     args = ap.parse_args()
     da, db = Path(args.dir_a), Path(args.dir_b)
     names = sorted(p.stem for p in da.glob("*.md") if (db / p.name).exists())
