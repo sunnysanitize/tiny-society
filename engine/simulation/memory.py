@@ -5,6 +5,7 @@ import re
 from typing import Iterable
 
 from models import Memory
+from .embeddings import embed
 
 # ── Retrieval weights (Stanford "Generative Agents" style) ───────────────────────
 # Combined score = RELEVANCE_WEIGHT*relevance + RECENCY_WEIGHT*recency + IMPORTANCE_WEIGHT*importance
@@ -22,6 +23,10 @@ RECENCY_DECAY = 0.85
 # same person's memories monopolize recall, so the agent keeps acting on them and the
 # story "goes nowhere." This injects variety so new threads can surface.
 DIVERSITY_PENALTY = 0.6
+
+# Relevance blend when embeddings are available: meaning carries most of the weight,
+# word overlap keeps proper names (which small embedding models blur) in play.
+SEMANTIC_WEIGHT = 0.7
 
 # Importance heuristic: keywords that signal an emotionally or relationally loaded
 # memory worth recalling. Each hit nudges importance up.
@@ -124,7 +129,9 @@ def retrieve(
     """Return the top-k memories most worth recalling for `query` on `current_day`.
 
     Score = RELEVANCE_WEIGHT*relevance + RECENCY_WEIGHT*recency + IMPORTANCE_WEIGHT*importance,
-    with each component min-max normalized across the candidate set. Retrieved
+    with each component min-max normalized across the candidate set. Relevance is
+    embedding similarity blended with word overlap when embeddings are available
+    (see simulation/embeddings.py), word overlap alone otherwise. Retrieved
     memories have their `last_accessed_day` bumped to `current_day`.
     """
     mems = list(memories)
@@ -135,6 +142,13 @@ def retrieve(
     mem_tokens = [_tokenize(m.text) for m in mems]
 
     relevance = [_relevance(mem_tokens[i], query_tokens) for i in range(len(mems))]
+    vecs = embed([query] + [m.text for m in mems]) if query.strip() else None
+    if vecs is not None:
+        q = vecs[0]
+        relevance = [
+            SEMANTIC_WEIGHT * float(q @ vecs[i + 1]) + (1 - SEMANTIC_WEIGHT) * relevance[i]
+            for i in range(len(mems))
+        ]
     recency = [_recency(m, current_day) for m in mems]
     importance = [m.importance / 10.0 for m in mems]
 

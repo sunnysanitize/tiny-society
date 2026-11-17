@@ -64,7 +64,11 @@ INTENT VERBS (pick the one that matches your true intent toward each target):
 
 CRITICAL RULES:
 - ANTI-REPETITION: read YOUR RECENT ACTIONS. If you keep engaging the same person the same way,
-  you MUST change course — escalate, resolve, withdraw, or turn to someone new.
+  you MUST change course — escalate, resolve, withdraw, or turn to someone new. Ongoing efforts
+  must move: show the result of yesterday's attempt instead of repeating it.
+- KNOW ONLY WHAT YOU KNOW. Act on your memories, what has reached you, and the event as
+  everyone knows it. Don't accuse someone, or rely on a fact, that nothing in front of you
+  supports; don't invent family ties or history that isn't in your memories.
 - Stay in character. Let traits, mood, goals, and memories drive the choice and the utterance.
 - BE REALISTIC: most days are ordinary. Reserve romance ('flirt'/'court') for when there is a
   real, established, mutual closeness — never as a sudden leap. Don't manufacture drama.
@@ -193,10 +197,13 @@ def _build_prompt(
         for a in _ranked_roster(agent, roster, current_day, ROSTER_LIMIT)
     ]
 
-    # RELEVANCE-BASED RETRIEVAL: query = today's event + the agent's relationship
-    # names (its likely targets). Long-term memory is selected by relevance + recency
-    # + importance rather than pure recency truncation.
-    query = " ".join(filter(None, [event or ""] + list(agent.relationships.keys())))
+    # RELEVANCE-BASED RETRIEVAL: long-term memory is selected by relevance + recency +
+    # importance rather than pure recency truncation. The query is what today is about
+    # for THIS agent: the event, their plan and goals, what has just reached them, and
+    # the people they know (their likely targets).
+    recent_feed = [e.text for e in agent.feed[-3:]]
+    query = " ".join(filter(None, [event or "", agent.plan or ""] + agent.goals
+                            + recent_feed + list(agent.relationships.keys())))
     retrieved = retrieve(
         agent.long_term_memory,
         query,
@@ -266,6 +273,9 @@ def _build_prompt(
             or f"- {last_action or '(none — this is your first day)'}",
         "→ If you keep engaging the same person, you MUST change course: escalate it, resolve it, "
         "withdraw, or turn to someone new. Repeating yesterday verbatim is always wrong.",
+        "→ If you are continuing an effort from an earlier day (a search, a hunt, a vigil, a "
+        "repair), today shows what came of it — you find something, fail, give up, or decide "
+        "something — rather than making the same attempt again.",
         "",
         "CURRENT WORLD EVENT",
         event or "(no specific event today)",

@@ -918,6 +918,104 @@ def test_amplify_spread_is_derived_not_declared():
         "private praise must not spread standing"
 
 
+def _action(**kw):
+    from models import AgentAction, Audience
+    base = dict(action="confront", target_agents=["Ben"], intents={"Ben": "confront"},
+                utterance="You took the oxygen.", new_memory="I confronted Ben, sure he lied.",
+                explanation="my paranoia demands it", audience=Audience(who="in the mess hall"))
+    base.update(kw)
+    return AgentAction(**base)
+
+
+def test_witnesses_never_see_private_motive():
+    from models import Agent
+    from simulation.observation import witness_line
+    line = witness_line(Agent(id="a", name="Ana", role="x"), _action())
+    assert "paranoia" not in line and "sure he lied" not in line, line
+    assert "Ben" in line and "You took the oxygen." in line, line
+
+
+def test_covert_move_reaches_no_one_and_leaves_no_memory():
+    from models import Agent
+    from simulation.applicator import apply_action
+    from simulation.engine import _is_charged
+    from simulation.observation import is_covert
+    ana = Agent(id="a", name="Ana", role="x")
+    ben = Agent(id="b", name="Ben", role="x")
+    act = _action(action="watch", intents={"Ben": "observe"})
+    assert is_covert(act)
+    apply_action(ana, act, [ana, ben], day=1)
+    assert not ben.short_term_memory, "a watched person doesn't know they were watched"
+    ana.relationships["Ben"].type = "rivalry"
+    assert not _is_charged(ana, act), "nobody can answer a move they never saw"
+
+
+def test_event_cast_renders_public_facts_and_age():
+    from models import EventCast
+    from simulation.event_casting import render_event
+    cast = EventCast(day=1, public="Tenzin and Dorje both claim the abbot named them.")
+    assert "Tenzin and Dorje" in render_event("A claim.", cast, 1)
+    assert "ago" not in render_event("A claim.", cast, 1), "day one is fresh news"
+    later = render_event("A claim.", cast, 3)
+    assert "2 days ago" in later and "not news anymore" in later, later
+    assert render_event(None, cast, 3) is None
+
+
+def test_event_involvement_is_planted_once_and_kept_private():
+    from models import Agent, EventCast
+    from simulation.event_casting import plant_involvement
+    ana = Agent(id="a", name="Ana", role="x")
+    ben = Agent(id="b", name="Ben", role="x")
+    cast = EventCast(day=1, involvement={"Ana": "I vented extra oxygen into my bunk."})
+    plant_involvement(cast, [ana, ben])
+    plant_involvement(cast, [ana, ben])
+    assert [m.text for m in ana.long_term_memory] == ["I vented extra oxygen into my bunk."]
+    assert ana.long_term_memory[0].importance >= 9
+    assert not ben.long_term_memory, "a secret stays with the one who holds it"
+
+
+def test_failed_event_casting_is_harmless():
+    from models import Agent
+    from simulation.event_casting import cast_event
+    cast = cast_event("Something happened.", [Agent(id="a", name="Ana", role="x")], day=2)
+    assert cast.day == 2 and isinstance(cast.involvement, dict)
+
+
+def test_report_sees_pairwise_relationship_changes():
+    from models import Agent, Relationship
+    from simulation.reporter import _relationship_changes
+    before = [Agent(id="a", name="Ana", role="x",
+                    relationships={"Ben": Relationship(type="trust", strength=0.2),
+                                   "Cal": Relationship(type="trust", strength=0.2)})]
+    after = [Agent(id="a", name="Ana", role="x",
+                   relationships={"Ben": Relationship(type="rivalry", strength=-0.3),
+                                  "Cal": Relationship(type="trust", strength=0.25)})]
+    lines = _relationship_changes(before, after)
+    assert lines == ["Ana → Ben: trust +0.20 ⇒ rivalry -0.30"], lines
+
+
+def test_embedding_recall_finds_a_paraphrase():
+    try:
+        import fastembed  # noqa: F401
+    except ImportError:
+        return  # optional dependency; word overlap is the fallback
+    from simulation import embeddings
+    from simulation.memory import make_memory, retrieve
+    os.environ["MEMORY_EMBEDDINGS"] = "on"
+    try:
+        mems = [make_memory(t, day=1) for t in (
+            "Our teacher became gravely ill during the night.",
+            "I swept the courtyard and mended a sandal strap.",
+            "I counted the barley sacks in the storeroom twice.",
+        )]
+        top = retrieve(mems, "The abbot has fallen into a fever.", current_day=2, k=1)
+        if embeddings._model is None:
+            return  # model couldn't load (offline); fallback is covered elsewhere
+        assert top[0].text.startswith("Our teacher"), top[0].text
+    finally:
+        os.environ.pop("MEMORY_EMBEDDINGS", None)
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -971,6 +1069,13 @@ _TESTS = [
     test_derivation_retires_comment_and_narrows_amplify,
     test_witness_tiers_match_the_old_action_kinds,
     test_amplify_spread_is_derived_not_declared,
+    test_witnesses_never_see_private_motive,
+    test_covert_move_reaches_no_one_and_leaves_no_memory,
+    test_event_cast_renders_public_facts_and_age,
+    test_event_involvement_is_planted_once_and_kept_private,
+    test_failed_event_casting_is_harmless,
+    test_report_sees_pairwise_relationship_changes,
+    test_embedding_recall_finds_a_paraphrase,
 ]
 
 

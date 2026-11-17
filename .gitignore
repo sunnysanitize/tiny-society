@@ -30,3 +30,4 @@ out/
 
 # Claude Code worktrees (isolated workspaces, never committed)
 .claude/worktrees/
+engine/tools/sim_eval/runs/

@@ -17,7 +17,7 @@ from .planner import form_plan
 from .deterministic import apply_background_rules
 from .applicator import apply_action
 from .persona import vet_action
-from .observation import distribute_observation
+from .observation import distribute_observation, is_covert, witness_line
 from .metrics import compute_metrics, snapshot_influence
 from .reporter import generate_final_report
 from .worldgraph import extract_world_context
@@ -25,6 +25,7 @@ from .stance import initialize_stances
 from .vignette import generate_vignette_struct
 from .prophecy import grade_prophecy
 from .premise import render_premise, premise_lines
+from .event_casting import cast_event, plant_involvement, render_event
 
 # Run a reflection pass (Stanford "Generative Agents" style) every N sim days for
 # the agents reasoning that day, so the day's reasoning can use fresh reflections.
@@ -77,6 +78,9 @@ def run_simulation(
     # PER-AGENT STANCE: seed each agent with a mild, varied starting position on each
     # world topic now that topics are known.
     initialize_stances(agents, topics)
+    # Day-0 state for the report's relationship/standing diff. On a continue run this is
+    # the state at the start of this call; the merged report is regenerated per call.
+    day0_agents = [copy.deepcopy(a) for a in agents]
 
     # DAY-BY-DAY: reuse the persisted day-0 baseline when advancing (so gainers/losers
     # stay measured against day 0); otherwise capture it now (fresh run).
@@ -147,6 +151,18 @@ def run_simulation(
                 dynamic_events[str(abs_day)] = new_ev
                 logging.info(f"Dynamic event generated for day {abs_day}: {new_ev!r}")
 
+        # EVENT CASTING: the first day an event is active, bind it to the cast once —
+        # who it involves, the hidden truth, and what each character privately knows —
+        # so every later call reads the same facts. Keyed by event text and stored on
+        # the world, so a day-by-day advance reuses the cast a batch run made.
+        if active_event and active_event not in world.event_casts:
+            world.event_casts[active_event] = cast_event(
+                active_event, agents, abs_day, premise_text
+            )
+        if active_event:
+            plant_involvement(world.event_casts[active_event], agents)
+        event_text = render_event(active_event, world.event_casts.get(active_event), abs_day)
+
         # MORNING: promote ALL of yesterday's short-term memories to long-term (deduped),
         # then reset. Promoting only the last one lost everything from multi-action /
         # multi-turn-exchange days and everything an agent remembered being done TO them
@@ -194,8 +210,9 @@ def run_simulation(
         def _commit_action(actor: Agent, action) -> str:
             """Apply an action, route its observation/perception, log + highlight it.
 
-            Returns the action's log line. Used identically for primary actions and
-            multi-turn response turns; also accumulates relationship milestones."""
+            Returns what witnesses saw (the line an exchange responds to). Used
+            identically for primary actions and multi-turn response turns; also
+            accumulates relationship milestones."""
             nonlocal type_changes
             # PERSONA VETO (Stage 3): before any consequence is applied, reject intents this
             # character plausibly wouldn't act on given mood/traits/standing (e.g. courting
@@ -223,8 +240,12 @@ def run_simulation(
                  if intent in ("praise", "support") and name in action.target_agents]
                 if action.action_kind == "amplify" else []
             )
+            # Witnesses see the outward move, never the private memory/explanation in
+            # log_line; a covert move (only watching) reaches no one but the actor.
+            public_line = witness_line(actor, action)
             distribute_observation(
-                log_line, actor, action.target_agents, agents,
+                public_line, actor, [] if is_covert(action) else action.target_agents,
+                [actor] if is_covert(action) else agents,
                 reach=action.audience.reach, day=abs_day, amplify_targets=lifted,
             )
             day_perception_notes.extend(notes)
@@ -244,7 +265,7 @@ def run_simulation(
             # the milestones the consequence layer actually produced (earned transitions),
             # not the agent's proposed bids.
             type_changes += len(milestones)
-            return log_line
+            return public_line
 
         # PARALLEL PASS: form plans + reason for every selected actor concurrently.
         # Reasoning is read-only on shared state, so it's safe to fan out; results
@@ -254,7 +275,7 @@ def run_simulation(
             # missing or stale, BEFORE reasoning, so today's action can pursue it.
             if actor.plan is None or (abs_day - actor.plan_day) >= PLAN_REFRESH_DAYS:
                 new_plan = await asyncio.to_thread(
-                    form_plan, actor, active_event, abs_day, premise_text
+                    form_plan, actor, event_text, abs_day, premise_text
                 )
                 if new_plan:
                     actor.plan = new_plan
@@ -263,7 +284,7 @@ def run_simulation(
             return await areason_for_agent(
                 actor,
                 agents,
-                event=active_event,
+                event=event_text,
                 current_day=abs_day,
                 world_graph=world.world_graph,
                 world_premise=premise_text,
@@ -284,7 +305,7 @@ def run_simulation(
                 # dropping the agent's whole turn (which flatlines the story), commit a
                 # neutral "kept to themselves" beat so the day still reflects them.
                 action = _fallback_action(actor, agents)
-            log_line = _commit_action(actor, action)
+            public_line = _commit_action(actor, action)
 
             # MULTI-TURN EXCHANGES (⑤): if this was a CHARGED interaction with a
             # specific target, let that target respond, then optionally the actor
@@ -292,7 +313,7 @@ def run_simulation(
             if exchanges_today < MAX_EXCHANGES_PER_DAY and _is_charged(actor, action):
                 exchanges_today += 1
                 speaker, responder = actor, by_name.get(action.target_agents[0])
-                prior_line = log_line
+                prior_line = public_line
                 for _turn in range(MAX_EXCHANGE_TURNS):
                     if responder is None or responder.id == speaker.id:
                         break
@@ -328,7 +349,7 @@ def run_simulation(
             vig_actors = day_rng.sample(selected, day_rng.randint(1, n_vig))
             for actor in vig_actors:
                 struct = generate_vignette_struct(
-                    actor, active_event, abs_day, premise_text
+                    actor, event_text, abs_day, premise_text
                 )
                 if struct:
                     kind, text = struct
@@ -379,6 +400,8 @@ def run_simulation(
         topics=topics,
         dynamic_events=dynamic_events,
         lens=world.lens,
+        initial_agents=day0_agents,
+        event_casts=world.event_casts,
     )
 
     # PROPHECY (Slice E): if the player set a free-text prediction, grade it once at the
@@ -495,6 +518,9 @@ def _is_charged(actor: Agent, action) -> bool:
       - the agent's INTENT toward them is antagonistic or romantic (rivalry/conflict/romance).
     """
     if not action.target_agents:
+        return False
+    from .observation import is_covert
+    if is_covert(action):
         return False
     primary = action.target_agents[0]
     if primary == actor.name:

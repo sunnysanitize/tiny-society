@@ -222,6 +222,20 @@ class WorldInput(BaseModel):
     target_population: int = Field(default=7, ge=5, le=7)
 
 
+class EventCast(BaseModel):
+    """An event bound to the cast (simulation/event_casting.py).
+
+    An event like "someone has been hoarding oxygen" names no one, so every LLM call
+    used to decide for itself who did it — the commander accused one crewman on day 1
+    and that same crewman condemned "the oxygen thief" that night. Casting fixes one
+    reading for the whole run: what everyone knows, the hidden truth, and what each
+    character privately knows or did."""
+    day: int = 0                         # absolute day the event became active
+    public: str = ""                     # what everyone knows, naming who is involved
+    truth: str = ""                      # narrator-only ground truth
+    involvement: dict[str, str] = {}     # name -> first-person private knowledge/role
+
+
 class World(BaseModel):
     prompt: str
     target_population: int
@@ -243,6 +257,9 @@ class World(BaseModel):
     # `active_event` on the NEXT simulated day, taking priority over auto-generated
     # dynamic events. Consumed (cleared) by run_simulation on its first day.
     pending_event: Optional[str] = None
+    # Each event's binding to the cast, keyed by the event text. Persisted so a
+    # day-by-day run keeps the same culprit/claimants a batch run would.
+    event_casts: dict[str, EventCast] = {}
 
 
 class SimulationConfig(BaseModel):
