@@ -25,6 +25,9 @@ Return STRICT JSON only — no prose, no markdown:
 RULES:
 - One line, first person, under 30 words. Punchy and theatrical.
 - Pick the kind that best fits the character's mood and the moment.
+- Flavor only, never plot: don't announce new facts about the world (someone recovered,
+  died, confessed, was caught) and don't reveal anything your character wouldn't say aloud.
+  Only a dream may imagine what hasn't happened, and it must be clearly a dream.
 - Output only JSON. No commentary, no preamble.
 """
 
@@ -89,6 +92,11 @@ def _build_prompt(
         "",
         "CURRENT WORLD EVENT",
         world_event or "(none)",
+        "",
+        # Vignettes run after the day's actions; without them a character accused at
+        # noon could denounce "the culprit" by evening as if it weren't them.
+        "WHAT HAPPENED TO YOU TODAY (your moment must fit this)",
+        "\n".join(f"- {m.text}" for m in agent.short_term_memory[-4:]) or "(a quiet day)",
         "",
         f"DAY {current_day}. Have your theatrical moment and return it as JSON now.",
     ]

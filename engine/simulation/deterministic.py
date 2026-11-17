@@ -82,8 +82,8 @@ def apply_background_rules(
                 consequence.realize(a, other.name, other)
                 consequence.realize(other, a.name, a)
 
-        # BELIEF DRIFT (Phase 3): conform toward / polarize away from group-mates' mean.
-        _drift_stance(a, all_agents)
+        # Beliefs now move only between people who actually met, by bounded confidence
+        # (simulation/dynamics.py) — the old group-mean drift converged everyone.
 
         # Influence regresses gently toward 0 (Phase 5) so standing isn't a one-way ratchet.
         if a.influence_score:

@@ -86,3 +86,38 @@ def vet_action(actor: Agent, action: AgentAction, by_name: dict[str, Agent]) -> 
         notes.append(f"[persona] {actor.name}'s '{verb}' toward {target_name} held back — {reason}.")
 
     return notes
+
+
+# ── knowledge check ────────────────────────────────────────────────────────────
+# Accusing someone needs something to stand on. Characters kept confronting people
+# over facts nothing in their memory supported (TimeChara-style knowledge leakage), so
+# an accusation must name its basis, and that basis must match what the character has
+# actually seen or been told. Unsupported accusations are pressed as challenges instead.
+_ACCUSATORY = {"confront", "rebuke", "undermine", "reject"}
+_BASIS_MIN_OVERLAP = 0.35
+_STOP = {"that", "this", "with", "have", "from", "they", "their", "about", "were", "what",
+         "when", "which", "would", "there", "been", "into", "just", "your", "them"}
+
+
+def _words(text: str) -> set[str]:
+    import re
+    return {w for w in re.findall(r"[a-z']{4,}", (text or "").lower()) if w not in _STOP}
+
+
+def vet_knowledge(actor: Agent, action: AgentAction, event_text: str | None) -> list[str]:
+    """Soften accusations whose stated basis matches nothing the actor knows. In place."""
+    accused = [t for t, v in action.intents.items() if v in _ACCUSATORY]
+    if not accused:
+        return []
+    known = " ".join(
+        [m.text for m in actor.short_term_memory + actor.long_term_memory]
+        + [e.text for e in actor.feed] + [k.text for k in actor.knowledge] + [event_text or ""]
+    )
+    basis = _words(action.basis)
+    support = len(basis & _words(known)) / len(basis) if basis else 0.0
+    if support >= _BASIS_MIN_OVERLAP:
+        return []
+    for t in accused:
+        action.intents[t] = "challenge"
+    return [f"[knowledge] {actor.name} had nothing solid against {', '.join(accused)} — "
+            f"it came out as questions, not an accusation."]

@@ -9,6 +9,9 @@ from models import Agent, PerceptionNote
 from llm import call_llm
 from .premise import premise_lines
 
+PERCEPTION_GAIN_CAP = 1.5
+PERCEPTION_FLOOR = 0.05
+
 PERCEPTION_SYSTEM = """PERCEPTION_NARRATION
 You are the internal perception filter of a fictional character in a social simulation.
 A social event just occurred that involves your character as the receiver. Your job is to
@@ -62,7 +65,7 @@ def perceive_event(
 
     user_prompt = _build_prompt(perceiver, actor, raw_delta, rel_type, action_summary, world_premise)
     try:
-        raw = call_llm(PERCEPTION_SYSTEM, user_prompt, json_mode=True, max_tokens=400)
+        raw = call_llm(PERCEPTION_SYSTEM, user_prompt, json_mode=True, max_tokens=400, tier="cheap")
     except Exception as e:
         logging.warning(f"Perception LLM failed ({perceiver.name} ← {actor.name}): {e}")
         return raw_delta, None
@@ -74,7 +77,11 @@ def perceive_event(
 
     try:
         perceived_delta = float(data.get("perceived_delta", raw_delta))
-        perceived_delta = round(max(-1.0, min(1.0, perceived_delta)), 3)
+        # Perception reshapes how a move lands, but within reason: a ±0.2 gesture read
+        # as ±0.6 turned two sharp words into a rivalry. Allow up to 1.5x the gesture
+        # (a flip of sign included) plus a small floor for near-neutral moves.
+        cap = PERCEPTION_GAIN_CAP * abs(raw_delta) + PERCEPTION_FLOOR
+        perceived_delta = round(max(-cap, min(cap, perceived_delta)), 3)
 
         narrative = str(data.get("narrative") or "").strip()[:300]
         if not narrative:

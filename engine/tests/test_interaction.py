@@ -918,6 +918,312 @@ def test_amplify_spread_is_derived_not_declared():
         "private praise must not spread standing"
 
 
+def _action(**kw):
+    from models import AgentAction, Audience
+    base = dict(action="confront", target_agents=["Ben"], intents={"Ben": "confront"},
+                utterance="You took the oxygen.", new_memory="I confronted Ben, sure he lied.",
+                explanation="my paranoia demands it", audience=Audience(who="in the mess hall"))
+    base.update(kw)
+    return AgentAction(**base)
+
+
+def test_witnesses_never_see_private_motive():
+    from models import Agent
+    from simulation.observation import witness_line
+    line = witness_line(Agent(id="a", name="Ana", role="x"), _action())
+    assert "paranoia" not in line and "sure he lied" not in line, line
+    assert "Ben" in line and "You took the oxygen." in line, line
+
+
+def test_covert_move_reaches_no_one_and_leaves_no_memory():
+    from models import Agent
+    from simulation.applicator import apply_action
+    from simulation.engine import _is_charged
+    from simulation.observation import is_covert
+    ana = Agent(id="a", name="Ana", role="x")
+    ben = Agent(id="b", name="Ben", role="x")
+    act = _action(action="watch", intents={"Ben": "observe"})
+    assert is_covert(act)
+    apply_action(ana, act, [ana, ben], day=1)
+    assert not ben.short_term_memory, "a watched person doesn't know they were watched"
+    ana.relationships["Ben"].type = "rivalry"
+    assert not _is_charged(ana, act), "nobody can answer a move they never saw"
+
+
+def test_event_cast_renders_public_facts_and_age():
+    from models import EventCast
+    from simulation.event_casting import render_event
+    cast = EventCast(day=1, public="Tenzin and Dorje both claim the abbot named them.")
+    assert "Tenzin and Dorje" in render_event("A claim.", cast, 1)
+    assert "ago" not in render_event("A claim.", cast, 1), "day one is fresh news"
+    later = render_event("A claim.", cast, 3)
+    assert "2 days ago" in later and "not news anymore" in later, later
+    assert render_event(None, cast, 3) is None
+
+
+def test_event_involvement_is_planted_once_and_kept_private():
+    from models import Agent, EventCast
+    from simulation.event_casting import plant_involvement
+    ana = Agent(id="a", name="Ana", role="x")
+    ben = Agent(id="b", name="Ben", role="x")
+    cast = EventCast(day=1, involvement={"Ana": "I vented extra oxygen into my bunk."})
+    plant_involvement(cast, [ana, ben])
+    plant_involvement(cast, [ana, ben])
+    assert [m.text for m in ana.long_term_memory] == ["I vented extra oxygen into my bunk."]
+    assert ana.long_term_memory[0].importance >= 9
+    assert not ben.long_term_memory, "a secret stays with the one who holds it"
+
+
+def test_failed_event_casting_is_harmless():
+    from models import Agent
+    from simulation.event_casting import cast_event
+    cast = cast_event("Something happened.", [Agent(id="a", name="Ana", role="x")], day=2)
+    assert cast.day == 2 and isinstance(cast.involvement, dict)
+
+
+def test_report_sees_pairwise_relationship_changes():
+    from models import Agent, Relationship
+    from simulation.reporter import _relationship_changes
+    before = [Agent(id="a", name="Ana", role="x",
+                    relationships={"Ben": Relationship(type="trust", strength=0.2),
+                                   "Cal": Relationship(type="trust", strength=0.2)})]
+    after = [Agent(id="a", name="Ana", role="x",
+                   relationships={"Ben": Relationship(type="rivalry", strength=-0.3),
+                                  "Cal": Relationship(type="trust", strength=0.25)})]
+    lines = _relationship_changes(before, after)
+    assert lines == ["Ana → Ben: trust +0.20 ⇒ rivalry -0.30"], lines
+
+
+def test_embedding_recall_finds_a_paraphrase():
+    try:
+        import fastembed  # noqa: F401
+    except ImportError:
+        return  # optional dependency; word overlap is the fallback
+    from simulation import embeddings
+    from simulation.memory import make_memory, retrieve
+    os.environ["MEMORY_EMBEDDINGS"] = "on"
+    try:
+        mems = [make_memory(t, day=1) for t in (
+            "Our teacher became gravely ill during the night.",
+            "I swept the courtyard and mended a sandal strap.",
+            "I counted the barley sacks in the storeroom twice.",
+        )]
+        top = retrieve(mems, "The abbot has fallen into a fever.", current_day=2, k=1)
+        if embeddings._model is None:
+            return  # model couldn't load (offline); fallback is covered elsewhere
+        assert top[0].text.startswith("Our teacher"), top[0].text
+    finally:
+        os.environ.pop("MEMORY_EMBEDDINGS", None)
+
+
+def _adj(size="long", difficulty=3, competence=3):
+    from simulation.game_master import Adjudication
+    return Adjudication(difficulty=difficulty, competence=competence, size=size,
+                        effort="track the elk",
+                        branches={"success": "S", "partial": "P", "failure": "F",
+                                  "completion": "DONE", "collapse": "GAVE UP"})
+
+
+class _Rolls:
+    """A stand-in RNG returning scripted rolls."""
+    def __init__(self, *vals):
+        self.vals = list(vals)
+
+    def random(self):
+        return self.vals.pop(0)
+
+
+def test_one_off_attempt_settles_without_a_clock():
+    from models import Agent
+    from simulation.game_master import settle
+    a = Agent(id="a", name="Ana", role="x")
+    st = settle(_adj(size="single"), a, day=1, rng=_Rolls(0.99))
+    assert (st.outcome, st.text) == ("failure", "F") and not a.efforts
+
+
+def test_effort_completes_when_its_clock_fills():
+    from models import Agent
+    from simulation.game_master import settle
+    a = Agent(id="a", name="Ana", role="x")
+    assert settle(_adj(size="short"), a, day=1, rng=_Rolls(0.0)).outcome == "success"
+    st = settle(_adj(size="short"), a, day=2, rng=_Rolls(0.0))
+    assert (st.outcome, st.text) == ("completed", "DONE"), "two successes finish a short effort"
+    assert a.efforts[0].done
+
+
+def test_effort_cannot_drag_on_forever():
+    from models import Agent
+    from simulation.game_master import settle, MAX_EFFORT_ATTEMPTS
+    a = Agent(id="a", name="Ana", role="x")
+    outcomes = [settle(_adj(), a, day=d, rng=_Rolls(0.99)).outcome
+                for d in range(1, MAX_EFFORT_ATTEMPTS + 1)]
+    assert outcomes[-1] == "collapsed", outcomes
+    assert a.efforts[0].done, "a failed effort must end, not repeat daily"
+
+
+def test_harder_attempts_fail_more_often():
+    import random
+    from models import Agent
+    from simulation.game_master import settle
+    def successes(difficulty, competence):
+        rng = random.Random(7)
+        return sum(settle(_adj("single", difficulty, competence), Agent(id="a", name="A", role="x"),
+                          1, rng).outcome == "success" for _ in range(400))
+    assert successes(5, 1) < successes(3, 3) < successes(1, 5)
+
+
+def test_game_master_cannot_name_the_actor_or_strangers_as_aware():
+    import json
+    from models import Agent
+    from simulation.game_master import _parse
+    roster = [Agent(id="a", name="Ana", role="x"), Agent(id="b", name="Ben", role="x")]
+    raw = json.dumps({"success": "s", "partial": "p", "failure": "f", "aware": ["Ana", "Ben", "Zed"]})
+    assert _parse(raw, roster[0], roster).aware == ["Ben"]
+
+
+def test_mock_run_resolves_attempts_into_the_event_log():
+    from models import World, SimulationConfig
+    from simulation.generator import generate_fillers
+    from simulation.engine import run_simulation
+    w = World(prompt="a besieged monastery in winter", target_population=6)
+    w.agents = generate_fillers(w, 6)
+    w.starting_event = "The grain store is found half empty."
+    r = run_simulation(w, SimulationConfig(days=4, reasoning_agents_per_day=5), seed=3)
+    events = [e for s in r.snapshots for e in s.events]
+    assert events and all(e.actor in e.known_by for e in events)
+    assert any(e.outcome for e in events), "attempts must come out resolved"
+
+
+def test_mood_has_inertia_and_settles_overnight():
+    from models import Agent, Profile
+    from simulation.affect import feel, overnight
+    a = Agent(id="a", name="Ana", role="x", mood="content", profile=Profile(neuroticism=0.2, agreeableness=0.8))
+    feel(a, "excited")
+    assert a.mood in ("content", "excited")
+    feel(a, "angry")
+    assert a.mood != "angry", "one flash of anger shouldn't flip a content person"
+    for _ in range(3):
+        feel(a, "angry")
+    assert a.mood == "angry", "sustained anger should"
+    for _ in range(4):
+        overnight(a)
+    assert a.mood != "angry", "and it should settle back down"
+
+
+def test_secrets_leak_rarely_and_cost_the_teller():
+    import random
+    from models import Agent, KnowledgeItem, Profile, Relationship, WorldEvent
+    from simulation.gossip import spread
+    def world(secrecy):
+        x = Agent(id="x", name="Xia", role="x")
+        a = Agent(id="a", name="Ana", role="x", profile=Profile(honesty=0.2),
+                  relationships={"Ben": Relationship(type="friendship", strength=0.6)})
+        b = Agent(id="b", name="Ben", role="x")
+        a.knowledge = [KnowledgeItem(id="E1.1", text="Xia confessed to Ana", about=["Xia", "Ana"],
+                                     secrecy=secrecy, day=1)]
+        meet = WorldEvent(id="E2.1", day=2, actor="Ana", targets=["Ben"], text="talk", known_by=["Ana", "Ben"])
+        return [x, a, b], [meet]
+    def rate(secrecy):
+        n = 0
+        for i in range(300):
+            agents, evs = world(secrecy)
+            n += bool(spread(agents, evs, 2, random.Random(i)))
+        return n / 300
+    assert rate("secret") < rate("private"), (rate("secret"), rate("private"))
+    assert 0 < rate("secret") < 0.35
+
+
+def test_unsupported_accusation_is_softened():
+    from models import Agent, AgentAction
+    from simulation.memory import make_memory
+    from simulation.persona import vet_knowledge
+    a = Agent(id="a", name="Ana", role="x")
+    a.long_term_memory = [make_memory("I saw Ben carrying the grain sacks out at midnight.", 1)]
+    act = AgentAction(action="confront", target_agents=["Ben"], intents={"Ben": "confront"},
+                      new_memory="m", explanation="e", basis="Ben stole the abbot's ring")
+    assert vet_knowledge(a, act, None) and act.intents["Ben"] == "challenge"
+    act2 = AgentAction(action="confront", target_agents=["Ben"], intents={"Ben": "confront"},
+                       new_memory="m", explanation="e", basis="saw Ben carrying grain sacks at midnight")
+    assert not vet_knowledge(a, act2, None) and act2.intents["Ben"] == "confront"
+
+
+def test_loop_critic_spots_a_repeated_action():
+    from models import Agent, AgentAction
+    from simulation.engine import _repeats
+    a = Agent(id="a", name="Ana", role="x", recent_actions=[
+        'day 2: herb garden/search → about Ben — "I searched the high meadow for the rare blue herbs again."'])
+    same = AgentAction(action="search", new_memory="I searched the high meadow for the rare blue herbs.", explanation="e")
+    new = AgentAction(action="talk", new_memory="I told Ben the herbs were gone for the season.", explanation="e")
+    assert _repeats(a, same) and not _repeats(a, new)
+
+
+def test_crowding_and_voice_reach_the_prompt():
+    from models import Agent, Profile
+    from simulation.reasoner import _build_prompt
+    a = Agent(id="a", name="Ana", role="x", self_summary="I owe Ben an apology.",
+              profile=Profile(voice="clipped, dry", speech_samples=["Fine. Whatever."]))
+    b = Agent(id="b", name="Ben", role="x")
+    prompt = _build_prompt(a, [a, b], "event", crowded=["Ben", "Ana"])
+    assert "Already crowded: Ben" in prompt and "Ana had several" not in prompt
+    assert "clipped, dry" in prompt and "Fine. Whatever." in prompt
+    assert "I owe Ben an apology." in prompt
+
+
+def test_conflict_climbs_and_needs_accepted_peace():
+    from models import Agent, AgentAction, Profile, Relationship
+    from simulation.dynamics import on_action
+    a = Agent(id="a", name="Ana", role="x", relationships={"Ben": Relationship(type="trust", strength=0.0)})
+    b = Agent(id="b", name="Ben", role="x", profile=Profile(agreeableness=0.1),
+              relationships={"Ana": Relationship(type="conflict", strength=-0.9)})
+    by = {"Ana": a, "Ben": b}
+    hit = AgentAction(action="x", target_agents=["Ben"], intents={"Ben": "confront"}, new_memory="m", explanation="e")
+    on_action(a, hit, by); on_action(a, hit, by)
+    assert a.relationships["Ben"].conflict == 2 == b.relationships["Ana"].conflict
+    peace = AgentAction(action="x", target_agents=["Ben"], intents={"Ben": "reconcile"}, new_memory="m", explanation="e")
+    on_action(a, peace, by)
+    assert a.relationships["Ben"].conflict == 2, "a disagreeable, furious Ben refuses"
+    b.profile.agreeableness, b.relationships["Ana"].strength = 0.9, 0.0
+    on_action(a, peace, by)
+    assert a.relationships["Ben"].conflict == 1
+
+
+def test_opinions_form_factions_not_consensus():
+    from models import Agent, Profile, Relationship, WorldEvent
+    from simulation.dynamics import daily
+    agents = []
+    for i, x in enumerate([-0.8, -0.7, 0.7, 0.8]):
+        agents.append(Agent(id=str(i), name=f"P{i}", role="x", stance={"t": x}, stance_anchor={"t": x},
+                            profile=Profile(openness=0.3)))
+    for a in agents:
+        a.relationships = {b.name: Relationship(type="trust", strength=0.2) for b in agents if b is not a}
+    names = [a.name for a in agents]
+    for d in range(1, 8):
+        evs = [WorldEvent(id=f"E{d}.{i}", day=d, actor=a, targets=[b], text="talk", known_by=[a, b])
+               for i, (a, b) in enumerate((x, y) for x in names for y in names if x != y)]
+        daily(agents, evs)
+    xs = sorted(a.stance["t"] for a in agents)
+    assert xs[0] < -0.4 and xs[-1] > 0.4, f"two camps must survive a week of talk: {xs}"
+
+
+def test_director_complicates_only_a_stalled_story_and_not_too_often():
+    import json
+    from unittest import mock
+    from models import StoryThread, World
+    from simulation import director
+    w = World(prompt="p", target_population=5, threads=[StoryThread(id="T1", summary="q")])
+    reply = json.dumps({"threads": [], "tension": 4, "stalled": False, "complication": "A storm."})
+    with mock.patch("llm.call_llm", return_value=reply):
+        director.direct(w, 2, [], None)
+    assert w.director_event is None, "a lively day needs no push"
+    reply = json.dumps({"threads": [], "tension": 1, "stalled": True, "complication": "A storm."})
+    with mock.patch("llm.call_llm", return_value=reply):
+        director.direct(w, 2, [], None)
+        assert w.director_event == "A storm."
+        w.director_event = None
+        director.direct(w, 3, [], None)
+    assert w.director_event is None, "complications need a gap so the cast can react"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -971,6 +1277,27 @@ _TESTS = [
     test_derivation_retires_comment_and_narrows_amplify,
     test_witness_tiers_match_the_old_action_kinds,
     test_amplify_spread_is_derived_not_declared,
+    test_witnesses_never_see_private_motive,
+    test_covert_move_reaches_no_one_and_leaves_no_memory,
+    test_event_cast_renders_public_facts_and_age,
+    test_event_involvement_is_planted_once_and_kept_private,
+    test_failed_event_casting_is_harmless,
+    test_report_sees_pairwise_relationship_changes,
+    test_embedding_recall_finds_a_paraphrase,
+    test_one_off_attempt_settles_without_a_clock,
+    test_effort_completes_when_its_clock_fills,
+    test_effort_cannot_drag_on_forever,
+    test_harder_attempts_fail_more_often,
+    test_game_master_cannot_name_the_actor_or_strangers_as_aware,
+    test_mock_run_resolves_attempts_into_the_event_log,
+    test_mood_has_inertia_and_settles_overnight,
+    test_secrets_leak_rarely_and_cost_the_teller,
+    test_unsupported_accusation_is_softened,
+    test_loop_critic_spots_a_repeated_action,
+    test_crowding_and_voice_reach_the_prompt,
+    test_conflict_climbs_and_needs_accepted_peace,
+    test_opinions_form_factions_not_consensus,
+    test_director_complicates_only_a_stalled_story_and_not_too_often,
 ]
 
 

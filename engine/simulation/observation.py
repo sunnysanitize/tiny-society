@@ -96,6 +96,34 @@ def witnesses(
     return seen
 
 
+def is_covert(action) -> bool:
+    """True when the move was watching/listening only — every intent is `observe`.
+
+    The targets of a covert move don't know it happened, so it reaches no witnesses,
+    leaves no memory in them, and can't be answered."""
+    return bool(action.intents) and all(v == "observe" for v in action.intents.values())
+
+
+def witness_line(actor: Agent, action) -> str:
+    """What a bystander could actually see or hear of `action`.
+
+    The day log carries the actor's first-person memory and private explanation — their
+    motives. Feeding that to witnesses let characters read each other's minds ("I
+    discreetly searched the chamber, driven by my insecurity" reached the people it was
+    hidden from). Witnesses get the outward move and the words, nothing else."""
+    who = (action.audience.who or "").strip()
+    if action.target_agents:
+        move = f"{action.action} → {', '.join(action.target_agents)}"
+    else:
+        move = f"{action.action} (alone)"
+    line = f"[{actor.name}] {move}"
+    if who:
+        line += f" — {who}"
+    if action.utterance and action.target_agents:
+        line += f': "{action.utterance}"'
+    return line
+
+
 def distribute_observation(
     log_line: str,
     actor: Agent,

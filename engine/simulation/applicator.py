@@ -6,6 +6,7 @@ from models import Agent, AgentAction, PerceptionNote, Relationship
 from .perception import perceive_event
 from .memory import make_memory
 from . import consequence
+from .affect import feel, feel_received
 
 
 # A relationship turning into one of these (or forming as one) is a story milestone.
@@ -47,8 +48,8 @@ def apply_action(
     # toward anyone and apply the actor's self-delta a single time after the loop.
     any_antagonistic = False
 
-    # Mood update
-    actor.mood = action.emotional_reaction
+    # Mood update: the reaction pulls a mood with inertia rather than overwriting it.
+    feel(actor, action.emotional_reaction)
 
     # Memory — heuristic importance assigned at creation
     if action.new_memory:
@@ -94,6 +95,7 @@ def apply_action(
         )
         if note:
             perception_notes.append(note)
+        feel_received(target, perceived_delta)
 
         consequence.accumulate(actor, target.name, proposed_type, base_delta)
         consequence.accumulate(target, actor.name, proposed_type, perceived_delta)
@@ -119,6 +121,9 @@ def apply_action(
         # TWO-SIDED MEMORY: the target remembers what was done TO them — prefer the
         # perception narrative (it's written from the target's perspective); else a neutral
         # line in the target's POV (NOT the actor's first-person utterance).
+        # Someone who was only watched doesn't know it, so there's nothing to remember.
+        if intent == "observe":
+            continue
         if note and note.narrative:
             received = note.narrative
         else:
@@ -157,7 +162,10 @@ def apply_action(
     # to action_kind) when the model left `who` blank.
     who = (action.audience.who or "").strip()
     move = f"{who}/{action.action}" if who else action.action
-    actor.recent_actions.append(f"day {day}: {move} → {tgt}")
+    # The substance of the move, not just its shape: "→ about Frost" three days running
+    # looks like variety; "searched the woods for herbs" three times does not.
+    did = f' — "{action.new_memory[:140]}"' if action.new_memory else ""
+    actor.recent_actions.append(f"day {day}: {move} → {tgt}{did}")
     actor.recent_actions = actor.recent_actions[-6:]
 
     if action.new_memory:

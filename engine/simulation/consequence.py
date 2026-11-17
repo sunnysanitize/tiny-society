@@ -27,6 +27,11 @@ from models import Agent, Relationship
 # ── Calibration (kept deliberately gradual so trajectories look like real life) ──
 # A single interaction nudges affinity by at most |delta|*DAMP, so bonds build over days.
 AFFINITY_DAMP = 0.5
+# Bad is stronger than good (Baumeister et al. 2001; Gottman's ~5:1 ratio): a hostile
+# move shifts affinity this much more than a warm move of the same size.
+NEGATIVITY_WEIGHT = 1.5
+# Romance also needs familiarity built over days of contact (dynamics.CLOSENESS_STEP).
+ROMANCE_CLOSENESS = 0.3
 # Each romantic / allying overture adds this to its accumulator (capped at 1.0). Romance
 # and alliance are "special" bonds that need their OWN signal, not just warmth — so close
 # friends aren't relabeled as lovers or strategic allies merely for being close.
@@ -113,6 +118,8 @@ def accumulate(agent: Agent, other_name: str, proposed_type: str, delta: float) 
     if other_name == agent.name:
         return
     step = _clamp(delta, -0.4, 0.4) * AFFINITY_DAMP
+    if step < 0:
+        step *= NEGATIVITY_WEIGHT
     rel = agent.relationships.get(other_name)
     if rel is None:
         rel = Relationship(type="trust", strength=0.0)
@@ -143,7 +150,7 @@ def realize(agent: Agent, other_name: str, other_agent: Agent | None) -> None:
 
     if (aff >= ROMANCE_AFFINITY and partner_aff >= ROMANCE_AFFINITY
             and rel.romantic >= ROMANCE_SIGNAL and partner_rom >= ROMANCE_SIGNAL
-            and inter >= ROMANCE_INTERACTIONS):
+            and inter >= ROMANCE_INTERACTIONS and rel.closeness >= ROMANCE_CLOSENESS):
         rel.type = "romance"
     elif (aff >= ALLIANCE_AFFINITY and partner_aff >= ALLIANCE_AFFINITY
             and rel.allied >= ALLIANCE_SIGNAL and partner_allied >= ALLIANCE_SIGNAL
@@ -224,11 +231,14 @@ def seed_relationship(
     ra = a.relationships.get(b.name) or Relationship(type="trust", strength=0.0)
     a.relationships[b.name] = ra
     _apply_seed(ra, rel_type, mag)
+    # A pre-existing relationship is a familiar one, whatever its sign.
+    ra.closeness = max(ra.closeness, round(min(1.0, 0.2 + mag), 3))
 
     if mutual:
         rb = b.relationships.get(a.name) or Relationship(type="trust", strength=0.0)
         b.relationships[a.name] = rb
         _apply_seed(rb, rel_type, mag)
+        rb.closeness = max(rb.closeness, round(min(1.0, 0.2 + mag), 3))
 
     if rel_type in _DERIVABLE_SEED:
         realize(a, b.name, b)

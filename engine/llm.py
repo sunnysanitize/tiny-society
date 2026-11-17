@@ -1398,6 +1398,44 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
             "stance_shift": stance_shift,
             "new_memory": new_memory,
             "explanation": explanation,
+            # Solo days are where characters try to get something done; give the game
+            # master something to resolve so the offline path exercises it.
+            "attempt": f"find out what {target} has been hiding" if _about_only else "",
+        })
+
+    # ── story director ─────────────────────────────────────────────────────────
+    if "STORY_DIRECTOR" in system:
+        day = _re_module.search(r"DAY (\d+) of", user)
+        day = int(day.group(1)) if day else 1
+        return json.dumps({
+            "threads": [{"id": "T1", "summary": "Who is behind what happened?",
+                         "status": "resolved" if day >= 5 else "open"}],
+            "tension": 2,
+            "stalled": day % 2 == 0,
+            "complication": "A hard frost closed the only road out overnight.",
+            "coming_to_a_head": "The matter can't wait past tomorrow." if "CLOSING DAYS" in user else "",
+        })
+
+    # ── self summary ───────────────────────────────────────────────────────────
+    if "SELF_SUMMARY" in system:
+        last = [l[2:] for l in user.splitlines() if l.startswith("- ")][-1:]
+        return json.dumps({"summary": f"Today: {last[0] if last else 'quiet'}. I want it settled."})
+
+    # ── game master adjudication ───────────────────────────────────────────────
+    if "GAME_MASTER_ADJUDICATION" in system:
+        effort = _re_module.search(r"Trying to: (.+)", user)
+        effort = (effort.group(1).strip() if effort else "the task")[:60]
+        return json.dumps({
+            "difficulty": rng.randint(1, 5),
+            "competence": rng.randint(1, 5),
+            "size": rng.choice(["single", "short", "long"]),
+            "effort": effort,
+            "success": f"The effort to {effort} turned up a torn note in a familiar hand.",
+            "partial": f"The effort to {effort} turned up half an answer and a new question.",
+            "failure": f"The effort to {effort} was interrupted and nothing came of it that day.",
+            "completion": f"The effort to {effort} was finished, and the answer was plain.",
+            "collapse": f"The effort to {effort} was abandoned for good.",
+            "aware": [],
         })
 
     # ── final report ───────────────────────────────────────────────────────────
