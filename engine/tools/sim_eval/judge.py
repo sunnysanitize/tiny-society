@@ -176,7 +176,7 @@ def main():
     args = ap.parse_args()
     run_dir = Path(args.run_dir)
     paths = sorted(run_dir.glob("*.json"))
-    paths = [p for p in paths if p.name != "scores.json"]
+    paths = [p for p in paths if p.name != "scores.json" and not p.name.startswith("pairwise")]
     with cf.ThreadPoolExecutor(6) as ex:
         results = list(ex.map(lambda p: score_one(p, args.model), paths))
     (run_dir / "scores.json").write_text(json.dumps(results, indent=2))

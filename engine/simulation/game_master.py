@@ -121,7 +121,7 @@ def judge_attempt(
 
     user = _build_prompt(actor, action, roster, cast, recent or [], world_premise)
     try:
-        raw = call_llm(GAME_MASTER_SYSTEM, user, json_mode=True, max_tokens=700, tier="cheap")
+        raw = call_llm(GAME_MASTER_SYSTEM, user, json_mode=True, max_tokens=700, tier="strong")
     except Exception as e:
         logging.warning(f"Game master call failed for {actor.name}: {e}")
         return None

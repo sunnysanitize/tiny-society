@@ -99,7 +99,7 @@ def reason_for_agent(
     event: Optional[str],
     current_day: int = 1,
     world_graph: Optional[WorldGraph] = None,
-    tier: str = "cheap",
+    tier: str = "strong",
     world_premise: Optional[str] = None,
     crowded: Optional[list[str]] = None,
 ) -> Optional[AgentAction]:
@@ -119,7 +119,7 @@ async def areason_for_agent(
     event: Optional[str],
     current_day: int = 1,
     world_graph: Optional[WorldGraph] = None,
-    tier: str = "cheap",
+    tier: str = "strong",
     world_premise: Optional[str] = None,
     crowded: Optional[list[str]] = None,
 ) -> Optional[AgentAction]:
