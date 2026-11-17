@@ -6,6 +6,7 @@ from models import Agent, AgentAction, PerceptionNote, Relationship
 from .perception import perceive_event
 from .memory import make_memory
 from . import consequence
+from .affect import feel, feel_received
 
 
 # A relationship turning into one of these (or forming as one) is a story milestone.
@@ -47,8 +48,8 @@ def apply_action(
     # toward anyone and apply the actor's self-delta a single time after the loop.
     any_antagonistic = False
 
-    # Mood update
-    actor.mood = action.emotional_reaction
+    # Mood update: the reaction pulls a mood with inertia rather than overwriting it.
+    feel(actor, action.emotional_reaction)
 
     # Memory — heuristic importance assigned at creation
     if action.new_memory:
@@ -94,6 +95,7 @@ def apply_action(
         )
         if note:
             perception_notes.append(note)
+        feel_received(target, perceived_delta)
 
         consequence.accumulate(actor, target.name, proposed_type, base_delta)
         consequence.accumulate(target, actor.name, proposed_type, perceived_delta)

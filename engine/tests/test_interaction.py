@@ -1094,6 +1094,136 @@ def test_mock_run_resolves_attempts_into_the_event_log():
     assert any(e.outcome for e in events), "attempts must come out resolved"
 
 
+def test_mood_has_inertia_and_settles_overnight():
+    from models import Agent, Profile
+    from simulation.affect import feel, overnight
+    a = Agent(id="a", name="Ana", role="x", mood="content", profile=Profile(neuroticism=0.2, agreeableness=0.8))
+    feel(a, "excited")
+    assert a.mood in ("content", "excited")
+    feel(a, "angry")
+    assert a.mood != "angry", "one flash of anger shouldn't flip a content person"
+    for _ in range(3):
+        feel(a, "angry")
+    assert a.mood == "angry", "sustained anger should"
+    for _ in range(4):
+        overnight(a)
+    assert a.mood != "angry", "and it should settle back down"
+
+
+def test_secrets_leak_rarely_and_cost_the_teller():
+    import random
+    from models import Agent, KnowledgeItem, Profile, Relationship, WorldEvent
+    from simulation.gossip import spread
+    def world(secrecy):
+        x = Agent(id="x", name="Xia", role="x")
+        a = Agent(id="a", name="Ana", role="x", profile=Profile(honesty=0.2),
+                  relationships={"Ben": Relationship(type="friendship", strength=0.6)})
+        b = Agent(id="b", name="Ben", role="x")
+        a.knowledge = [KnowledgeItem(id="E1.1", text="Xia confessed to Ana", about=["Xia", "Ana"],
+                                     secrecy=secrecy, day=1)]
+        meet = WorldEvent(id="E2.1", day=2, actor="Ana", targets=["Ben"], text="talk", known_by=["Ana", "Ben"])
+        return [x, a, b], [meet]
+    def rate(secrecy):
+        n = 0
+        for i in range(300):
+            agents, evs = world(secrecy)
+            n += bool(spread(agents, evs, 2, random.Random(i)))
+        return n / 300
+    assert rate("secret") < rate("private"), (rate("secret"), rate("private"))
+    assert 0 < rate("secret") < 0.35
+
+
+def test_unsupported_accusation_is_softened():
+    from models import Agent, AgentAction
+    from simulation.memory import make_memory
+    from simulation.persona import vet_knowledge
+    a = Agent(id="a", name="Ana", role="x")
+    a.long_term_memory = [make_memory("I saw Ben carrying the grain sacks out at midnight.", 1)]
+    act = AgentAction(action="confront", target_agents=["Ben"], intents={"Ben": "confront"},
+                      new_memory="m", explanation="e", basis="Ben stole the abbot's ring")
+    assert vet_knowledge(a, act, None) and act.intents["Ben"] == "challenge"
+    act2 = AgentAction(action="confront", target_agents=["Ben"], intents={"Ben": "confront"},
+                       new_memory="m", explanation="e", basis="saw Ben carrying grain sacks at midnight")
+    assert not vet_knowledge(a, act2, None) and act2.intents["Ben"] == "confront"
+
+
+def test_loop_critic_spots_a_repeated_action():
+    from models import Agent, AgentAction
+    from simulation.engine import _repeats
+    a = Agent(id="a", name="Ana", role="x", recent_actions=[
+        'day 2: herb garden/search → about Ben — "I searched the high meadow for the rare blue herbs again."'])
+    same = AgentAction(action="search", new_memory="I searched the high meadow for the rare blue herbs.", explanation="e")
+    new = AgentAction(action="talk", new_memory="I told Ben the herbs were gone for the season.", explanation="e")
+    assert _repeats(a, same) and not _repeats(a, new)
+
+
+def test_crowding_and_voice_reach_the_prompt():
+    from models import Agent, Profile
+    from simulation.reasoner import _build_prompt
+    a = Agent(id="a", name="Ana", role="x", self_summary="I owe Ben an apology.",
+              profile=Profile(voice="clipped, dry", speech_samples=["Fine. Whatever."]))
+    b = Agent(id="b", name="Ben", role="x")
+    prompt = _build_prompt(a, [a, b], "event", crowded=["Ben", "Ana"])
+    assert "Already crowded: Ben" in prompt and "Ana had several" not in prompt
+    assert "clipped, dry" in prompt and "Fine. Whatever." in prompt
+    assert "I owe Ben an apology." in prompt
+
+
+def test_conflict_climbs_and_needs_accepted_peace():
+    from models import Agent, AgentAction, Profile, Relationship
+    from simulation.dynamics import on_action
+    a = Agent(id="a", name="Ana", role="x", relationships={"Ben": Relationship(type="trust", strength=0.0)})
+    b = Agent(id="b", name="Ben", role="x", profile=Profile(agreeableness=0.1),
+              relationships={"Ana": Relationship(type="conflict", strength=-0.9)})
+    by = {"Ana": a, "Ben": b}
+    hit = AgentAction(action="x", target_agents=["Ben"], intents={"Ben": "confront"}, new_memory="m", explanation="e")
+    on_action(a, hit, by); on_action(a, hit, by)
+    assert a.relationships["Ben"].conflict == 2 == b.relationships["Ana"].conflict
+    peace = AgentAction(action="x", target_agents=["Ben"], intents={"Ben": "reconcile"}, new_memory="m", explanation="e")
+    on_action(a, peace, by)
+    assert a.relationships["Ben"].conflict == 2, "a disagreeable, furious Ben refuses"
+    b.profile.agreeableness, b.relationships["Ana"].strength = 0.9, 0.0
+    on_action(a, peace, by)
+    assert a.relationships["Ben"].conflict == 1
+
+
+def test_opinions_form_factions_not_consensus():
+    from models import Agent, Profile, Relationship, WorldEvent
+    from simulation.dynamics import daily
+    agents = []
+    for i, x in enumerate([-0.8, -0.7, 0.7, 0.8]):
+        agents.append(Agent(id=str(i), name=f"P{i}", role="x", stance={"t": x}, stance_anchor={"t": x},
+                            profile=Profile(openness=0.3)))
+    for a in agents:
+        a.relationships = {b.name: Relationship(type="trust", strength=0.2) for b in agents if b is not a}
+    names = [a.name for a in agents]
+    for d in range(1, 8):
+        evs = [WorldEvent(id=f"E{d}.{i}", day=d, actor=a, targets=[b], text="talk", known_by=[a, b])
+               for i, (a, b) in enumerate((x, y) for x in names for y in names if x != y)]
+        daily(agents, evs)
+    xs = sorted(a.stance["t"] for a in agents)
+    assert xs[0] < -0.4 and xs[-1] > 0.4, f"two camps must survive a week of talk: {xs}"
+
+
+def test_director_complicates_only_a_stalled_story_and_not_too_often():
+    import json
+    from unittest import mock
+    from models import StoryThread, World
+    from simulation import director
+    w = World(prompt="p", target_population=5, threads=[StoryThread(id="T1", summary="q")])
+    reply = json.dumps({"threads": [], "tension": 4, "stalled": False, "complication": "A storm."})
+    with mock.patch("llm.call_llm", return_value=reply):
+        director.direct(w, 2, [], None)
+    assert w.director_event is None, "a lively day needs no push"
+    reply = json.dumps({"threads": [], "tension": 1, "stalled": True, "complication": "A storm."})
+    with mock.patch("llm.call_llm", return_value=reply):
+        director.direct(w, 2, [], None)
+        assert w.director_event == "A storm."
+        w.director_event = None
+        director.direct(w, 3, [], None)
+    assert w.director_event is None, "complications need a gap so the cast can react"
+
+
 _TESTS = [
     test_caps_reject_oversized_runs,
     test_caps_defaults_are_seven,
@@ -1160,6 +1290,14 @@ _TESTS = [
     test_harder_attempts_fail_more_often,
     test_game_master_cannot_name_the_actor_or_strangers_as_aware,
     test_mock_run_resolves_attempts_into_the_event_log,
+    test_mood_has_inertia_and_settles_overnight,
+    test_secrets_leak_rarely_and_cost_the_teller,
+    test_unsupported_accusation_is_softened,
+    test_loop_critic_spots_a_repeated_action,
+    test_crowding_and_voice_reach_the_prompt,
+    test_conflict_climbs_and_needs_accepted_peace,
+    test_opinions_form_factions_not_consensus,
+    test_director_complicates_only_a_stalled_story_and_not_too_often,
 ]
 
 

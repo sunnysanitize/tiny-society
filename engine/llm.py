@@ -1403,6 +1403,24 @@ def _mock(system: str, user: str, json_mode: bool) -> str:
             "attempt": f"find out what {target} has been hiding" if _about_only else "",
         })
 
+    # ── story director ─────────────────────────────────────────────────────────
+    if "STORY_DIRECTOR" in system:
+        day = _re_module.search(r"DAY (\d+) of", user)
+        day = int(day.group(1)) if day else 1
+        return json.dumps({
+            "threads": [{"id": "T1", "summary": "Who is behind what happened?",
+                         "status": "resolved" if day >= 5 else "open"}],
+            "tension": 2,
+            "stalled": day % 2 == 0,
+            "complication": "A hard frost closed the only road out overnight.",
+            "coming_to_a_head": "The matter can't wait past tomorrow." if "CLOSING DAYS" in user else "",
+        })
+
+    # ── self summary ───────────────────────────────────────────────────────────
+    if "SELF_SUMMARY" in system:
+        last = [l[2:] for l in user.splitlines() if l.startswith("- ")][-1:]
+        return json.dumps({"summary": f"Today: {last[0] if last else 'quiet'}. I want it settled."})
+
     # ── game master adjudication ───────────────────────────────────────────────
     if "GAME_MASTER_ADJUDICATION" in system:
         effort = _re_module.search(r"Trying to: (.+)", user)

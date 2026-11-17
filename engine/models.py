@@ -36,6 +36,12 @@ class Relationship(BaseModel):
     # `romantic`, this distinguishes a strategic pact from ordinary warm friendship, so
     # close friends aren't mislabeled as allies just for being close.
     allied: float = 0.0
+    # Slow familiarity built from days of contact (simulation/dynamics.py), distinct from
+    # the fast signed affinity above: you can dislike someone you know well.
+    closeness: float = 0.0
+    # Conflict ladder 0-4: tension, open disagreement, hostile acts, coalition-seeking,
+    # rupture. Only an accepted reconciliation steps it down.
+    conflict: int = 0
 
 
 class WorldEntity(BaseModel):
@@ -135,6 +141,34 @@ class FeedEntry(BaseModel):
     reach: str = "those present"
 
 
+class Profile(BaseModel):
+    """Engine-facing personality, estimated once from the free-text traits
+    (simulation/personality.py). Traits stay the prompt's vocabulary; this turns them
+    into the rates and thresholds the engine needs (mood baseline, gossip, opinions)."""
+    openness: float = 0.5
+    conscientiousness: float = 0.5
+    extraversion: float = 0.5
+    agreeableness: float = 0.5
+    neuroticism: float = 0.5
+    honesty: float = 0.5                 # HEXACO honesty-humility: keeps secrets, won't exploit
+    desires: list[str] = []              # Reiss-style stable motives, e.g. "status", "acceptance"
+    needs: list[str] = []                # 0-2 world-specific needs, e.g. "faith", "the hunt"
+    voice: str = ""                      # how they talk, one line
+    speech_samples: list[str] = []       # 2-3 short lines in their voice
+
+
+class KnowledgeItem(BaseModel):
+    """Something a character knows happened, and how they came to know it
+    (simulation/gossip.py). Keyed by the WorldEvent id it describes."""
+    id: str
+    text: str
+    about: list[str] = []
+    secrecy: str = "private"             # public | private | secret
+    source: str = ""                     # who told them; "" = saw it themselves
+    day: int = 0
+    hops: int = 0
+
+
 class Effort(BaseModel):
     """A multi-day undertaking tracked as a progress clock (simulation/game_master.py).
 
@@ -191,6 +225,18 @@ class Agent(BaseModel):
     # Progress clocks for this agent's multi-day undertakings. Lives on the agent (not
     # the world) so a day-by-day advance carries it with the snapshot.
     efforts: list[Effort] = []
+    profile: Optional[Profile] = None
+    # Mood as a pleasure/arousal/dominance vector with inertia (simulation/affect.py);
+    # `mood` above is the label derived from it. Empty until the first update.
+    pad: list[float] = []
+    knowledge: list[KnowledgeItem] = []
+    # A few sentences the character keeps about its own situation, refreshed daily
+    # (simulation/reflector.py): what's going on, what they want, what they owe.
+    self_summary: str = ""
+    # Need levels 0-1 (1 = satisfied), see simulation/needs.py.
+    needs: dict[str, float] = {}
+    # Each topic stance as first held, the anchor stubbornness pulls back toward.
+    stance_anchor: dict[str, float] = {}
     is_custom: bool = False
     # IDENTITY INJECTION (Slice E): an emoji or a preset pixel-avatar id string used by
     # the frontend to render the character. None means the frontend assigns one.
@@ -253,6 +299,16 @@ class EventCast(BaseModel):
     involvement: dict[str, str] = {}     # name -> first-person private knowledge/role
 
 
+class StoryThread(BaseModel):
+    """An open question the story has raised, tracked by the director so it gets
+    paid off instead of forgotten (simulation/director.py)."""
+    id: str
+    summary: str
+    status: str = "open"                 # open | resolved
+    opened_day: int = 0
+    last_day: int = 0
+
+
 class World(BaseModel):
     prompt: str
     target_population: int
@@ -277,6 +333,12 @@ class World(BaseModel):
     # Each event's binding to the cast, keyed by the event text. Persisted so a
     # day-by-day run keeps the same culprit/claimants a batch run would.
     event_casts: dict[str, EventCast] = {}
+    # Director state (simulation/director.py): the threads ledger, a complication queued
+    # for the next day, a "what's coming to a head" note, and when the last complication hit.
+    threads: list[StoryThread] = []
+    director_event: Optional[str] = None
+    director_note: str = ""
+    last_complication_day: int = 0
 
 
 class SimulationConfig(BaseModel):
@@ -422,6 +484,8 @@ class AgentAction(BaseModel):
     # fix, hunt, hide, catch, prove). Empty for pure social moves. A non-empty attempt
     # is resolved by the game master into a concrete outcome.
     attempt: str = ""
+    # For accusations: the memory or report the actor is relying on (persona.vet_knowledge).
+    basis: str = ""
     # Filled by the game master: "success" | "partial" | "failure" | "" (unresolved),
     # and the concrete result in the world's words.
     outcome: str = ""

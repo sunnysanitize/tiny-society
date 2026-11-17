@@ -4,7 +4,7 @@ import logging
 import re
 from typing import Optional
 
-from models import Agent, DaySnapshot, EventCast, MacroMetrics, Forecast, WorldLens
+from models import Agent, DaySnapshot, EventCast, MacroMetrics, Forecast, StoryThread, WorldLens
 from llm import call_llm
 
 def _report_system(lens: Optional["WorldLens"] = None) -> str:
@@ -226,6 +226,7 @@ def generate_final_report(
     lens: Optional["WorldLens"] = None,
     initial_agents: Optional[list[Agent]] = None,
     event_casts: Optional[dict[str, EventCast]] = None,
+    threads: Optional[list[StoryThread]] = None,
 ) -> tuple[str, Optional[Forecast]]:
     """Returns (narrative report string, structured Forecast or None).
 
@@ -309,6 +310,10 @@ def generate_final_report(
             )
         if vocab:
             user = "HOW TO WRITE THIS WORLD\n" + "\n".join(vocab) + "\n\n" + user
+
+    if threads:
+        user += "\n\nSTORY THREADS (say which were settled and which are still open):\n" + "\n".join(
+            f"- [{t.status}] {t.summary}" for t in threads)
 
     if milestone_lines:
         user += (

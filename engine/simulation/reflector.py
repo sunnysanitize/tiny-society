@@ -159,3 +159,43 @@ def _safe_json(raw: str) -> dict:
         except json.JSONDecodeError:
             pass
     return {}
+
+
+# ── daily self-summary ─────────────────────────────────────────────────────────
+# Lyfe Agents' ablations found a rolling self-summary was among the memory pieces with
+# the largest effect on coherent behavior. Retrieval surfaces fragments; the summary
+# keeps the through-line — where I stand, what I want, what I still owe — in every
+# prompt, which counters drift and dropped commitments.
+SUMMARY_SYSTEM = """SELF_SUMMARY
+You are a fictional character keeping a short private account of where you stand.
+Update it with today's events. Return STRICT JSON only:
+{"summary": "3 first-person sentences: what is going on for me now, what I want next, and anything I promised, owe or left unfinished"}
+Rules: keep what still matters from the old summary, drop what's resolved, use real
+names, no invention beyond the given memories. Output only JSON."""
+
+
+def update_self_summary(agent: Agent, current_day: int, world_premise: Optional[str] = None) -> None:
+    today = [m.text for m in agent.short_term_memory][-8:]
+    if not today:
+        return
+    efforts = [f"{e.name} ({e.filled}/{e.segments})" for e in agent.efforts if not e.done]
+    user = "\n".join([
+        *premise_lines(world_premise),
+        f"YOU: {agent.name}, {agent.role}",
+        f"YOUR SUMMARY UNTIL NOW: {agent.self_summary or '(none yet)'}",
+        f"YOUR PLAN: {agent.plan or '(none)'}",
+        f"UNFINISHED EFFORTS: {'; '.join(efforts) or '(none)'}",
+        f"DAY {current_day} — WHAT HAPPENED TO YOU TODAY:",
+        *[f"- {t}" for t in today],
+        "",
+        "Return the updated summary as JSON now.",
+    ])
+    try:
+        raw = call_llm(SUMMARY_SYSTEM, user, json_mode=True, max_tokens=300, tier="cheap")
+    except Exception as e:
+        logging.warning(f"Self-summary failed for {agent.name}: {e}")
+        return
+    data = _safe_json(raw)
+    summary = data.get("summary") if isinstance(data, dict) else None
+    if isinstance(summary, str) and summary.strip():
+        agent.self_summary = summary.strip()[:500]

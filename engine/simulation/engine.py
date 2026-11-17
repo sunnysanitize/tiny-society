@@ -12,11 +12,11 @@ from models import (
 )
 from .selector import select_reasoning_agents
 from .reasoner import reason_for_agent, areason_for_agent
-from .reflector import reflect
+from .reflector import reflect, update_self_summary
 from .planner import form_plan
 from .deterministic import apply_background_rules
 from .applicator import apply_action
-from .persona import vet_action
+from .persona import vet_action, vet_knowledge
 from .observation import distribute_observation, is_covert, witness_line
 from .metrics import compute_metrics, snapshot_influence
 from .reporter import generate_final_report
@@ -29,6 +29,12 @@ from .event_casting import cast_event, plant_involvement, render_event
 from .game_master import judge_attempt, settle
 from .memory import make_memory
 from .audience import REACH_ONE
+from .personality import profile_agents
+from .affect import overnight
+from .needs import drain, satisfy
+from .gossip import record as record_knowledge, secrecy_of, spread
+from .director import STORY_DAYS, direct
+from . import dynamics
 
 # Run a reflection pass (Stanford "Generative Agents" style) every N sim days for
 # the agents reasoning that day, so the day's reasoning can use fresh reflections.
@@ -51,6 +57,11 @@ _CHARGED_REL_TYPES = {"rivalry", "romance", "conflict"}
 # THEATRICAL VIGNETTES (Slice E): at most this many charming first-person moments are
 # generated per day (cost bound). Roughly one per day fires given the gating below.
 MAX_VIGNETTES_PER_DAY = 2
+
+# Someone sought out by this many different people in a day is "crowded" tomorrow.
+CROWDED_AT = 3
+# Word-overlap (Jaccard) above which an action or memory counts as a repeat.
+REPEAT_SIMILARITY = 0.55
 
 
 def run_simulation(
@@ -119,6 +130,17 @@ def run_simulation(
     # so day 6 cannot drift to a different reading of the world than day 1.
     premise_text = render_premise(world.lens, world.prompt)
 
+    # PERSONALITY: turn free-text traits into engine parameters once per character
+    # (mood baseline, secrecy, openness to persuasion, needs, voice).
+    profile_agents(agents, premise_text)
+    for a in agents:
+        if not a.stance_anchor:
+            a.stance_anchor = dict(a.stance)
+
+    # People that several characters came at yesterday — today's prompts say so, so
+    # the cast doesn't keep converging on the same person.
+    crowded: list[str] = []
+
     for day in range(1, config.days + 1):
         abs_day = day + day_offset
         # USER CANCEL: stop before starting a new day if the player asked to halt the run.
@@ -150,13 +172,13 @@ def run_simulation(
         if day == 1 and pending_event:
             active_event = pending_event
 
-        # AI-generated dynamic event every 5 absolute days (after day 3)
-        if abs_day > 3 and abs_day % 5 == 0:
-            new_ev = _generate_dynamic_event(full_event_log, agents, premise_text)
-            if new_ev:
-                active_event = new_ev
-                dynamic_events[str(abs_day)] = new_ev
-                logging.info(f"Dynamic event generated for day {abs_day}: {new_ev!r}")
+        # DIRECTOR COMPLICATION: queued last night when the story stalled or ran cold.
+        # Lives on the world so it survives a day-by-day boundary. A player-injected
+        # event on this run's first day takes priority and the complication waits.
+        if world.director_event and not (day == 1 and pending_event):
+            active_event = world.director_event
+            dynamic_events[str(abs_day)] = world.director_event
+            world.director_event = None
 
         # EVENT CASTING: the first day an event is active, bind it to the cast once —
         # who it involves, the hidden truth, and what each character privately knows —
@@ -169,6 +191,8 @@ def run_simulation(
         if active_event:
             plant_involvement(world.event_casts[active_event], agents)
         event_text = render_event(active_event, world.event_casts.get(active_event), abs_day)
+        if world.director_note:
+            event_text = f"{event_text or ''}\nComing to a head: {world.director_note}".strip()
 
         # MORNING: promote ALL of yesterday's short-term memories to long-term (deduped),
         # then reset. Promoting only the last one lost everything from multi-action /
@@ -176,12 +200,23 @@ def run_simulation(
         # (two-sided memory), flattening their history — so promote them all.
         for a in agents:
             if abs_day > 1:
+                # Overnight: moods settle toward each person's baseline, needs run down.
+                overnight(a)
+                drain(a)
                 if a.short_term_memory:
                     existing_texts = {m.text for m in a.long_term_memory}
                     for mem in a.short_term_memory:
-                        if mem.text and mem.text not in existing_texts:
-                            a.long_term_memory.append(mem)
-                            existing_texts.add(mem.text)
+                        if not mem.text or mem.text in existing_texts:
+                            continue
+                        # A near-repeat strengthens the memory it repeats instead of
+                        # crowding recall with copies of the same day.
+                        twin = _near_duplicate(mem.text, a.long_term_memory[-30:])
+                        if twin is not None:
+                            twin.importance = min(10.0, twin.importance + 0.5)
+                            twin.day = max(twin.day, mem.day)
+                            continue
+                        a.long_term_memory.append(mem)
+                        existing_texts.add(mem.text)
                     a.long_term_memory = a.long_term_memory[-60:]
                 a.short_term_memory = []
 
@@ -242,6 +277,7 @@ def run_simulation(
             # while heartbroken). Downgrades happen in place; vetoes are logged so the
             # restraint is visible in the story instead of silent.
             veto_notes = vet_action(actor, action, by_name)
+            veto_notes += vet_knowledge(actor, action, event_text)
             day_log.extend(veto_notes)
             log_line, notes, milestones = apply_action(
                 actor, action, agents, day=abs_day, world_premise=premise_text
@@ -292,6 +328,8 @@ def run_simulation(
                         agents, reach=REACH_ONE, day=abs_day,
                     )
                 known |= set(settlement.aware)
+            satisfy(actor, action)
+            day_log.extend(dynamics.on_action(actor, action, by_name))
             day_events.append(WorldEvent(
                 id=f"E{abs_day}.{len(day_events) + 1}",
                 day=abs_day,
@@ -302,6 +340,7 @@ def run_simulation(
                 effort=settlement.effort if settlement else "",
                 known_by=sorted(known),
             ))
+            record_knowledge(day_events[-1], secrecy_of(action, is_covert(action)), by_name)
             day_perception_notes.extend(notes)
             day_highlights.append(DayHighlight(
                 agent=actor.name,
@@ -343,7 +382,20 @@ def run_simulation(
                 current_day=abs_day,
                 world_graph=world.world_graph,
                 world_premise=premise_text,
+                crowded=crowded,
             )
+            # LOOP CRITIC: a near-copy of something this agent already did gets one
+            # retry with the repetition pointed out.
+            echo = _repeats(actor, action)
+            if echo:
+                retry = await areason_for_agent(
+                    actor, agents,
+                    event=f"{event_text or ''}\n\nYou already did nearly this: \"{echo}\". "
+                          "Today, do something different — follow up on it, drop it, or turn elsewhere.",
+                    current_day=abs_day, world_graph=world.world_graph,
+                    world_premise=premise_text, crowded=crowded,
+                )
+                action = retry or action
             # Judge the attempt right away, still in parallel; the roll waits for the
             # sequential pass so outcomes stay deterministic.
             adj = await asyncio.to_thread(_adjudicate, actor, action)
@@ -376,7 +428,11 @@ def run_simulation(
                 for _turn in range(MAX_EXCHANGE_TURNS):
                     if responder is None or responder.id == speaker.id:
                         break
-                    resp_event = f"In direct response to you: {prior_line}"
+                    resp_event = (
+                        f"In direct response to you: {prior_line}\n"
+                        "Answer as yourself, in your own manner and toward your own aims — you "
+                        "may agree, refuse, deflect, push back or walk away. Don't mirror them."
+                    )
                     logging.info(
                         f"Day {abs_day}: exchange turn — {responder.name} responds to {speaker.name}"
                     )
@@ -395,6 +451,13 @@ def run_simulation(
                         break
                     prior_line = _commit_action(responder, resp, _adjudicate(responder, resp))
                     speaker, responder = responder, speaker
+
+        # GOSSIP: along today's real contacts, people pass on what the other doesn't know.
+        told = spread(agents, day_events, abs_day, random.Random(f"gossip|{seed}|{abs_day}"))
+        day_events.extend(told)
+        day_log.extend(f"[word spreads] {e.text}" for e in told)
+        # Familiarity, triad balance and opinion exchange between those who met.
+        dynamics.daily(agents, day_events)
 
         # EVENING: background rules + relationship decay
         bg_log = apply_background_rules(background, agents, day_rng)
@@ -415,6 +478,31 @@ def run_simulation(
                     day_vignettes.append(Vignette(agent=actor.name, kind=kind, text=text))
                 if len(day_vignettes) >= MAX_VIGNETTES_PER_DAY:
                     break
+
+        # SELF-SUMMARY: everyone who acted today updates their own account of where
+        # they stand (in parallel; one cheap call each).
+        async def _summarize_all(actors):
+            await asyncio.gather(*[
+                asyncio.to_thread(update_self_summary, a, abs_day, premise_text) for a in actors
+            ])
+        acted = [a for a in agents if a.short_term_memory and a.id in selected_ids]
+        if acted:
+            asyncio.run(_summarize_all(acted))
+
+        # DIRECTOR: update the threads ledger, and queue a complication if the story
+        # stalled or ran cold. Skipped on the arc's last day.
+        if abs_day < STORY_DAYS:
+            direct(world, abs_day, day_events,
+                   world.event_casts.get(world.starting_event or ""), premise_text)
+
+        # Who got crowded today shapes tomorrow's prompts.
+        approached: dict[str, set[str]] = {}
+        for e in day_events:
+            if ".g" in e.id:
+                continue
+            for t in e.targets:
+                approached.setdefault(t, set()).add(e.actor)
+        crowded = sorted(n for n, who in approached.items() if len(who) >= CROWDED_AT)
 
         # NIGHT: compute metrics + snapshot
         metrics = compute_metrics(
@@ -460,6 +548,7 @@ def run_simulation(
         topics=topics,
         dynamic_events=dynamic_events,
         lens=world.lens,
+        threads=world.threads,
         initial_agents=day0_agents,
         event_casts=world.event_casts,
     )
@@ -491,37 +580,6 @@ def run_simulation(
         prophecy_verdict=prophecy_verdict,
         baseline_influence=baseline_influence,
     )
-
-
-def _generate_dynamic_event(
-    recent_log: list[str], agents: list[Agent], premise_text: Optional[str] = None,
-) -> Optional[str]:
-    from llm import call_llm
-    if not recent_log:
-        return None
-    tense = [a for a in agents if a.mood in ("angry", "frustrated", "anxious", "heartbroken", "lonely")]
-    mood_hint = f"Several agents feel {tense[0].mood}." if tense else ""
-    activity = "\n".join(recent_log[-8:])
-    prompt = "\n".join([
-        *premise_lines(premise_text),
-        f"Recent activity:\n{activity}\n\n{mood_hint}\n\n"
-        "Generate one world event sentence (no quotes, no prefix, under 20 words) "
-        "that naturally follows from this activity.",
-    ])
-    try:
-        raw = call_llm(
-            "DYNAMIC_EVENT_GENERATION\n"
-            "Generate a single-sentence world event for a social simulation. No quotes, no prefix, under 20 words.",
-            prompt,
-            max_tokens=60,
-            tier="cheap",
-        )
-        ev = raw.strip().strip('"').strip("'").strip()
-        if ev and len(ev) > 10:
-            return ev
-    except Exception as e:
-        logging.warning(f"Dynamic event generation failed: {e}")
-    return None
 
 
 def _fallback_action(actor: Agent, roster: list[Agent]) -> AgentAction:
@@ -596,6 +654,35 @@ def _is_charged(actor: Agent, action) -> bool:
     from . import consequence
     proposed_type, _ = consequence.intent_to_bid(action.intents.get(primary, ""))
     return proposed_type in _CHARGED_REL_TYPES
+
+
+def _words(text: str) -> set[str]:
+    import re
+    return set(re.findall(r"[a-z']{4,}", (text or "").lower()))
+
+
+def _similar(a: set[str], b: set[str]) -> float:
+    return len(a & b) / len(a | b) if a and b else 0.0
+
+
+def _repeats(actor: Agent, action) -> Optional[str]:
+    """The earlier action this one nearly copies (its recorded memory), if any."""
+    if action is None or not action.new_memory:
+        return None
+    mine = _words(action.new_memory)
+    for entry in actor.recent_actions[-4:]:
+        quoted = entry.split(' — "', 1)[1].split('"', 1)[0] if ' — "' in entry else ""
+        if quoted and _similar(mine, _words(quoted)) >= REPEAT_SIMILARITY:
+            return quoted
+    return None
+
+
+def _near_duplicate(text: str, memories: list) -> Optional[object]:
+    mine = _words(text)
+    for m in reversed(memories):
+        if _similar(mine, _words(m.text)) >= 0.7:
+            return m
+    return None
 
 
 def _recent_event_summary(log: list[str]) -> Optional[str]:

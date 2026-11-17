@@ -12,6 +12,8 @@ from .audience import derive_action_kind, normalize_reach
 from .memory import retrieve
 from .observation import rank_feed
 from .premise import premise_lines
+from .needs import urgent_need
+from .dynamics import CONFLICT_LABELS, tensions
 
 # How many other agents to surface in a reasoning prompt (bounds prompt size). The roster
 # is RANKED so every agent stays reachable over time, rather than always showing the first
@@ -36,15 +38,16 @@ JSON schema:
   },
   "target_agents": ["Name", ...],
   "about_agents": ["Name", ...],
-  "utterance": "what you actually say or do, in your own voice (1-2 sentences)",
+  "utterance": "what you actually say or do, in YOUR voice — under 25 words, how a person talks, not a speech",
   "intents": {
     "TargetName": "one intent verb from the list below"
   },
   "emotional_reaction": "calm|excited|frustrated|heartbroken|ambitious|anxious|content|angry|hopeful|lonely|confident",
   "stance_shift": { "TopicName": -0.3 to 0.3 },
   "new_memory": "first-person past-tense sentence describing what you did today",
-  "explanation": "one sentence linking your traits and memories to this specific action",
-  "attempt": "what you are trying to accomplish whose result isn't yours to decide, or \"\""
+  "explanation": "your private thought as you do it, in your own voice — one short sentence, not an analysis of yourself",
+  "attempt": "what you are trying to accomplish whose result isn't yours to decide, or \"\"",
+  "basis": "if you confront, rebuke, undermine or reject someone: the memory or report it rests on, briefly quoted; else \"\""
 }
 
   audience : who witnessed this. `who` is your own phrasing — where you were, who could
@@ -98,9 +101,10 @@ def reason_for_agent(
     world_graph: Optional[WorldGraph] = None,
     tier: str = "cheap",
     world_premise: Optional[str] = None,
+    crowded: Optional[list[str]] = None,
 ) -> Optional[AgentAction]:
     import logging
-    user = _build_prompt(agent, roster, event, current_day, world_graph, world_premise)
+    user = _build_prompt(agent, roster, event, current_day, world_graph, world_premise, crowded)
     try:
         raw = call_llm(REASONER_SYSTEM, user, json_mode=True, max_tokens=1024, tier=tier)
     except Exception as e:
@@ -117,9 +121,10 @@ async def areason_for_agent(
     world_graph: Optional[WorldGraph] = None,
     tier: str = "cheap",
     world_premise: Optional[str] = None,
+    crowded: Optional[list[str]] = None,
 ) -> Optional[AgentAction]:
     import logging
-    user = _build_prompt(agent, roster, event, current_day, world_graph, world_premise)
+    user = _build_prompt(agent, roster, event, current_day, world_graph, world_premise, crowded)
     try:
         raw = await acall_llm(REASONER_SYSTEM, user, json_mode=True, max_tokens=1024, tier=tier)
     except Exception as e:
@@ -184,6 +189,7 @@ def _parse_action(agent: Agent, raw: str) -> Optional[AgentAction]:
             new_memory=_trim(str(data.get("new_memory", "")), 280),
             explanation=_trim(str(data.get("explanation", "")), 280),
             attempt=_trim(str(data.get("attempt") or ""), 200),
+            basis=_trim(str(data.get("basis") or ""), 240),
         )
     except Exception:
         return None
@@ -196,10 +202,14 @@ def _build_prompt(
     current_day: int = 1,
     world_graph: Optional[WorldGraph] = None,
     world_premise: Optional[str] = None,
+    crowded: Optional[list[str]] = None,
 ) -> str:
     rel_lines = []
     for name, r in agent.relationships.items():
-        rel_lines.append(f"  - {name}: {r.type} (strength {r.strength:+.2f})")
+        known = "well" if r.closeness >= 0.5 else ("somewhat" if r.closeness >= 0.25 else "barely")
+        conflict = f", conflict: {CONFLICT_LABELS[r.conflict]}" if r.conflict else ""
+        rel_lines.append(f"  - {name}: {r.type} (strength {r.strength:+.2f}, you know them {known}{conflict})")
+    rel_lines += [f"  ! {t}" for t in tensions(agent, roster)]
     roster_lines = [
         f"- {a.name}: {a.role}, traits={a.traits}, groups={a.groups}"
         for a in _ranked_roster(agent, roster, current_day, ROSTER_LIMIT)
@@ -250,6 +260,10 @@ def _build_prompt(
             topic_lines.append(f"- {t}")
 
     efforts = [e for e in agent.efforts if not e.done]
+    crowded = [n for n in (crowded or []) if n != agent.name]
+    voice = ""
+    if agent.profile and (agent.profile.voice or agent.profile.speech_samples):
+        voice = agent.profile.voice + "".join(f'\n  e.g. "{x}"' for x in agent.profile.speech_samples)
     parts = [
         *premise_lines(world_premise),
         "WORLD FACTS & POWER STRUCTURE",
@@ -270,7 +284,9 @@ def _build_prompt(
         "YOUR RELATIONSHIPS",
         "\n".join(rel_lines) if rel_lines else "(none yet)",
         "",
+        *(["WHERE YOU STAND (your own account)", agent.self_summary, ""] if agent.self_summary else []),
         *(["YOUR CURRENT PLAN", agent.plan, ""] if agent.plan else []),
+        *(["WHAT YOU NEED (a pull, not an order)", urgent, ""] if (urgent := urgent_need(agent)) else []),
         *(["YOUR ONGOING EFFORTS (continue one by naming it in `attempt`, or let it go)",
            "\n".join(f"- {e.name}: {e.filled}/{e.segments} of the way, {e.attempts} attempt(s) so far"
                      for e in efforts), ""] if efforts else []),
@@ -297,7 +313,10 @@ def _build_prompt(
         "",
         "OTHER AGENTS IN THE WORLD",
         "\n".join(roster_lines),
+        *([f"Already crowded: {', '.join(crowded)} had several people come at them yesterday. "
+           "Only add to that if you truly must — someone else may need you more."] if crowded else []),
         "",
+        *(["YOUR VOICE", voice, ""] if voice else []),
         "Return your action as JSON now.",
     ]
     return "\n".join(parts)

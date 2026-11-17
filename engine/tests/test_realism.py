@@ -88,6 +88,12 @@ def test_romance_requires_sustained_mutual_bids():
     # (a) mutual sustained flirting/courting over >=4 interactions -> romance
     a, b = _agent("A"), _agent("B")
     _exchange(a, b, "romance", 0.3, "romance", 0.3, rounds=5)
+    # Bids alone, with no days of contact behind them, are not yet a romance...
+    assert a.relationships["B"].type != "romance", a.relationships["B"]
+    # ...once the pair also knows each other (closeness builds per day of contact).
+    a.relationships["B"].closeness = b.relationships["A"].closeness = consequence.ROMANCE_CLOSENESS
+    consequence.realize(a, "B", b)
+    consequence.realize(b, "A", a)
     assert a.relationships["B"].type == "romance", a.relationships["B"]
     assert b.relationships["A"].type == "romance", b.relationships["A"]
 
