@@ -37,8 +37,9 @@ Write a 4-6 paragraph summary in plain prose covering:
 - the final social shape compared to Day 0
 
 If a PREDICTION QUESTION is given, END with a clearly-labeled forecast paragraph that answers it,
-grounded in {population}'s final belief means, the quantified confidence, and the causal chain of
-pivotal days (what happened on each that moved sentiment).
+grounded in where {population} ended up (how many lean which way, how split they are) and the
+causal chain of pivotal days (what happened on each that moved sentiment). Say it in words a
+reader would use; the input gives no numbers for this and you must not invent any.
 
 Do not invent agent names that weren't in the data.
 ACCURACY IS THE FIRST RULE. Every sentence must be traceable to a line of the input:
@@ -144,15 +145,40 @@ def build_forecast(
     )
 
 
+# Belief numbers reach the report prompt as words: given decimals, the report quoted them
+# ("belief means +0.3155", "Confidence: 0.77") despite the system prompt forbidding it.
+def _lean(mean: float) -> str:
+    """Population mean stance in [-1, 1] -> how the group leans on that statement."""
+    if mean >= 0.5:
+        return "most firmly agree"
+    if mean >= 0.15:
+        return "lean toward agreeing"
+    if mean > -0.15:
+        return "undecided"
+    if mean > -0.5:
+        return "lean toward disagreeing"
+    return "most firmly disagree"
+
+
+def _spread(std: float) -> str:
+    """Per-topic stance standard deviation -> how split the group is."""
+    return "nearly all in step" if std < 0.2 else "some disagree" if std < 0.4 else "deeply split"
+
+
+def _consensus(confidence: float) -> str:
+    """belief_confidence (1 = consensus, 0 = split) in words."""
+    return "broad agreement" if confidence >= 0.75 else "partly agreed" if confidence >= 0.5 else "split"
+
+
 def _belief_trajectory_blob(snapshots: list[DaySnapshot], topics: list[str]) -> str:
-    """Compact per-day population-mean trajectory for the report prompt."""
+    """Compact per-day population-lean trajectory for the report prompt, in words."""
     lines: list[str] = []
     for s in snapshots:
         tm = s.metrics.topic_means
         if not tm:
             continue
-        means = ", ".join(f"{t}={tm[t]:+.2f}" for t in tm)
-        lines.append(f"Day {s.day}: {means} (confidence={s.metrics.belief_confidence:.2f})")
+        means = "; ".join(f"{t}: {_lean(tm[t])}" for t in tm)
+        lines.append(f"Day {s.day}: {means} (overall: {_consensus(s.metrics.belief_confidence)})")
     return "\n".join(lines)
 
 
@@ -198,7 +224,8 @@ def _standing_changes(initial_agents: list[Agent], final_agents: list[Agent]) ->
     return [f"{name}: {delta:+.1f}" for delta, name in rows]
 
 
-_CITE_RE = re.compile(r"\s*\[(E\d+\.\d+)\]")
+# E2.3 = action, E2.g1 = gossip relay (gossip.py)
+_CITE_RE = re.compile(r"\s*\[(E\d+\.g?\d+)\]")
 
 
 def _check_citations(narrative: str, valid_ids: set[str]) -> str:
@@ -328,14 +355,13 @@ def generate_final_report(
         if question:
             user += f"PREDICTION QUESTION: {question}\n\n"
         if traj:
-            user += f"POPULATION BELIEF TRAJECTORY (per-topic mean stance per day):\n{traj}\n\n"
+            user += f"WHERE PEOPLE STOOD EACH DAY (per statement):\n{traj}\n\n"
         if pivotal:
             user += f"PIVOTAL DAYS (largest belief shifts) and what drove them:\n{pivotal}\n\n"
-        user += (
-            f"FINAL BELIEF MEANS: {final.topic_means}\n"
-            f"FINAL DISAGREEMENT (stddev per topic): {final.topic_uncertainty}\n"
-            f"OVERALL CONFIDENCE (1=consensus, 0=split): {final.belief_confidence}\n"
-        )
+        user += "WHERE THEY ENDED UP:\n" + "".join(
+            f"- {t}: {_lean(m)}, {_spread(final.topic_uncertainty.get(t, 0.0))}\n"
+            for t, m in final.topic_means.items()
+        ) + f"Overall: {_consensus(final.belief_confidence)}\n"
 
     try:
         narrative = call_llm(_report_system(lens), user, max_tokens=1800, tier="strong")
