@@ -7,7 +7,7 @@ import { WorldSetup } from "@/components/WorldSetup";
 import { CharacterEditor } from "@/components/CharacterEditor";
 import { EventAndRun } from "@/components/EventAndRun";
 import { SimulationView } from "@/components/SimulationView";
-import { AuthScreen } from "@/components/AuthScreen";
+import { TitleScreen } from "@/components/TitleScreen";
 import { SavesScreen } from "@/components/SavesScreen";
 import { SaveModal } from "@/components/SaveModal";
 import { SaveSignInModal } from "@/components/SaveSignInModal";
@@ -208,7 +208,7 @@ export default function Page() {
   }
 
   if (phase === "auth") {
-    return <AuthScreen onGuest={() => { setGuest(true); setPhase("saves"); }} />;
+    return <TitleScreen onGuest={() => { setGuest(true); setPhase("saves"); }} />;
   }
 
   if (phase === "saves") {

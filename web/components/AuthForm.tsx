@@ -67,7 +67,7 @@ export function AuthForm({ onSuccess, compact, onGuest }: Props) {
 
   return (
     <>
-      <div className="font-pixel" style={{
+      <div className="font-pixel auth-heading" style={{
         fontSize: 9, color: "var(--text-dim)", letterSpacing: "0.1em",
         marginBottom: compact ? 14 : 20, textAlign: "center",
       }}>
@@ -76,7 +76,7 @@ export function AuthForm({ onSuccess, compact, onGuest }: Props) {
 
       <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div>
-          <label className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>
+          <label className="font-pixel auth-label" style={{ fontSize: 8, color: "var(--text-dim)", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>
             USERNAME
           </label>
           <input
@@ -91,7 +91,7 @@ export function AuthForm({ onSuccess, compact, onGuest }: Props) {
         </div>
 
         <div>
-          <label className="font-pixel" style={{ fontSize: 8, color: "var(--text-dim)", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>
+          <label className="font-pixel auth-label" style={{ fontSize: 8, color: "var(--text-dim)", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>
             PASSWORD
           </label>
           <input
@@ -142,7 +142,7 @@ export function AuthForm({ onSuccess, compact, onGuest }: Props) {
       <div style={{ marginTop: compact ? 14 : 20, textAlign: "center" }}>
         <button
           onClick={() => { setMode(m => m === "login" ? "signup" : "login"); setError(null); setInfo(null); }}
-          className="font-pixel"
+          className="font-pixel auth-switch"
           style={{
             background: "none", border: "none", cursor: "pointer",
             fontSize: 8, color: "var(--text-dim)", letterSpacing: "0.08em",
