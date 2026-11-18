@@ -106,6 +106,69 @@ Return STRICT JSON only:
 """
 JUDGE_SYSTEMS = {1: JUDGE_SYSTEM_V1, 2: JUDGE_SYSTEM_V2}
 
+# Second pass: one call per flagged error, deciding whether it holds up. Rules come from the
+# reasons codex gave for rejecting judge flags (runs/*_review_codex.json, dev scenarios only;
+# see check_flags.py, which scores this prompt against those labels).
+CHECK_SYSTEM = """You are checking ONE error that an automated reviewer flagged in a generated
+story transcript. The reviewer is usually wrong: most of its flags are false positives. Your job
+is to decide whether a careful reader who checks the whole transcript would agree the flag
+describes a real, material error.
+
+Transcript format:
+- "## Event casting: X" happens on the day whose header names event X.
+- "## Cast (day 0)" gives each character's role, traits, goals and starting relationships.
+- Each day: "- [Name] action. (private thought) ⇒ [outcome: ...]" lines. The text after ⇒ is
+  what actually happened, written by the world. A "failure" outcome still records everything it
+  narrates (orders given, threats made, people admitted): failure means the goal wasn't met,
+  not that nothing happened. "- HL Name: summary — outcome | says: words" repeats an action
+  with the character's spoken words. VIGNETTE, WHO KNEW WHAT, MILESTONES and [word spreads]
+  lines are part of the log too.
+- Relationships are DIRECTED: "A (mood): B:rivalry-0.41" is A's edge toward B only.
+- "Standing change" and "Belief means" are data the final report was given.
+
+Before deciding, search the whole transcript (every day, every outcome, the casting and the
+cast) for text that supports what was flagged as wrong. Reject the flag (not_error) when:
+- any line supports the claim the flag disputes, including a narrated outcome or a later day;
+- it disputes wording: a fair summary, paraphrase, broad verb ("confronted", "later",
+  "directed") or degree word ("modest", "sharp", "strong", "significant") that fits the data's
+  direction and rough ordering;
+- it treats a final relationship as contradicting an earlier recorded change, or mixes up the
+  direction of a relationship;
+- it imposes a constraint the premise or cast never states: that a trait forbids a behaviour,
+  that someone must be in the cast, that a resource or offstage person needs an origin scene,
+  that a thread must finish before the transcript ends, or that a character must react a
+  particular way;
+- the flag's own explanation concedes the claim is correct or merely "slightly overstated".
+
+Accept the flag (error) only for a concrete, checkable defect, for example:
+- the report says something the log contradicts: wrong person, wrong role vs the cast list,
+  wrong direction of who told whom, an event that no line records;
+- the same character repeats essentially the same action on several days with nothing new;
+- a line's words or thoughts belong to a different character than the one it is credited to;
+- an impossible sequence: a person or thing is in two incompatible states with no explanation;
+- the premise is broken (anachronism, animals speaking human sentences when they can't);
+- a character acts on knowledge the log shows they never received, or a private act is
+  treated as public news (a VIGNETTE announcement of something the log shows was private
+  counts).
+Judge the transcript as written: do not invent off-screen events or reasons to explain away a
+contradiction the lines show, and a premise rule broken everywhere (e.g. every "says" line of
+an animal that can't speak is a human sentence) is still broken, not a "convention".
+Use unsure only when the transcript truly cannot settle it.
+
+Return STRICT JSON only, reason first:
+{"reason": "two or three sentences citing the lines you checked", "verdict": "error" | "not_error" | "unsure"}
+"""
+
+
+def check_error(error: dict, transcript: str, model: str) -> dict:
+    """Ask `model` whether one flagged error holds up against the full transcript."""
+    flag = {k: error[k] for k in ("dimension", "severity", "quotes", "evidence") if k in error}
+    user = f"TRANSCRIPT:\n{transcript}\n\nFLAGGED ERROR:\n{json.dumps(flag, ensure_ascii=False, indent=1)}"
+    out = _post_judge(CHECK_SYSTEM, user, model)
+    if out.get("verdict") not in ("error", "not_error", "unsure"):
+        out["verdict"] = "unsure"
+    return out
+
 
 def judge_llm(transcript: str, model: str, version: int = 1) -> dict:
     out = _post_judge(JUDGE_SYSTEMS[version], transcript, model)
