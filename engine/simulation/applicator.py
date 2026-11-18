@@ -20,6 +20,16 @@ _TYPE_FAMILY = {
     "friendship": "warmth", "alliance": "warmth", "trust": "warmth", "romance": "romance",
     "influence": "power", "group_membership": "group",
 }
+# Milestones are shown to players as turning points, so they say what happened in plain
+# words rather than the engine's type names ("influence turned into trust").
+_BECAME = {
+    "friendship": "became friends", "alliance": "joined forces",
+    "trust": "came to trust each other", "rivalry": "became rivals",
+    "conflict": "turned against each other", "romance": "formed a romance",
+}
+_NOUN = {"conflict": "open conflict", "influence": "ties", "group_membership": "ties"}
+# Structural ties, not feelings: a change away from one is told by the new bond alone.
+_STRUCTURAL = {"influence", "group_membership"}
 
 def apply_action(
     actor: Agent,
@@ -194,17 +204,21 @@ def _detect_milestone(
     new_type = now.type
     new_strength = now.strength
     label: Optional[str] = None
+    noun = lambda t: _NOUN.get(t, t)
     if prev_type is None:
         if new_type in _MILESTONE_TYPES and abs(new_strength) >= 0.2:
-            label = f"{a_name} and {b_name} formed a {new_type}."
+            label = f"{a_name} and {b_name} {_BECAME[new_type]}."
     elif prev_type != new_type:
         # Suppress flips within the same narrative family (rivalry⇄conflict, etc.) —
         # they're not genuine turning points, just noise.
         if _TYPE_FAMILY.get(prev_type) != _TYPE_FAMILY.get(new_type):
-            label = f"{a_name} and {b_name}: {prev_type} turned into {new_type}."
-    elif abs(prev_strength) < _DEEP_THRESHOLD <= abs(new_strength):
+            if prev_type in _STRUCTURAL and new_type in _BECAME and new_type != "romance":
+                label = f"{a_name} and {b_name} {_BECAME[new_type]}."
+            elif new_type not in _STRUCTURAL:
+                label = f"{a_name} and {b_name}'s {noun(prev_type)} turned into {noun(new_type)}."
+    elif abs(prev_strength) < _DEEP_THRESHOLD <= abs(new_strength) and new_type not in _STRUCTURAL:
         word = "deepened" if new_strength > 0 else "hardened"
-        label = f"{a_name} and {b_name}'s {new_type} {word}."
+        label = f"{a_name} and {b_name}'s {noun(new_type)} {word}."
 
     if label is None:
         return None

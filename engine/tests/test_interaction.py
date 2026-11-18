@@ -994,6 +994,46 @@ def test_report_sees_pairwise_relationship_changes():
     assert lines == ["Ana → Ben: trust +0.20 ⇒ rivalry -0.30"], lines
 
 
+def test_report_beliefs_reach_the_prompt_as_words():
+    """Given decimals, the report quoted them ("belief means +0.3155"); it gets words now,
+    and gossip citations ([E2.g1]) are stripped like action citations."""
+    import re
+    from models import MacroMetrics, DaySnapshot
+    from simulation import reporter
+    m = MacroMetrics(
+        friendship_count=0, rivalry_count=0, conflict_count=0, romance_count=0,
+        alliance_count=0, average_relationship_strength=0.0, average_trust_score=0.0,
+        most_connected=[], influence_gainers=[], influence_losers=[],
+        relationship_volatility=0, social_fragmentation=0.0, group_centrality={},
+        topic_means={"The mill will close": 0.7691}, topic_uncertainty={"The mill will close": 0.45},
+        belief_confidence=0.3155,
+    )
+    snap = DaySnapshot(day=1, agents=[], event_log=[], highlights=[], metrics=m)
+    captured = {}
+    real = reporter.call_llm
+    reporter.call_llm = lambda system, user, **kw: captured.update(user=user) or "It closed [E1.2][E2.g1]. Done [E3.g12]."
+    try:
+        narrative, _ = reporter.generate_final_report(m, m, [snap], "a mill town", None,
+                                                      question="Will the mill close?",
+                                                      topics=["The mill will close"],
+                                                      initial_agents=[])  # as engine.py passes it
+    finally:
+        reporter.call_llm = real
+    assert not re.search(r"\d\.\d", captured["user"]), "no decimals may reach the report prompt"
+    assert "most firmly agree" in captured["user"] and "deeply split" in captured["user"]
+    assert narrative == "It closed. Done.", narrative
+
+
+def test_milestones_read_as_plain_words():
+    from models import Relationship
+    from simulation.applicator import _detect_milestone as ms
+    rel = lambda t, s: Relationship(type=t, strength=s)
+    assert ms("Ana", "Ben", "influence", 0.2, rel("trust", 0.3)) == "Ana and Ben came to trust each other."
+    assert ms("Ana", "Ben", None, 0.0, rel("rivalry", -0.3)) == "Ana and Ben became rivals."
+    assert ms("Ana", "Ben", "trust", 0.3, rel("conflict", -0.5)) == "Ana and Ben's trust turned into open conflict."
+    assert ms("Ana", "Ben", "trust", 0.3, rel("influence", 0.4)) is None, "structural ties are not turning points"
+
+
 def test_embedding_recall_finds_a_paraphrase():
     try:
         import fastembed  # noqa: F401
@@ -1283,6 +1323,8 @@ _TESTS = [
     test_event_involvement_is_planted_once_and_kept_private,
     test_failed_event_casting_is_harmless,
     test_report_sees_pairwise_relationship_changes,
+    test_report_beliefs_reach_the_prompt_as_words,
+    test_milestones_read_as_plain_words,
     test_embedding_recall_finds_a_paraphrase,
     test_one_off_attempt_settles_without_a_clock,
     test_effort_completes_when_its_clock_fills,
